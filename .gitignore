@@ -24,7 +24,7 @@ hf_cache/
 data_batches/
 tower_data_inbox_temp/
 analysis_adapter_v2/
-
+key.json
 # 2. Python Cache & Virtuelle Umgebungen
 __pycache__/
 *.pyc
