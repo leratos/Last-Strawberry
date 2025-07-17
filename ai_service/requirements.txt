@@ -1,0 +1,20 @@
+# ai_service/requirements.txt
+# Liste der Python-Pakete, die für den KI-Dienst benötigt werden.
+
+# Web-Framework
+fastapi
+uvicorn[standard] # Für den ASGI-Server
+
+# Pydantic wird von FastAPI verwendet
+pydantic
+
+# Kern-Bibliotheken für Hugging Face
+torch
+transformers
+peft
+bitsandbytes
+accelerate
+sentencepiece
+
+# Wird für das Laden des Tokens benötigt
+huggingface_hub

@@ -1,0 +1,19 @@
+# backend_server/requirements.txt
+
+# Web-Framework & Server
+fastapi
+uvicorn[standard]
+pydantic
+
+# HTTP-Client für die Kommunikation mit dem KI-Dienst
+httpx
+certifi
+google-auth
+# Datenbank-Interaktion
+requests
+
+# Für die OAuth2-Sicherheit und Passwort-Verschlüsselung
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt<4.1

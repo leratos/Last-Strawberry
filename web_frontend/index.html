@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last-Strawberry - Web-Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Roboto+Mono&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .screen { display: none; }
+        .screen.active { display: flex; }
+        .chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .chat-container::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background-color: #4a4a4a;
+            border-radius: 4px;
+        }
+        .story-text p {
+            margin-bottom: 1rem;
+        }
+        .story-text b {
+            color: #bb86fc;
+        }
+        .story-text i {
+            color: #03dac6;
+        }
+        .player-input-text {
+            color: #63a4ff;
+        }
+         #correction-modal {
+            background-color: rgba(0,0,0,0.7);
+        }
+   </style>
+</head>
+<body class="items-center justify-center min-h-screen">
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active w-full max-w-md p-8 space-y-6 bg-[#1e1e1e] rounded-xl shadow-lg flex-col">
+        <h2 class="text-3xl font-bold text-center text-white">Last-Strawberry</h2>
+        <p class="text-center text-gray-400">Bitte am Server anmelden.</p>
+        <div class="space-y-4">
+            <div>
+                <label for="username" class="text-sm font-medium text-gray-300">Benutzername</label>
+                <input type="text" id="username" name="username" value="lara"
+                       class="w-full px-4 py-2 mt-1 text-white bg-[#2a2a2a] border border-gray-600 rounded-md focus:ring-purple-500 focus:border-purple-500">
+            </div>
+            <div>
+                <label for="password" class="text-sm font-medium text-gray-300">Passwort</label>
+                <input type="password" id="password" name="password" value="password123"
+                       class="w-full px-4 py-2 mt-1 text-white bg-[#2a2a2a] border border-gray-600 rounded-md focus:ring-purple-500 focus:border-purple-500">
+            </div>
+        </div>
+        <button id="login-button" class="w-full px-4 py-3 font-semibold text-white bg-purple-600 rounded-md hover:bg-purple-700">
+            Anmelden
+        </button>
+        <p id="login-error" class="text-sm text-red-400 text-center"></p>
+    </div>
+
+    <!-- World Selection Screen -->
+    <div id="world-selection-screen" class="screen w-full max-w-2xl p-8 space-y-6 bg-[#1e1e1e] rounded-xl shadow-lg flex-col">
+        <div class="flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-white">Wähle deine Welt</h2>
+            <a href="admin.html" target="_blank" class="px-4 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-700">Admin-Panel</a>
+        </div>
+        <div id="world-list" class="space-y-2 max-h-60 overflow-y-auto p-2 border border-gray-700 rounded-md">
+            <!-- Gespeicherte Welten werden hier eingefügt -->
+        </div>
+        <div class="text-center">
+             <button id="show-create-world-btn" class="px-6 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700">Neue Welt erschaffen</button>
+        </div>
+    </div>
+    <div id="create-world-screen" class="screen w-full max-w-2xl p-8 space-y-4 bg-[#1e1e1e] rounded-xl shadow-lg flex-col">
+        <h3 class="text-xl font-bold text-center text-white">Neue Welt erschaffen</h3>
+        <input type="text" id="new-world-name" placeholder="Name der neuen Welt" class="w-full px-4 py-2 text-white bg-[#2a2a2a] border-gray-600 rounded-md">
+        <textarea id="new-world-lore" placeholder="Beschreibe die Lore deiner Welt..." rows="3" class="w-full px-4 py-2 text-white bg-[#2a2a2a] border-gray-600 rounded-md"></textarea>
+        <hr class="border-gray-700">
+        <input type="text" id="new-char-name" placeholder="Name deines Charakters" class="w-full px-4 py-2 text-white bg-[#2a2a2a] border-gray-600 rounded-md">
+        <textarea id="new-char-backstory" placeholder="Hintergrundgeschichte deines Charakters..." rows="3" class="w-full px-4 py-2 text-white bg-[#2a2a2a] border-gray-600 rounded-md"></textarea>
+        <hr class="border-gray-700">
+        <!-- Attribute Allocation -->
+        <div id="attribute-allocator">
+            <h4 class="font-semibold text-center">Attribute verteilen</h4>
+            <p id="points-display" class="text-center font-bold my-2"></p>
+            <div id="attributes-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Attribute werden hier dynamisch eingefügt -->
+            </div>
+        </div>
+        <div class="flex space-x-4 mt-4">
+            <button id="cancel-create-btn" class="w-full px-4 py-3 font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-700">Abbrechen</button>
+            <button id="create-world-button" class="w-full px-4 py-3 font-semibold text-white bg-purple-600 rounded-md hover:bg-purple-700">Welt erschaffen</button>
+        </div>
+        <p id="create-error" class="text-sm text-red-400 text-center"></p>
+    </div>
+
+    <!-- Game Screen (initially hidden) -->
+    <div id="game-screen" class="screen w-full h-screen max-w-5xl mx-auto flex-col p-4">
+        <div class="flex justify-between items-center mb-4">
+            <h1 id="game-title" class="text-2xl font-bold text-purple-300">Last-Strawberry Adventure</h1>
+            <div id="game-buttons" class="flex space-x-2">
+                <button id="correct-last-btn" class="px-4 py-2 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Letzte Antwort korrigieren</button>
+            </div>
+        </div>
+        <div id="chat-container" class="chat-container flex-grow p-4 bg-[#1e1e1e] border border-gray-700 rounded-lg overflow-y-auto mb-4"></div>
+        <div class="flex">
+            <input type="text" id="command-input" placeholder="Was tust du?" class="flex-grow px-4 py-2 text-white bg-[#2a2a2a] border-gray-600 rounded-l-md">
+            <button id="send-button" class="px-6 py-2 font-semibold text-white bg-purple-600 rounded-r-md hover:bg-purple-700">Senden</button>
+        </div>
+    </div>
+
+    <!-- Correction Modal -->
+    <div id="correction-modal" class="fixed inset-0 w-full h-full items-center justify-center p-8 modal screen">
+        <div class="w-full max-w-3xl h-[80vh] bg-gray-800 rounded-lg shadow-xl flex flex-col p-6">
+            <h2 class="text-2xl font-bold mb-4">DM-Korrekturwerkzeug</h2>
+            <div class="flex-grow flex flex-col space-y-4 overflow-hidden">
+                <div>
+                    <label class="font-semibold">Erzähltext der KI:</label>
+                    <textarea id="narrative-textarea" class="w-full h-48 mt-2 p-2 bg-gray-900 text-white rounded border border-gray-700"></textarea>
+                </div>
+                <div>
+                    <label class="font-semibold">Extrahierte JSON-Befehle:</label>
+                    <textarea id="json-textarea" class="w-full flex-grow mt-2 p-2 bg-gray-900 text-white rounded border border-gray-700 font-mono"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button id="cancel-correction-btn" class="px-6 py-2 bg-gray-600 rounded hover:bg-gray-700">Abbrechen</button>
+                <button id="save-correction-btn" class="px-6 py-2 bg-blue-600 rounded hover:bg-blue-700">Korrektur speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js" defer></script>
+
+</body>
+</html>
