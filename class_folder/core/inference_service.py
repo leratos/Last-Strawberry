@@ -45,6 +45,7 @@ class InferenceService:
         self.base_model: Optional[AutoModelForCausalLM] = None
         self.model: Optional[AutoModelForCausalLM] = None
         self.tokenizer: Optional[AutoTokenizer] = None
+        self.pipe: Optional[pipeline] = None
         self.base_model_loaded = False
         self.device = config.DEVICE
         self.load_status = "Not Loaded"
@@ -55,6 +56,7 @@ class InferenceService:
             return
 
         self._load_base_model_and_tokenizer()
+        self._initialize_pipeline()
 
     def _find_adapter_for_world(self, world_name: str) -> Optional[str]:
         """Finds the most recent adapter for a specific world name."""
@@ -127,9 +129,22 @@ class InferenceService:
             self.model = None
             self.tokenizer = None
     
+    def _initialize_pipeline(self):
+        """Initializes the text-generation pipeline once."""
+        if self.model and self.tokenizer and not self.pipe:
+            logger.info("Initializing text-generation pipeline...")
+            self.pipe = pipeline(
+                "text-generation",
+                model=self.model,
+                tokenizer=self.tokenizer,
+                torch_dtype=config.BNB_4BIT_COMPUTE_DTYPE,
+                device_map=self.device,
+            )
+            logger.info("Pipeline initialized successfully.")
+
     def _find_specific_adapter(self, adapter_name_part: str) -> Optional[str]:
         """Findet den neuesten Adapter, der einen bestimmten Text im Namen enthält."""
-        adapter_base_dir = Path("./") # Wir suchen im Hauptverzeichnis
+        adapter_base_dir = Path("./adapter")
         if not adapter_base_dir.exists():
             return None
         
@@ -173,14 +188,15 @@ class InferenceService:
         else:
             logger.info(f"No adapter path found for {adapter_type} and world '{world_name}'. Using base model.")
         
+        self.pipe.model = self.model
         self.model.eval()
 
     def generate_story_response(self, prompt: str) -> str:
         """
         Generates a story response from the AI based on a given prompt.
         """
-        if not self.model or not self.tokenizer:
-            return "Fehler: Das KI-Modell ist nicht geladen."
+        if not self.pipe:
+            return "Fehler: Die KI-Pipeline ist nicht initialisiert."
 
         logger.info("Generating AI response...")
         try:
@@ -193,20 +209,13 @@ class InferenceService:
             if max_new_tokens_dynamic <= 0:
                 logger.error(f"Prompt is too long ({prompt_tokens} tokens) for the model to generate a response.")
                 return "[Fehler: Der Kontext der Geschichte ist zu lang geworden.]"
-            pipe = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                torch_dtype=config.BNB_4BIT_COMPUTE_DTYPE,
-                device_map=self.device,
-            )
 
             terminators = [
-                pipe.tokenizer.eos_token_id,
-                pipe.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+                self.pipe.tokenizer.eos_token_id,
+                self.pipe.tokenizer.convert_tokens_to_ids("<|eot_id|>")
             ]
 
-            sequences = pipe(
+            sequences = self.pipe(
                 prompt,
                 max_new_tokens=max_new_tokens_dynamic,
                 eos_token_id=terminators,
@@ -214,7 +223,7 @@ class InferenceService:
                 temperature=0.7,
                 top_p=0.9,
                 repetition_penalty=1.15, 
-                pad_token_id=pipe.tokenizer.eos_token_id
+                pad_token_id=self.pipe.tokenizer.eos_token_id
             )
 
             if sequences and isinstance(sequences, list):
@@ -231,7 +240,7 @@ class InferenceService:
                     if response.endswith("<|eot_id|>"):
                         response = response[:-len("<|eot_id|>")].strip()
                     
-                    if response: # Stelle sicher, dass die Antwort nicht leer ist
+                    if response:
                         logger.info("AI response generated successfully.")
                         return response
 

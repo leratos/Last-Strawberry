@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktiver Trainingsdaten-Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .log-panel { height: calc(100vh - 4rem); }
+        .workspace-panel { height: calc(100vh - 4rem); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid #3498db;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 20px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <div class="flex flex-col md:flex-row">
+        <!-- Linke Seite: Arbeitsbereich -->
+        <div class="w-full md:w-1/2 p-4">
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-y-auto workspace-panel p-6">
+                <h1 class="text-2xl font-bold text-cyan-400 mb-4">Trainingsdaten-Generator</h1>
+                <div id="workspace" class="space-y-6">
+                     <div id="start-message">
+                        <p class="text-gray-400">Klicke auf "Nächstes Beispiel generieren", um zu starten.</p>
+                    </div>
+                    <div id="loader" class="hidden text-center">
+                        <div class="loader"></div>
+                        <p>KI generiert und analysiert... Bitte warten.</p>
+                    </div>
+                    
+                    <!-- Schritt 1: Spieleraktion -->
+                    <div id="action-step" class="hidden">
+                        <!-- Anzeige des Vorschlags -->
+                        <div id="action-suggestion">
+                            <h3 class="text-lg font-semibold text-gray-400">1. Spieleraktion</h3>
+                            <p id="player-action-text" class="mt-1 p-3 bg-gray-900 rounded-md"></p>
+                            <div class="mt-2 p-3 bg-gray-700 rounded-md">
+                                <p class="font-semibold text-cyan-400">KI-Analyse (Aktion):</p>
+                                <pre id="action-analysis-json" class="text-sm text-gray-300 whitespace-pre-wrap"></pre>
+                            </div>
+                            <div id="action-buttons" class="flex space-x-4 pt-4">
+                                <button onclick="processActionStep('accept')" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">Akzeptieren</button>
+                                <button onclick="showCorrectionForm('action')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg">Korrigieren</button>
+                            </div>
+                        </div>
+                        <!-- Formular zur Korrektur -->
+                        <div id="action-correction-form" class="hidden">
+                            <h3 class="text-lg font-semibold text-yellow-400">1. Korrektur (Spieleraktion)</h3>
+                            <div id="action-form-content" class="mt-2"></div>
+                             <div class="flex space-x-4 pt-4">
+                                <button onclick="cancelCorrection('action')" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Abbrechen</button>
+                                <button onclick="saveCorrection('action')" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Korrektur speichern</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Schritt 2: Erzähltext -->
+                    <div id="narrative-step" class="hidden">
+                        <!-- Anzeige des Vorschlags -->
+                        <div id="narrative-suggestion">
+                            <h3 class="text-lg font-semibold text-gray-400">2. Erzähltext (Konsequenz)</h3>
+                            <p id="narrative-text-text" class="mt-1 p-3 bg-gray-900 rounded-md"></p>
+                            <div class="mt-2 p-3 bg-gray-700 rounded-md">
+                                <p class="font-semibold text-cyan-400">KI-Analyse (Konsequenz):</p>
+                                <pre id="narrative-analysis-json" class="text-sm text-gray-300 whitespace-pre-wrap"></pre>
+                            </div>
+                            <div id="narrative-buttons" class="flex space-x-4 pt-4">
+                                <button onclick="processNarrativeStep('accept')" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">Akzeptieren</button>
+                                <button onclick="showCorrectionForm('narrative')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg">Korrigieren</button>
+                                <button onclick="deleteExample()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg">Verwerfen</button>
+                            </div>
+                        </div>
+                         <!-- Formular zur Korrektur -->
+                        <div id="narrative-correction-form" class="hidden">
+                            <h3 class="text-lg font-semibold text-yellow-400">2. Korrektur (Erzähltext)</h3>
+                            <div id="narrative-form-content" class="mt-2"></div>
+                             <div class="flex space-x-4 pt-4">
+                                <button onclick="cancelCorrection('narrative')" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Abbrechen</button>
+                                <button onclick="saveCorrection('narrative')" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Korrektur speichern</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <button id="next-example-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                        Nächstes Beispiel generieren
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rechte Seite: Kontext & Verlauf -->
+        <div class="w-full md:w-1/2 p-4">
+            <div class="bg-gray-800 rounded-lg shadow-lg log-panel">
+                <div class="p-4 border-b border-gray-700">
+                    <h2 class="text-xl font-bold text-amber-400">Gesamter Story-Verlauf</h2>
+                </div>
+                <div id="story-log" class="p-6 overflow-y-auto" style="height: calc(100% - 4rem);"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elemente ---
+        const storyLog = document.getElementById('story-log');
+        const nextExampleBtn = document.getElementById('next-example-btn');
+        const actionStep = document.getElementById('action-step');
+        const narrativeStep = document.getElementById('narrative-step');
+        const startMessage = document.getElementById('start-message');
+        const loader = document.getElementById('loader');
+
+        // --- Zustand der App ---
+        let currentExample = {};
+        let correctionState = { action: null, narrative: null };
+        let lastNarrativeText = null;
+
+        const COMMAND_SCHEMA = {
+            "NPC_CREATE": {"name": "string", "backstory": "string (optional)", "disposition": "string (optional)"},
+            "NPC_UPDATE": {"old_name": "string", "new_name": "string"},
+            "PLAYER_MOVE": {"location_name": "string"},
+            "NPC_MOVE": {"npc_name": "string", "location_name": "string (optional)"},
+            "PLAYER_STATE_UPDATE": {"updates": "object"},
+            "NPC_STATE_UPDATE": {"npc_name": "string", "updates": "object"},
+            "ROLL_CHECK": {"attribut": "string", "schwierigkeit": "integer (optional)"},
+        };
+
+        // --- API-Kommunikation ---
+        async function generateNextExample() {
+            startMessage.classList.add('hidden');
+            actionStep.classList.add('hidden');
+            narrativeStep.classList.add('hidden');
+            loader.classList.remove('hidden');
+            nextExampleBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/generate_step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ last_narrative_text: lastNarrativeText })
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.json();
+                currentExample = data;
+                lastNarrativeText = data.narrativeText;
+                correctionState = { action: null, narrative: null };
+
+                document.getElementById('player-action-text').textContent = data.playerAction;
+                document.getElementById('action-analysis-json').textContent = JSON.stringify(data.actionAnalysis, null, 2);
+                document.getElementById('narrative-text-text').textContent = data.narrativeText;
+                document.getElementById('narrative-analysis-json').textContent = JSON.stringify(data.narrativeAnalysis, null, 2);
+                
+                updateStoryLog(data.fullStory);
+
+                loader.classList.add('hidden');
+                actionStep.classList.remove('hidden');
+                document.getElementById('action-suggestion').classList.remove('hidden');
+                document.getElementById('action-correction-form').classList.add('hidden');
+
+            } catch (error) {
+                console.error('Fehler beim Generieren des Beispiels:', error);
+                alert('Fehler bei der Kommunikation mit dem Backend. Ist der Python-Server gestartet?');
+                loader.classList.add('hidden');
+                startMessage.classList.remove('hidden');
+                nextExampleBtn.disabled = false;
+            }
+        }
+        
+        // --- Workflow-Steuerung ---
+        function processActionStep(mode, correctedData = null) {
+            correctionState.action = (mode === 'accept') ? currentExample.actionAnalysis : correctedData;
+            actionStep.classList.add('hidden');
+            narrativeStep.classList.remove('hidden');
+            document.getElementById('narrative-suggestion').classList.remove('hidden');
+            document.getElementById('narrative-correction-form').classList.add('hidden');
+        }
+
+        function processNarrativeStep(mode, correctedData = null) {
+            correctionState.narrative = (mode === 'accept') ? currentExample.narrativeAnalysis : correctedData;
+            finalizeAndSaveExample();
+        }
+
+        async function finalizeAndSaveExample() {
+            const finalCommands = [...(correctionState.action || []), ...(correctionState.narrative || [])];
+            
+            try {
+                const response = await fetch('/api/save_example', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        playerAction: currentExample.playerAction,
+                        narrativeText: currentExample.narrativeText,
+                        finalCommands: finalCommands
+                    })
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                document.getElementById('narrative-suggestion').innerHTML = `<p class="text-green-400 font-bold text-center mt-4">Beispiel erfolgreich gespeichert!</p>`;
+                nextExampleBtn.disabled = false;
+
+            } catch(error) {
+                console.error('Fehler beim Speichern:', error);
+                alert('Fehler beim Speichern des Beispiels.');
+            }
+        }
+
+        function deleteExample() {
+            alert("Beispiel verworfen!");
+            generateNextExample();
+        }
+
+        // --- UI-Helferfunktionen ---
+        function updateStoryLog(story) {
+            storyLog.innerHTML = '';
+            story.forEach((line, index) => {
+                const entry = document.createElement('div');
+                const role = (index % 2 === 0) ? 'Spieler' : 'Erzähler';
+                entry.innerHTML = `<strong>${role}:</strong> ${line}`;
+                entry.className = 'mb-4 text-gray-300';
+                storyLog.appendChild(entry);
+            });
+            storyLog.scrollTop = storyLog.scrollHeight;
+        }
+
+        // --- Korrektur-Formular Logik ---
+        function showCorrectionForm(step) {
+            document.getElementById(`${step}-suggestion`).classList.add('hidden');
+            const formContainer = document.getElementById(`${step}-correction-form`);
+            formContainer.classList.remove('hidden');
+            renderCorrectionFormContent(step);
+        }
+
+        function cancelCorrection(step) {
+            document.getElementById(`${step}-correction-form`).classList.add('hidden');
+            document.getElementById(`${step}-suggestion`).classList.remove('hidden');
+        }
+
+        function renderCorrectionFormContent(step) {
+            const formContent = document.getElementById(`${step}-form-content`);
+            let formHtml = `<div id="${step}-form-container" class="space-y-4"></div>`;
+            formHtml += `<button id="add-command-btn-${step}" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm">+ Befehl hinzufügen</button>`;
+            formContent.innerHTML = formHtml;
+            document.getElementById(`add-command-btn-${step}`).addEventListener('click', () => addCommandBlock(step));
+            addCommandBlock(step);
+        }
+        
+        function addCommandBlock(step) {
+            const container = document.getElementById(`${step}-form-container`);
+            const blockId = `${step}-command-block-${container.children.length}`;
+            const block = document.createElement('div');
+            block.id = blockId;
+            block.className = 'p-4 bg-gray-900 rounded-lg border border-gray-600';
+            
+            let allowedCommands = (step === 'action')
+                ? ["ROLL_CHECK", "PLAYER_MOVE"]
+                : Object.keys(COMMAND_SCHEMA).filter(cmd => !["ROLL_CHECK", "PLAYER_MOVE"].includes(cmd));
+
+            let selectOptions = '<option value="">-- Befehl wählen --</option>';
+            allowedCommands.forEach(cmd => { selectOptions += `<option value="${cmd}">${cmd}</option>`; });
+            
+            block.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <select class="command-select bg-gray-700 border border-gray-600 rounded-md p-2 w-full" onchange="renderParams('${blockId}')">${selectOptions}</select>
+                    <button class="ml-4 text-red-400 hover:text-red-600" onclick="document.getElementById('${blockId}').remove()">X</button>
+                </div>
+                <div class="params-container mt-4 space-y-2"></div>`;
+            container.appendChild(block);
+        }
+
+        function renderParams(blockId) {
+            const block = document.getElementById(blockId);
+            const select = block.querySelector('.command-select');
+            const paramsContainer = block.querySelector('.params-container');
+            const command = select.value;
+            paramsContainer.innerHTML = '';
+            if (!command) return;
+            const schema = COMMAND_SCHEMA[command];
+            for (const param in schema) {
+                const paramType = schema[param];
+                const inputHtml = `<div class="grid grid-cols-3 gap-4 items-center"><label class="text-gray-400 text-sm font-medium">${param}</label><input type="text" data-param="${param}" placeholder="${paramType}" class="col-span-2 bg-gray-700 border border-gray-600 rounded-md p-2 text-sm focus:ring-cyan-500 focus:border-cyan-500"></div>`;
+                paramsContainer.innerHTML += inputHtml;
+            }
+        }
+
+        function saveCorrection(step) {
+            const correctedCommands = [];
+            const blocks = document.querySelectorAll(`#${step}-form-container > div`);
+            blocks.forEach(block => {
+                const command = block.querySelector('.command-select').value;
+                if (!command) return;
+                const commandObj = { command };
+                const inputs = block.querySelectorAll('.params-container input');
+                inputs.forEach(input => {
+                    const paramName = input.dataset.param;
+                    let value = input.value;
+                    if (COMMAND_SCHEMA[command][paramName] === 'object' && value) {
+                        try {
+                            const obj = {};
+                            value.split(',').forEach(pair => {
+                                const [key, val] = pair.split(':');
+                                if (key && val) obj[key.trim()] = val.trim();
+                            });
+                            value = obj;
+                        } catch (e) { value = { error: "Invalid format" }; }
+                    }
+                    if (value) commandObj[paramName] = value;
+                });
+                correctedCommands.push(commandObj);
+            });
+
+            if (step === 'action') {
+                processActionStep('correct', correctedCommands);
+            } else {
+                processNarrativeStep('correct', correctedCommands);
+            }
+        }
+
+        // --- Event Listeners ---
+        nextExampleBtn.addEventListener('click', generateNextExample);
+        addToStoryLog("Willkommen! Der Story-Verlauf wird hier angezeigt.");
+    </script>
+</body>
+</html>
