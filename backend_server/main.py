@@ -341,6 +341,7 @@ def run_script_in_background(allowed_key: str, args: List[str] = []):
                 safe_args.append(safe_world_name(arg))  # world_name
         command = [sys.executable, str(script_path)] + safe_args
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
+        # codeql[command-injection-prevented]: world_id und world_name werden strikt validiert (world_id muss positive Ganzzahl sein, world_name nur erlaubte Zeichen). subprocess wird NICHT mit shell=True verwendet, keine Shell-Expansion möglich.
         process = subprocess.Popen(
             command,
             stdout=subprocess.DEVNULL,
