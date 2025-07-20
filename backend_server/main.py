@@ -231,14 +231,15 @@ def run_script_in_background(allowed_key: str, world_id: int = None, world_name:
         if not isinstance(world_id, int) or world_id <= 0:
             logger.error(f"Versuch, Skript mit ungültiger world_id zu starten: {world_id}")
             return False
-        if not world_name or not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
+        if not world_name or not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name) or len(world_name) > 50:
+            logger.error(f"Versuch, Skript mit ungültigem oder zu langem world_name zu starten: '{world_name}'")
             logger.error(f"Versuch, Skript mit ungültigem world_name zu starten: '{world_name}'")
             return False
         args = [str(world_id), world_name]
     
     try:
         command = [sys.executable, str(script_path)] + args
-        logger.info(f"Führe Befehl aus: {' '.join(command)}")
+        logger.info(f"Führe Befehl aus: {command}")
 
         # Die `codeql` Direktive erklärt dem Tool, warum dies sicher ist.
         # 1. shell=False (Standard): Verhindert, dass die Shell den Befehl interpretiert.
