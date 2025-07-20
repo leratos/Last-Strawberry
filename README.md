@@ -85,6 +85,24 @@ flowchart LR
 
 ---
 
+## 🚀 Alpha-Test & Zugang
+
+**Last-Strawberry befindet sich aktuell in einer geschlossenen Alpha-Phase.**  
+Wir vergeben exklusive Zugänge an Interessierte, die bereit sind, aktiv Feedback zu geben und die Plattform in ihrer Entwicklung mitzugestalten.
+
+### **Wie bekomme ich Zugang?**
+
+- Schick uns eine Nachricht über GitHub (Issue oder Direct Message)
+- **ODER** nutze das Kontaktformular auf [signz-vision.de](https://signz-vision.de)
+
+Du erhältst dann individuelle Zugangsdaten sowie alle Informationen zur Teilnahme am Alpha-Test.  
+Die Anzahl der Alpha-Plätze ist limitiert!
+
+> **Dein Feedback ist entscheidend, um Last-Strawberry noch besser zu machen.**  
+> Werde Teil der Entwicklung und sichere dir jetzt den frühen Zugang!
+
+---
+
 ## Technologie-Stack
 
 * **Backend:** Python, FastAPI, Uvicorn, SQLite
