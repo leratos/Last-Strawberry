@@ -14,6 +14,7 @@ import httpx
 import json
 import subprocess
 import asyncio
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
@@ -349,6 +350,8 @@ def trigger_train_analysis():
 
 @app.post("/admin/train_narrative/{world_id}", dependencies=[Depends(get_current_admin_user)])
 def trigger_train_narrative(world_id: int, world_name: str):
+    if not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
+        raise HTTPException(status_code=400, detail="world_name enthält ungültige Zeichen.")
     args = [str(world_id), world_name]
     success = run_script_in_background("train_narrative", args)
     if not success:
