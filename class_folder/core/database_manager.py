@@ -194,14 +194,15 @@ class DatabaseManager:
             cursor = conn.cursor()
             state_json = json.dumps(initial_state_dict)
             player_loc_id = self.get_player_location(world_id)
+            system_user_id = 1 
             cursor.execute(
-                "INSERT INTO characters (world_id, name, is_player, backstory, current_location_id, state_json) VALUES (?, ?, 0, ?, ?, ?)",
-                (world_id, name, backstory, player_loc_id, state_json)
+                "INSERT INTO characters (world_id, user_id, name, is_player, backstory, current_location_id, state_json) VALUES (?, ?, ?, 0, ?, ?, ?)",
+                (world_id, system_user_id, name, backstory, player_loc_id, state_json)
             )
 
             conn.commit()
             npc_id = cursor.lastrowid
-            logger.info(f"NSC '{name}' (ID: {npc_id}) mit Backstory wurde in Welt {world_id} erstellt.")
+            logger.info(f"NSC '{name}' (ID: {npc_id}) wurde in Welt {world_id} erstellt und User {system_user_id} zugeordnet.")
             return npc_id
         except sqlite3.Error as e:
             logger.error(f"Fehler beim Erstellen von NSC '{name}': {e}", exc_info=True)
