@@ -43,13 +43,6 @@ ALLOWED_SCRIPTS = {
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class WorldCreateRequest(BaseModel):
-    world_name: str
-    lore: str
-    char_name: str
-    backstory: str
-    attributes: Dict[str, int]
-
 class WorldCreationResponse(BaseModel):
     message: str
     world_id: int
@@ -323,23 +316,29 @@ def safe_world_name(world_name: str) -> str:
         raise ValueError("Ungültige Zeichen (Control Chars/Sonderzeichen) im Welt-Namen")
     return world_name
     
-def run_script_in_background(allowed_key: str, args: List[str] = []):
+def run_script_in_background(allowed_key: str, world_id: int = None, world_name: str = None):
     """Führt ein zugelassenes Python-Skript im Hintergrund aus."""
     if allowed_key not in ALLOWED_SCRIPTS:
         logger.error(f"Unzulässiger Skriptname: {allowed_key}")
         return False
+
     script_path = ALLOWED_SCRIPTS[allowed_key]
     if not script_path.exists():
         logger.error(f"Skript nicht gefunden: {script_path}")
         return False
+
+    if allowed_key == "train_narrative":
+        if not isinstance(world_id, int) or world_id <= 0:
+            logger.error("Ungültige world_id")
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
+            logger.error("Ungültiger world_name")
+            return False
+        args =  args = [str(world_id), safe_world_name(world_name)]
+    else:
+        args = []
     try:
-        safe_args = []
-        for arg in args or []:
-            if arg.isdigit():
-                safe_args.append(str(int(arg)))  # world_id
-            else:
-                safe_args.append(safe_world_name(arg))  # world_name
-        command = [sys.executable, str(script_path)] + safe_args
+        command = [sys.executable, str(script_path)] + args
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
         # codeql[command-injection-prevented]: world_id und world_name werden strikt validiert (world_id muss positive Ganzzahl sein, world_name nur erlaubte Zeichen). subprocess wird NICHT mit shell=True verwendet, keine Shell-Expansion möglich.
         process = subprocess.Popen(
@@ -369,8 +368,7 @@ def trigger_train_narrative(world_id: int, world_name: str):
         raise HTTPException(status_code=400, detail="world_id muss eine positive Ganzzahl sein.")
     if not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
         raise HTTPException(status_code=400, detail="world_name enthält ungültige Zeichen.")
-    args = [str(world_id), world_name]
-    success = run_script_in_background("train_narrative", args)
+    success = run_script_in_background("train_narrative", world_id, world_name)
     if not success:
         raise HTTPException(status_code=500, detail="Das Erzähl-Trainingsskript konnte nicht gestartet werden.")
 
