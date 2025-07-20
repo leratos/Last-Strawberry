@@ -200,6 +200,23 @@ class BaseGameManager:
                     if npc_to_update:
                         self.db_manager.update_character_state(npc_to_update['char_id'], updates)
 
+            elif command == "NPC_UPDATE":
+                old_name = cmd_data.get("old_name")
+                new_name = cmd_data.get("new_name")
+                if old_name and new_name:
+                    npc_to_update = self._find_best_match_npc(old_name)
+                    if npc_to_update:
+                        # KORRIGIERT: Ruft die korrekte Methode aus dem database_manager auf.
+                        self.db_manager.update_npc_name(npc_to_update['char_id'], new_name)
+                        # Aktualisiere den Namen auch im lokalen Szenen-Gedächtnis
+                        for npc in self.scene_npcs:
+                            if npc['char_id'] == npc_to_update['char_id']:
+                                npc['name'] = new_name
+                                break
+                        logger.info(f"NPC-Name von '{old_name}' zu '{new_name}' geändert.")
+                    else:
+                        logger.warning(f"NPC_UPDATE fehlgeschlagen: Konnte NPC '{old_name}' nicht in der Szene finden.")
+
             elif command == "PLAYER_MOVE":
                 location_name = cmd_data.get("location_name")
                 if location_name:

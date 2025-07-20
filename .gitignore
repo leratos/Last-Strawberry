@@ -5,6 +5,7 @@
 # 1. Projektspezifische Ausschlüsse
 analysis_adapters_v2/
 *settings.json
+*dataset.jsonl
 *.safetensors
 server_config.py
 app_settings_tower.json
@@ -25,6 +26,8 @@ data_batches/
 tower_data_inbox_temp/
 analysis_adapter_v2/
 key.json
+lora_adapter_output_temp/
+
 # 2. Python Cache & Virtuelle Umgebungen
 __pycache__/
 *.pyc
@@ -101,6 +104,5 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-
-
+analysis_adapter_v20250719_1521/
+analysis_dataset_final.jsonl

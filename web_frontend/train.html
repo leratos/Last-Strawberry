@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktiver Trainingsdaten-Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .log-panel { height: calc(100vh - 4rem); }
+        .workspace-panel { height: calc(100vh - 4rem); }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <div class="flex flex-col md:flex-row">
+        <!-- Linke Seite: Arbeitsbereich -->
+        <div class="w-full md:w-1/2 p-4">
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-y-auto workspace-panel p-6">
+                <h1 class="text-2xl font-bold text-cyan-400 mb-4">Trainingsdaten-Generator</h1>
+                <div id="workspace">
+                    <p class="text-gray-400">Klicke auf "Nächstes Beispiel generieren", um zu starten.</p>
+                </div>
+                <div class="mt-6">
+                    <button id="next-example-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                        Nächstes Beispiel generieren
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rechte Seite: Kontext & Verlauf -->
+        <div class="w-full md:w-1/2 p-4">
+            <div class="bg-gray-800 rounded-lg shadow-lg log-panel">
+                <div class="p-4 border-b border-gray-700">
+                    <h2 class="text-xl font-bold text-amber-400">Gesamter Story-Verlauf</h2>
+                </div>
+                <div id="story-log" class="p-6 overflow-y-auto" style="height: calc(100% - 4rem);">
+                    <!-- Story-Verlauf wird hier dynamisch eingefügt -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Korrektur-Modal -->
+    <div id="correction-modal" class="modal-backdrop hidden">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-2xl mx-4">
+            <h2 class="text-2xl font-bold text-cyan-400 mb-6">Geführte Korrektur</h2>
+            <div id="modal-content">
+                <!-- Inhalt wird dynamisch gefüllt -->
+            </div>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button id="cancel-correction-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg">Abbrechen</button>
+                <button id="save-correction-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg">Korrektur speichern</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM Elemente ---
+        const workspace = document.getElementById('workspace');
+        const storyLog = document.getElementById('story-log');
+        const nextExampleBtn = document.getElementById('next-example-btn');
+        const modal = document.getElementById('correction-modal');
+        const modalContent = document.getElementById('modal-content');
+        const saveCorrectionBtn = document.getElementById('save-correction-btn');
+        const cancelCorrectionBtn = document.getElementById('cancel-correction-btn');
+
+        // --- Zustand der App ---
+        let currentExample = {};
+        let storyHistory = [];
+        let exampleCounter = 0;
+
+        // --- Schema der Befehle (wie im Python-Skript) ---
+        const COMMAND_SCHEMA = {
+            "NPC_CREATE": {"name": "string", "backstory": "string (optional)", "disposition": "string (optional)"},
+            "NPC_UPDATE": {"old_name": "string", "new_name": "string"},
+            "PLAYER_MOVE": {"location_name": "string"},
+            "NPC_MOVE": {"npc_name": "string", "location_name": "string (optional)"},
+            "PLAYER_STATE_UPDATE": {"updates": "object"},
+            "NPC_STATE_UPDATE": {"npc_name": "string", "updates": "object"},
+            "ROLL_CHECK": {"attribut": "string", "schwierigkeit": "integer (optional)"},
+        };
+
+        // --- KI-Simulation (Platzhalter für Backend-Aufrufe) ---
+        const MOCK_DATA = [
+            {
+                playerAction: "Ich versuche, über die Schlucht zu springen.",
+                narrativeText: "Du nimmst Anlauf und springst. Du landest sicher auf der anderen Seite, aber ein lautes Krachen ertönt hinter dir, als ein Golem aus den Felsen bricht.",
+                actionAnalysis: [{ command: "ROLL_CHECK", attribut: "Geschicklichkeit", schwierigkeit: 14 }],
+                narrativeAnalysis: [{ command: "NPC_CREATE", name: "Golem", backstory: "Bricht aus den Felsen.", disposition: "feindselig" }]
+            },
+            {
+                playerAction: "Ich frage die Wache, wie sie heißt.",
+                narrativeText: "Die Wache mustert dich misstrauisch. 'Mein Name ist Gorath', knurrt sie.",
+                actionAnalysis: [],
+                narrativeAnalysis: [{ command: "NPC_UPDATE", old_name: "Wache", new_name: "Gorath" }]
+            },
+            {
+                playerAction: "Ich gehe in die Taverne.",
+                narrativeText: "Du betrittst die laute, rauchgeschwängerte Taverne 'Zum Lachenden Greif'.",
+                actionAnalysis: [{ command: "PLAYER_MOVE", location_name: "Taverne 'Zum Lachenden Greif'" }],
+                narrativeAnalysis: []
+            }
+        ];
+
+        function getMockExample() {
+            const example = MOCK_DATA[exampleCounter % MOCK_DATA.length];
+            exampleCounter++;
+            return example;
+        }
+
+        // --- UI-Logik ---
+        function generateNextExample() {
+            currentExample = getMockExample();
+            updateWorkspace(currentExample);
+            addToStoryLog(`<strong>Spieler:</strong> ${currentExample.playerAction}`);
+            addToStoryLog(`<strong>Erzähler:</strong> ${currentExample.narrativeText}`);
+        }
+
+        function updateWorkspace(example) {
+            workspace.innerHTML = `
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-400">1. Spieleraktion</h3>
+                        <p class="mt-1 p-3 bg-gray-900 rounded-md">${example.playerAction}</p>
+                        <div class="mt-2 p-3 bg-gray-700 rounded-md">
+                            <p class="font-semibold text-cyan-400">KI-Analyse (Aktion):</p>
+                            <pre class="text-sm text-gray-300 whitespace-pre-wrap">${JSON.stringify(example.actionAnalysis, null, 2)}</pre>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-400">2. Erzähltext (Konsequenz)</h3>
+                        <p class="mt-1 p-3 bg-gray-900 rounded-md">${example.narrativeText}</p>
+                        <div class="mt-2 p-3 bg-gray-700 rounded-md">
+                            <p class="font-semibold text-cyan-400">KI-Analyse (Konsequenz):</p>
+                            <pre class="text-sm text-gray-300 whitespace-pre-wrap">${JSON.stringify(example.narrativeAnalysis, null, 2)}</pre>
+                        </div>
+                    </div>
+                    <div class="flex space-x-4 pt-4">
+                        <button onclick="acceptSuggestion()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">Akzeptieren</button>
+                        <button onclick="openCorrectionModal()" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg">Korrigieren</button>
+                        <button onclick="deleteExample()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg">Löschen</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function addToStoryLog(htmlContent) {
+            const entry = document.createElement('div');
+            entry.innerHTML = htmlContent;
+            entry.className = 'mb-4 text-gray-300';
+            storyLog.appendChild(entry);
+            storyLog.scrollTop = storyLog.scrollHeight; // Auto-scroll
+        }
+        
+        function acceptSuggestion() {
+            const finalCommands = [...currentExample.actionAnalysis, ...currentExample.narrativeAnalysis];
+            console.log("GESPEICHERT (Akzeptiert):", JSON.stringify(finalCommands, null, 2));
+            alert("Vorschlag akzeptiert und in der Konsole gespeichert!");
+            generateNextExample();
+        }
+
+        function deleteExample() {
+            console.log("GELÖSCHT:", currentExample);
+            alert("Beispiel gelöscht!");
+            generateNextExample();
+        }
+
+        function openCorrectionModal() {
+            modal.classList.remove('hidden');
+            renderCorrectionForm();
+        }
+
+        function closeCorrectionModal() {
+            modal.classList.add('hidden');
+        }
+
+        function renderCorrectionForm() {
+            let formHtml = '<div id="correction-form-container" class="space-y-4"></div>';
+            formHtml += '<button id="add-command-btn" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm">+ Befehl hinzufügen</button>';
+            modalContent.innerHTML = formHtml;
+            
+            document.getElementById('add-command-btn').addEventListener('click', addCommandBlock);
+            
+            // Start with one empty block
+            addCommandBlock();
+        }
+
+        function addCommandBlock() {
+            const container = document.getElementById('correction-form-container');
+            const blockId = `command-block-${container.children.length}`;
+            const block = document.createElement('div');
+            block.id = blockId;
+            block.className = 'p-4 bg-gray-700 rounded-lg border border-gray-600';
+
+            let selectOptions = '<option value="">-- Befehl wählen --</option>';
+            for (const cmd in COMMAND_SCHEMA) {
+                selectOptions += `<option value="${cmd}">${cmd}</option>`;
+            }
+
+            block.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <select class="command-select bg-gray-900 border border-gray-600 rounded-md p-2 w-full" onchange="renderParams('${blockId}')">
+                        ${selectOptions}
+                    </select>
+                    <button class="ml-4 text-red-400 hover:text-red-600" onclick="document.getElementById('${blockId}').remove()">X</button>
+                </div>
+                <div class="params-container mt-4 space-y-2"></div>
+            `;
+            container.appendChild(block);
+        }
+
+        function renderParams(blockId) {
+            const block = document.getElementById(blockId);
+            const select = block.querySelector('.command-select');
+            const paramsContainer = block.querySelector('.params-container');
+            const command = select.value;
+            
+            paramsContainer.innerHTML = '';
+            if (!command) return;
+
+            const schema = COMMAND_SCHEMA[command];
+            for (const param in schema) {
+                const paramType = schema[param];
+                const inputHtml = `
+                    <div class="grid grid-cols-3 gap-4 items-center">
+                        <label class="text-gray-400 text-sm font-medium">${param}</label>
+                        <input type="text" data-param="${param}" placeholder="${paramType}" class="col-span-2 bg-gray-900 border border-gray-600 rounded-md p-2 text-sm focus:ring-cyan-500 focus:border-cyan-500">
+                    </div>
+                `;
+                paramsContainer.innerHTML += inputHtml;
+            }
+        }
+
+        function saveCorrection() {
+            const finalCommands = [];
+            const blocks = document.querySelectorAll('#correction-form-container > div');
+            
+            blocks.forEach(block => {
+                const command = block.querySelector('.command-select').value;
+                if (!command) return;
+
+                const commandObj = { command };
+                const inputs = block.querySelectorAll('.params-container input');
+                
+                inputs.forEach(input => {
+                    const paramName = input.dataset.param;
+                    let value = input.value;
+                    
+                    if (COMMAND_SCHEMA[command][paramName] === 'object' && value) {
+                        try {
+                            // Simple key:value, key2:value2 parser
+                            const obj = {};
+                            value.split(',').forEach(pair => {
+                                const [key, val] = pair.split(':');
+                                if (key && val) {
+                                    obj[key.trim()] = val.trim();
+                                }
+                            });
+                            value = obj;
+                        } catch (e) {
+                            value = { error: "Invalid format" };
+                        }
+                    }
+                    
+                    if (value) {
+                       commandObj[paramName] = value;
+                    }
+                });
+                finalCommands.push(commandObj);
+            });
+
+            console.log("GESPEICHERT (Korrigiert):", JSON.stringify(finalCommands, null, 2));
+            alert("Korrektur gespeichert! Details in der Konsole.");
+            closeCorrectionModal();
+            generateNextExample();
+        }
+
+        // --- Event Listeners ---
+        nextExampleBtn.addEventListener('click', generateNextExample);
+        cancelCorrectionBtn.addEventListener('click', closeCorrectionModal);
+        saveCorrectionBtn.addEventListener('click', saveCorrection);
+
+        // --- Initialisierung ---
+        addToStoryLog("Willkommen! Der Story-Verlauf wird hier angezeigt.");
+
+    </script>
+</body>
+</html>

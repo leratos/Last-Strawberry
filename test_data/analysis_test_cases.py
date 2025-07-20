@@ -3,17 +3,22 @@
 
 """
 Zentrale Datenbank für alle Testfälle der Analyse-KI.
+Version 2.0 - Synchronisiert mit regeln.py V7.0
 """
 from typing import List, Dict, Any
 
 TEST_CASES: List[Dict[str, Any]] = [
-    # --- Originale Tests (leicht angepasst) ---
     {
         "name": "TC1: Einfache NSC-Erstellung",
         "player_name": "Leratos", "npc_context": "Keine Charaktere anwesend.",
         "player_command": "Ich gehe auf den Mann zu.",
         "narrative_text": "Ein alter Mann in einer schlichten Robe lehnt an einer Kiste und beobachtet das Treiben.",
-        "expected_commands": [{"command": "NPC_CREATE", "name": "Alter Mann in schlichter Robe"}]
+        "expected_commands": [{
+            "command": "NPC_CREATE", 
+            "name": "Alter Mann in schlichter Robe",
+            "backstory": "Lehnt an einer Kiste und beobachtet das Treiben.",
+            "disposition": "neutral"
+        }]
     },
     {
         "name": "TC2: Einfaches NSC-Update",
@@ -28,9 +33,9 @@ TEST_CASES: List[Dict[str, Any]] = [
         "player_command": "Ich gehe näher an die Gruppe heran, um zu lauschen.",
         "narrative_text": "Als du näher kommst, siehst du eine hitzige Diskussion. Ein Mann mittleren Alters mit markanten Falten im Gesicht schreit beinahe. Ein jüngerer Mann mit Bart, der wie ein Krieger aussieht, widerspricht ihm. Eine dritte Person, eine Frau mit freundlichem Gesicht, versucht zu schlichten.",
         "expected_commands": [
-            { "command": "NPC_CREATE", "name": "Mann mittleren Alters mit Falten" },
-            { "command": "NPC_CREATE", "name": "Junger Mann mit Bart" },
-            { "command": "NPC_CREATE", "name": "Frau mit freundlichem Gesicht" }
+            { "command": "NPC_CREATE", "name": "Mann mittleren Alters mit Falten", "backstory": "Schreit in einer hitzigen Diskussion.", "disposition": "aufgebracht" },
+            { "command": "NPC_CREATE", "name": "Junger Mann mit Bart", "backstory": "Sieht aus wie ein Krieger und widerspricht.", "disposition": "oppositionell" },
+            { "command": "NPC_CREATE", "name": "Frau mit freundlichem Gesicht", "backstory": "Versucht zu schlichten.", "disposition": "vermittelnd" }
         ]
     },
     {
@@ -52,7 +57,12 @@ TEST_CASES: List[Dict[str, Any]] = [
         "player_name": "Leratos", "npc_context": "Keine Charaktere anwesend.",
         "player_command": "Ich betrete die Taverne.",
         "narrative_text": "An der Theke lehnt eine Frau namens Elara. Sie wischt einen Krug sauber und blickt auf.",
-        "expected_commands": [{"command": "NPC_CREATE", "name": "Elara"}]
+        "expected_commands": [{
+            "command": "NPC_CREATE", 
+            "name": "Elara",
+            "backstory": "Lehnt an der Theke und wischt einen Krug sauber.",
+            "disposition": "neutral"
+        }]
     },
     {
         "name": "TC7: Stärke-Probe (ROLL_CHECK)",
@@ -68,8 +78,6 @@ TEST_CASES: List[Dict[str, Any]] = [
         "narrative_text": "Du lächelst die Wirtin an und beginnst zu verhandeln.",
         "expected_commands": [{"command": "ROLL_CHECK", "attribut": "Charisma", "schwierigkeit": 12}]
     },
-
-    # --- NEUE TESTFÄLLE ---
     {
         "name": "TC9: PLAYER_MOVE - Expliziter Befehl",
         "player_name": "Leratos", "npc_context": "Keine Charaktere anwesend.",
@@ -119,7 +127,7 @@ TEST_CASES: List[Dict[str, Any]] = [
         "narrative_text": "Du huschst in den Schatten. Eine zweite Wache, eine Frau mit einem scharfen Blick, tritt aus einem Torbogen.",
         "expected_commands": [
             {"command": "ROLL_CHECK", "attribut": "Geschicklichkeit", "schwierigkeit": 13},
-            {"command": "NPC_CREATE", "name": "Frau mit scharfem Blick"}
+            {"command": "NPC_CREATE", "name": "Frau mit scharfem Blick", "backstory": "Tritt aus einem Torbogen.", "disposition": "wachsam"}
         ]
     },
     {
@@ -134,7 +142,10 @@ TEST_CASES: List[Dict[str, Any]] = [
         "player_name": "Leratos", "npc_context": "**Anwesende Charaktere:**\n- Goblin: ...",
         "player_command": "Ich greife den Goblin an!",
         "narrative_text": "Du weichst dem ersten Hieb aus, aber der vergiftete Dolch des Goblins erwischt dich am Arm. Ein brennender Schmerz breitet sich aus.",
-        "expected_commands": [{"command": "PLAYER_STATE_UPDATE", "updates": {"status": "vergiftet", "health": "-5"}}]
+        "expected_commands": [
+            {"command": "ROLL_CHECK", "attribut": "Stärke"},
+            {"command": "PLAYER_STATE_UPDATE", "updates": {"status": "vergiftet", "health": "-5"}}
+        ]
     },
     {
         "name": "TC18: NPC_MOVE - NSC verlässt Szene ohne Ziel",
@@ -197,7 +208,7 @@ TEST_CASES: List[Dict[str, Any]] = [
         "narrative_text": "Als du in die Schatten blickst, tritt ein maskierter Fremder hervor.",
         "expected_commands": [
             {"command": "ROLL_CHECK", "attribut": "Wahrnehmung", "schwierigkeit": 14},
-            {"command": "NPC_CREATE", "name": "Maskierter Fremder"}
+            {"command": "NPC_CREATE", "name": "Maskierter Fremder", "backstory": "Tritt aus den Schatten hervor.", "disposition": "mysteriös"}
         ]
     },
     {
