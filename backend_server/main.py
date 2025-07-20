@@ -313,6 +313,7 @@ async def change_user_status(user_id: int, is_active: bool, admin: Dict[str, Any
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": f"User status set to {'active' if is_active else 'inactive'}"}
+
 def run_script_in_background(allowed_key: str, args: List[str] = []):
     """Führt ein zugelassenes Python-Skript im Hintergrund aus."""
     if allowed_key not in ALLOWED_SCRIPTS:
@@ -325,8 +326,14 @@ def run_script_in_background(allowed_key: str, args: List[str] = []):
     try:
         command = [sys.executable, str(script_path)] + [str(arg) for arg in args]
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
-        # Popen blockiert nicht, der Server kann die Antwort sofort senden
-        subprocess.Popen(command)
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True  # Optional: fully detach on Unix
+        )
+        logger.info(f"Script gestartet mit PID {process.pid}")
         return True
     except Exception as e:
         logger.error(f"Fehler beim Starten des Skripts '{script_path}': {e}", exc_info=True)
