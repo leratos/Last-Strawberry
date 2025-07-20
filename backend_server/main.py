@@ -314,7 +314,15 @@ async def change_user_status(user_id: int, is_active: bool, admin: Dict[str, Any
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": f"User status set to {'active' if is_active else 'inactive'}"}
-
+    
+def safe_world_name(world_name: str) -> str:
+    # Erlaubt: Buchstaben, Zahlen, Bindestrich, Unterstrich, Leerzeichen, Umlaute, keine Steuerzeichen
+    if not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
+        raise ValueError("Ungültige Zeichen im Welt-Namen")
+    if any(c in world_name for c in '\n\r"\'`$\\|&;'):
+        raise ValueError("Ungültige Zeichen (Control Chars/Sonderzeichen) im Welt-Namen")
+    return world_name
+    
 def run_script_in_background(allowed_key: str, args: List[str] = []):
     """Führt ein zugelassenes Python-Skript im Hintergrund aus."""
     if allowed_key not in ALLOWED_SCRIPTS:
@@ -325,8 +333,13 @@ def run_script_in_background(allowed_key: str, args: List[str] = []):
         logger.error(f"Skript nicht gefunden: {script_path}")
         return False
     try:
-        sanitized_args = [str(arg).replace(" ", "").replace("&", "").replace(";", "") for arg in args]
-        command = [sys.executable, str(script_path)] + sanitized_args
+        safe_args = []
+        for arg in args or []:
+            if arg.isdigit():
+                safe_args.append(str(int(arg)))  # world_id
+            else:
+                safe_args.append(safe_world_name(arg))  # world_name
+        command = [sys.executable, str(script_path)] + safe_args
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
         process = subprocess.Popen(
             command,
