@@ -233,7 +233,6 @@ def run_script_in_background(allowed_key: str, world_id: int = None, world_name:
             return False
         if not world_name or not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name) or len(world_name) > 50:
             logger.error(f"Versuch, Skript mit ungültigem oder zu langem world_name zu starten: '{world_name}'")
-            logger.error(f"Versuch, Skript mit ungültigem world_name zu starten: '{world_name}'")
             return False
         args = [str(world_id), world_name]
     
