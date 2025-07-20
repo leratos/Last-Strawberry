@@ -33,6 +33,11 @@ from class_folder.game_logic.game_manager_online import GameManagerOnline
 from class_folder.core.database_manager import DatabaseManager
 from server_tools.auth_utils import verify_password, get_password_hash
 
+ALLOWED_SCRIPTS = {
+    "train_analyst": project_root / "trainer/train_analyst.py",
+    "train_narrative": project_root / "trainer/train_narrative.py",
+}
+
 # --- Logging-Konfiguration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -308,11 +313,17 @@ async def change_user_status(user_id: int, is_active: bool, admin: Dict[str, Any
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": f"User status set to {'active' if is_active else 'inactive'}"}
-
-def run_script_in_background(script_path: str, args: List[str] = []):
-    """Führt ein Python-Skript als separaten Prozess aus."""
+def run_script_in_background(allowed_key: str, args: List[str] = []):
+    """Führt ein zugelassenes Python-Skript im Hintergrund aus."""
+    if allowed_key not in ALLOWED_SCRIPTS:
+        logger.error(f"Unzulässiger Skriptname: {allowed_key}")
+        return False
+    script_path = ALLOWED_SCRIPTS[allowed_key]
+    if not script_path.exists():
+        logger.error(f"Skript nicht gefunden: {script_path}")
+        return False
     try:
-        command = [sys.executable, script_path] + args
+        command = [sys.executable, str(script_path)] + [str(arg) for arg in args]
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
         # Popen blockiert nicht, der Server kann die Antwort sofort senden
         subprocess.Popen(command)
@@ -323,11 +334,7 @@ def run_script_in_background(script_path: str, args: List[str] = []):
 
 @app.post("/admin/train_analysis", dependencies=[Depends(get_current_admin_user)])
 def trigger_train_analysis():
-    script_path = project_root / "train_analyst.py"
-    if not script_path.exists():
-        raise HTTPException(status_code=500, detail=f"Trainingsskript nicht gefunden: {script_path}")
-    
-    success = run_script_in_background(str(script_path))
+    success = run_script_in_background("train_analyst")
     if not success:
         raise HTTPException(status_code=500, detail="Das Analyse-Trainingsskript konnte nicht gestartet werden.")
         
@@ -335,12 +342,8 @@ def trigger_train_analysis():
 
 @app.post("/admin/train_narrative/{world_id}", dependencies=[Depends(get_current_admin_user)])
 def trigger_train_narrative(world_id: int, world_name: str):
-    script_path = project_root / "train_narrative.py"
-    if not script_path.exists():
-        raise HTTPException(status_code=500, detail=f"Trainingsskript nicht gefunden: {script_path}")
-    
     args = [str(world_id), world_name]
-    success = run_script_in_background(str(script_path), args)
+    success = run_script_in_background("train_narrative", args)
     if not success:
         raise HTTPException(status_code=500, detail="Das Erzähl-Trainingsskript konnte nicht gestartet werden.")
 
