@@ -325,7 +325,8 @@ def run_script_in_background(allowed_key: str, args: List[str] = []):
         logger.error(f"Skript nicht gefunden: {script_path}")
         return False
     try:
-        command = [sys.executable, str(script_path)] + [str(arg) for arg in args]
+        sanitized_args = [str(arg).replace(" ", "").replace("&", "").replace(";", "") for arg in args]
+        command = [sys.executable, str(script_path)] + sanitized_args
         logger.info(f"Führe Befehl aus: {' '.join(command)}")
         process = subprocess.Popen(
             command,
@@ -350,6 +351,8 @@ def trigger_train_analysis():
 
 @app.post("/admin/train_narrative/{world_id}", dependencies=[Depends(get_current_admin_user)])
 def trigger_train_narrative(world_id: int, world_name: str):
+    if not isinstance(world_id, int) or world_id <= 0:
+        raise HTTPException(status_code=400, detail="world_id muss eine positive Ganzzahl sein.")
     if not re.fullmatch(r"[A-Za-z0-9 _\-äöüÄÖÜß]+", world_name):
         raise HTTPException(status_code=400, detail="world_name enthält ungültige Zeichen.")
     args = [str(world_id), world_name]
