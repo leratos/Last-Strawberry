@@ -64,6 +64,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS characters (
                     char_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     world_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
                     name TEXT NOT NULL,
                     is_player BOOLEAN DEFAULT 0,
                     backstory TEXT,
@@ -71,9 +72,10 @@ class DatabaseManager:
                     state_json TEXT DEFAULT '{}',
                     inventory_json TEXT DEFAULT '[]',
                     attributes_json TEXT DEFAULT '{}',
-                    level INTEGER DEFAULT 1,         -- NEUE SPALTE
-                    xp INTEGER DEFAULT 0,            -- NEUE SPALTE
-                    FOREIGN KEY (world_id) REFERENCES worlds (world_id)
+                    level INTEGER DEFAULT 1,
+                    xp INTEGER DEFAULT 0,
+                    FOREIGN KEY (world_id) REFERENCES worlds (world_id),
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
                 );
             """)
             cursor.execute("""
@@ -105,6 +107,7 @@ class DatabaseManager:
         world_name: str,
         lore: str,
         template_key: str,
+        user_id: int,
         char_name: str,
         backstory: str,
         char_attributes: Dict[str, Any],
@@ -113,7 +116,7 @@ class DatabaseManager:
         initial_state_dict: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Creates a new world and player using a provided list of rules and attributes.
+        Creates a new world and a player character linked to a user.
         """
         try:
             conn = self._get_connection()
@@ -130,9 +133,9 @@ class DatabaseManager:
 
             cursor.execute(
                 """INSERT INTO characters
-                   (world_id, name, is_player, backstory, current_location_id, state_json, inventory_json, attributes_json)
-                   VALUES (?, ?, 1, ?, ?, ?, '[]', ?)""",
-                (world_id, char_name, backstory, loc_id, initial_state_json, attributes_json)
+                   (world_id, user_id, name, is_player, backstory, current_location_id, state_json, inventory_json, attributes_json)
+                   VALUES (?, ?, ?, 1, ?, ?, ?, '[]', ?)""",
+                (world_id, user_id, char_name, backstory, loc_id, initial_state_json, attributes_json)
             )
             char_id = cursor.lastrowid
             conn.commit()
@@ -141,6 +144,23 @@ class DatabaseManager:
             logger.error(f"Error creating world and player: {e}", exc_info=True)
             conn.rollback()
             return None
+
+    def is_user_authorized_for_player(self, user_id: int, char_id: int) -> bool:
+        """
+        Checks if a user is the owner of a specific character.
+        Admins are implicitly authorized (checked in API layer).
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM characters WHERE char_id = ?", (char_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False # Character does not exist
+            return row['user_id'] == user_id
+        except sqlite3.Error as e:
+            logger.error(f"DB error during authorization check for user {user_id} and char {char_id}: {e}")
+            return False
 
     def get_npcs_at_location(self, world_id: int, location_id: int) -> List[Dict[str, Any]]:
         """NEU: Holt alle NSCs an einem bestimmten Ort."""
@@ -248,8 +268,15 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT w.world_id, w.name as world_name, c.char_id as player_id, c.name as player_name
-                FROM worlds w JOIN characters c ON w.world_id = c.world_id
+                SELECT 
+                    w.world_id, 
+                    w.name as world_name, 
+                    c.char_id as player_id, 
+                    c.name as player_name,
+                    u.username as owner_name
+                FROM worlds w 
+                JOIN characters c ON w.world_id = c.world_id
+                JOIN users u ON c.user_id = u.user_id
                 WHERE c.is_player = 1 ORDER BY w.created_at DESC
             """)
             return [dict(row) for row in cursor.fetchall()]
