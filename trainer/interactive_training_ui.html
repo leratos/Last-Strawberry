@@ -37,7 +37,6 @@
                     
                     <!-- Schritt 1: Spieleraktion -->
                     <div id="action-step" class="hidden">
-                        <!-- Anzeige des Vorschlags -->
                         <div id="action-suggestion">
                             <h3 class="text-lg font-semibold text-gray-400">1. Spieleraktion</h3>
                             <p id="player-action-text" class="mt-1 p-3 bg-gray-900 rounded-md"></p>
@@ -50,7 +49,6 @@
                                 <button onclick="showCorrectionForm('action')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg">Korrigieren</button>
                             </div>
                         </div>
-                        <!-- Formular zur Korrektur -->
                         <div id="action-correction-form" class="hidden">
                             <h3 class="text-lg font-semibold text-yellow-400">1. Korrektur (Spieleraktion)</h3>
                             <div id="action-form-content" class="mt-2"></div>
@@ -63,9 +61,8 @@
 
                     <!-- Schritt 2: Erzähltext -->
                     <div id="narrative-step" class="hidden">
-                        <!-- Anzeige des Vorschlags -->
                         <div id="narrative-suggestion">
-                            <h3 class="text-lg font-semibold text-gray-400">2. Erzähltext (Konsequenz)</h3>
+                            <h3 id="narrative-step-title" class="text-lg font-semibold text-gray-400">2. Erzähltext (Konsequenz)</h3>
                             <p id="narrative-text-text" class="mt-1 p-3 bg-gray-900 rounded-md"></p>
                             <div class="mt-2 p-3 bg-gray-700 rounded-md">
                                 <p class="font-semibold text-cyan-400">KI-Analyse (Konsequenz):</p>
@@ -77,9 +74,8 @@
                                 <button onclick="deleteExample()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg">Verwerfen</button>
                             </div>
                         </div>
-                         <!-- Formular zur Korrektur -->
                         <div id="narrative-correction-form" class="hidden">
-                            <h3 class="text-lg font-semibold text-yellow-400">2. Korrektur (Erzähltext)</h3>
+                            <h3 id="narrative-correction-title" class="text-lg font-semibold text-yellow-400">2. Korrektur (Erzähltext)</h3>
                             <div id="narrative-form-content" class="mt-2"></div>
                              <div class="flex space-x-4 pt-4">
                                 <button onclick="cancelCorrection('narrative')" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Abbrechen</button>
@@ -108,7 +104,6 @@
     </div>
 
     <script>
-        // --- DOM Elemente ---
         const storyLog = document.getElementById('story-log');
         const nextExampleBtn = document.getElementById('next-example-btn');
         const actionStep = document.getElementById('action-step');
@@ -116,7 +111,6 @@
         const startMessage = document.getElementById('start-message');
         const loader = document.getElementById('loader');
 
-        // --- Zustand der App ---
         let currentExample = {};
         let correctionState = { action: null, narrative: null };
         let lastNarrativeText = null;
@@ -131,11 +125,19 @@
             "ROLL_CHECK": {"attribut": "string", "schwierigkeit": "integer (optional)"},
         };
 
-        // --- API-Kommunikation ---
         async function generateNextExample() {
             startMessage.classList.add('hidden');
             actionStep.classList.add('hidden');
             narrativeStep.classList.add('hidden');
+            
+            const successMsg = workspace.querySelector('.success-message');
+            if(successMsg) successMsg.remove();
+            
+            document.getElementById('action-suggestion').classList.remove('hidden');
+            document.getElementById('narrative-suggestion').classList.remove('hidden');
+            document.getElementById('action-buttons').classList.remove('hidden');
+            document.getElementById('narrative-buttons').classList.remove('hidden');
+
             loader.classList.remove('hidden');
             nextExampleBtn.disabled = true;
 
@@ -151,18 +153,29 @@
                 currentExample = data;
                 lastNarrativeText = data.narrativeText;
                 correctionState = { action: null, narrative: null };
-
-                document.getElementById('player-action-text').textContent = data.playerAction;
-                document.getElementById('action-analysis-json').textContent = JSON.stringify(data.actionAnalysis, null, 2);
-                document.getElementById('narrative-text-text').textContent = data.narrativeText;
-                document.getElementById('narrative-analysis-json').textContent = JSON.stringify(data.narrativeAnalysis, null, 2);
                 
                 updateStoryLog(data.fullStory);
-
                 loader.classList.add('hidden');
-                actionStep.classList.remove('hidden');
-                document.getElementById('action-suggestion').classList.remove('hidden');
-                document.getElementById('action-correction-form').classList.add('hidden');
+
+                if (data.is_initial_turn) {
+                    actionStep.classList.add('hidden');
+                    narrativeStep.classList.remove('hidden');
+                    document.getElementById('narrative-suggestion').classList.remove('hidden');
+                    document.getElementById('narrative-correction-form').classList.add('hidden');
+                    document.getElementById('narrative-step-title').textContent = "Initialer Erzähltext (Spielstart)";
+                    document.getElementById('narrative-text-text').textContent = data.narrativeText;
+                    const analysisElement = document.getElementById('narrative-analysis-json');
+                    analysisElement.textContent = data.narrativeAnalysis ? JSON.stringify(data.narrativeAnalysis, null, 2) : '[]';
+                    correctionState.action = []; 
+                } else {
+                    actionStep.classList.remove('hidden');
+                    narrativeStep.classList.add('hidden');
+                    document.getElementById('action-suggestion').classList.remove('hidden');
+                    document.getElementById('action-correction-form').classList.add('hidden');
+                    document.getElementById('player-action-text').textContent = data.playerAction;
+                    const actionAnalysisElement = document.getElementById('action-analysis-json');
+                    actionAnalysisElement.textContent = data.actionAnalysis ? JSON.stringify(data.actionAnalysis, null, 2) : '[]';
+                }
 
             } catch (error) {
                 console.error('Fehler beim Generieren des Beispiels:', error);
@@ -173,13 +186,16 @@
             }
         }
         
-        // --- Workflow-Steuerung ---
         function processActionStep(mode, correctedData = null) {
             correctionState.action = (mode === 'accept') ? currentExample.actionAnalysis : correctedData;
             actionStep.classList.add('hidden');
             narrativeStep.classList.remove('hidden');
             document.getElementById('narrative-suggestion').classList.remove('hidden');
             document.getElementById('narrative-correction-form').classList.add('hidden');
+            document.getElementById('narrative-step-title').textContent = "2. Erzähltext (Konsequenz)";
+            document.getElementById('narrative-text-text').textContent = currentExample.narrativeText;
+            const narrativeAnalysisElement = document.getElementById('narrative-analysis-json');
+            narrativeAnalysisElement.textContent = currentExample.narrativeAnalysis ? JSON.stringify(currentExample.narrativeAnalysis, null, 2) : '[]';
         }
 
         function processNarrativeStep(mode, correctedData = null) {
@@ -202,7 +218,19 @@
                 });
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-                document.getElementById('narrative-suggestion').innerHTML = `<p class="text-green-400 font-bold text-center mt-4">Beispiel erfolgreich gespeichert!</p>`;
+                // KORRIGIERTE LOGIK: UI-Zustand sauber verwalten
+                const narrativeSuggestionDiv = document.getElementById('narrative-suggestion');
+                const narrativeCorrectionDiv = document.getElementById('narrative-correction-form');
+                
+                narrativeCorrectionDiv.classList.add('hidden'); // Verstecke das Korrekturformular
+                narrativeSuggestionDiv.classList.remove('hidden'); // Mache den Vorschlags-Container wieder sichtbar
+                
+                document.getElementById('narrative-buttons').classList.add('hidden');
+                const finalMsg = document.createElement('p');
+                finalMsg.className = 'text-green-400 font-bold text-center mt-4 success-message';
+                finalMsg.textContent = 'Beispiel erfolgreich gespeichert!';
+                narrativeSuggestionDiv.appendChild(finalMsg);
+                
                 nextExampleBtn.disabled = false;
 
             } catch(error) {
@@ -211,25 +239,52 @@
             }
         }
 
-        function deleteExample() {
-            alert("Beispiel verworfen!");
-            generateNextExample();
-        }
-
-        // --- UI-Helferfunktionen ---
         function updateStoryLog(story) {
             storyLog.innerHTML = '';
-            story.forEach((line, index) => {
+            if (!Array.isArray(story)) {
+                console.error('Story ist kein Array:', story);
+                return;
+            }
+            
+            story.forEach((lineData, index) => {
+                if (!lineData || typeof lineData !== 'object') {
+                    console.warn('Ungültiges lineData-Objekt:', lineData);
+                    return;
+                }
+                
                 const entry = document.createElement('div');
-                const role = (index % 2 === 0) ? 'Spieler' : 'Erzähler';
-                entry.innerHTML = `<strong>${role}:</strong> ${line}`;
+                let role = 'Unbekannt';
+                
+                // Korrekte Rollenbestimmung basierend auf tatsächlicher Rolle
+                if (lineData.role === 'system') {
+                    role = 'System';
+                } else if (lineData.role === 'user') {
+                    role = 'Spieler';
+                } else if (lineData.role === 'assistant') {
+                    role = 'Erzähler';
+                }
+                
+                const content = lineData.content || '[Kein Inhalt]';
+                entry.innerHTML = `<strong>${role}:</strong> ${content}`;
                 entry.className = 'mb-4 text-gray-300';
                 storyLog.appendChild(entry);
             });
             storyLog.scrollTop = storyLog.scrollHeight;
         }
 
-        // --- Korrektur-Formular Logik ---
+        function addToStoryLog(message) {
+            const entry = document.createElement('div');
+            entry.innerHTML = `<strong>System:</strong> ${message}`;
+            entry.className = 'mb-4 text-gray-300';
+            storyLog.appendChild(entry);
+            storyLog.scrollTop = storyLog.scrollHeight;
+        }
+        
+        function deleteExample() {
+            alert("Beispiel verworfen!");
+            generateNextExample();
+        }
+
         function showCorrectionForm(step) {
             document.getElementById(`${step}-suggestion`).classList.add('hidden');
             const formContainer = document.getElementById(`${step}-correction-form`);
@@ -247,7 +302,12 @@
             let formHtml = `<div id="${step}-form-container" class="space-y-4"></div>`;
             formHtml += `<button id="add-command-btn-${step}" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm">+ Befehl hinzufügen</button>`;
             formContent.innerHTML = formHtml;
-            document.getElementById(`add-command-btn-${step}`).addEventListener('click', () => addCommandBlock(step));
+            
+            // Event-Listener sicher hinzufügen (entfernt automatisch alte)
+            const addBtn = document.getElementById(`add-command-btn-${step}`);
+            if (addBtn) {
+                addBtn.addEventListener('click', () => addCommandBlock(step));
+            }
             addCommandBlock(step);
         }
         
@@ -322,7 +382,6 @@
             }
         }
 
-        // --- Event Listeners ---
         nextExampleBtn.addEventListener('click', generateNextExample);
         addToStoryLog("Willkommen! Der Story-Verlauf wird hier angezeigt.");
     </script>

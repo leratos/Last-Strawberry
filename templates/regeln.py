@@ -64,6 +64,7 @@ Du darfst ausschließlich die in dieser Tabelle definierten Befehle und Paramete
 | Befehl | Beschreibung | Parameter (JSON-Schema) |
 |---|---|---|
 | `NPC_CREATE` | Registriert einen neuen Charakter. | `{{ "name": "...", "backstory": "(optional)", "disposition": "(optional)" }}` |
+| `NPC_UPDATE` | Ändert den Namen eines bestehenden NSCs. | `{{ "old_name": "...", "new_name": "..." }}` |
 | `PLAYER_MOVE` | Bewegt den Spieler an einen neuen Ort. | `{{ "location_name": "..." }}` |
 | `NPC_MOVE` | Bewegt einen NSC oder entfernt ihn. | `{{ "npc_name": "...", "location_name": "(optional)" }}` |
 | `PLAYER_STATE_UPDATE` | Aktualisiert den Zustand des Spielers. | `{{ "updates": {{ "key": "value" }} }}` |
@@ -72,7 +73,8 @@ Du darfst ausschließlich die in dieser Tabelle definierten Befehle und Paramete
 
 ### Die 4 Goldenen Regeln ###
 1.  **TRENNUNG VON AKTION UND KONSEQUENZ:**
-    - `ROLL_CHECK` und `PLAYER_MOVE` kommen **NUR** aus der `SPIELER-AKTION`. Ein `ROLL_CHECK` wird nur ausgelöst, wenn der Spieler explizit etwas "versucht" oder eine Handlung mit **ungewissem Ausgang** unternimmt.
+    - `ROLL_CHECK` und `PLAYER_MOVE` kommen **NUR** aus der `SPIELER-AKTION`. Ein `ROLL_CHECK` wird nur ausgelöst, wenn der Spieler explizit etwas "versucht" oder eine Handlung mit **ungewissem Ausgang** unternimmt. Schlüsselwörter: "versuche", "will", "möchte", "teste".
+    - **WICHTIG:** Wenn der ERZÄHLTEXT bereits das Ergebnis einer Probe beschreibt (Erfolg/Misserfolg), dann war die Probe bereits implizit. Erstelle KEINEN `ROLL_CHECK`.
     - Alle anderen Befehle (`NPC_CREATE`, `NPC_MOVE`, `*_STATE_UPDATE`) kommen **NUR** aus dem `ERZÄHLTEXT` (der Konsequenz).
 2.  **KONTEXT IST GESETZ:** Prüfe **IMMER** den `KONTEXT`. Erstelle **NIEMALS** einen `NPC_CREATE` für einen Charakter, der bereits im Kontext steht oder für den Spieler selbst (`{player_name}`).
 3.  **SCHEMA-TREUE:** Halte dich **EXAKT** an die Befehlsnamen und die deutschen Schlüsselwörter (`attribut`, `schwierigkeit`). Verwende nur Attribute aus der Liste: `{char_attributes}`.
@@ -162,6 +164,37 @@ AUSGABE:
 ```json
 []
 ```
+
+**Beispiel 5: NPC verlässt die Szene**
+KONTEXT:
+Anwesende Charaktere:
+- Wache: Ein grimmiger Soldat...
+SPIELER-AKTION:
+Ich sage der Wache, sie kann gehen.
+ERZÄHLTEXT:
+Die Wache nickt knapp und verlässt wortlos den Raum.
+AUSGABE:
+```json
+[
+  {{
+    "command": "NPC_MOVE",
+    "npc_name": "Wache"
+  }}
+]
+```
+
+**Beispiel 6: Implizite vs. Explizite Proben**
+KONTEXT:
+Keine Charaktere anwesend.
+SPIELER-AKTION:
+Ich schaue mich um.
+ERZÄHLTEXT:
+Du entdeckst eine versteckte Tür hinter einem Wandteppich.
+AUSGABE:
+```json
+[]
+```
+(KEIN ROLL_CHECK, da die Probe bereits im Hintergrund erfolgte)
 ---
 ### Deine Aufgabe ###
 Führe nun die Analyse für die folgende Aufgabe durch.
