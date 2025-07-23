@@ -5,83 +5,199 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Last-Strawberry - Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #121212; color: #e0e0e0; }
-        .modal { background-color: rgba(0,0,0,0.7); }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+            color: #e0e0e0; 
+        }
+        .modal { 
+            background-color: rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+        }
+        .glass-card {
+            background: rgba(30, 30, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3);
+        }
+        .input-field {
+            background: rgba(42, 42, 42, 0.8);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white p-8">
+<body class="min-h-screen p-8">
+
+    <!-- Header -->
+    <div class="max-w-7xl mx-auto mb-8">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg flex items-center justify-center">
+                    <i data-feather="shield" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-3xl font-bold text-white">Admin-Panel</h1>
+                    <p class="text-gray-400">Systemverwaltung und KI-Training</p>
+                </div>
+            </div>
+            <a href="index.html" class="glass-card px-4 py-2 rounded-lg hover:bg-opacity-80 transition-all text-white">
+                <span class="flex items-center space-x-2">
+                    <i data-feather="arrow-left" class="w-4 h-4"></i>
+                    <span>Zurück zum Spiel</span>
+                </span>
+            </a>
+        </div>
+    </div>
 
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-3xl font-bold text-purple-300 mb-8">Admin-Panel</h1>
-
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <!-- Benutzerverwaltung -->
-            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 class="text-2xl font-semibold mb-4">Benutzerverwaltung</h2>
-                <button id="add-user-btn" class="w-full mb-4 px-4 py-2 font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Neuen Benutzer anlegen</button>
-                <div id="user-list" class="space-y-2">
+            <div class="glass-card p-6 rounded-xl shadow-lg">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-semibold text-white flex items-center">
+                        <i data-feather="users" class="w-6 h-6 mr-3"></i>
+                        Benutzerverwaltung
+                    </h2>
+                    <button id="add-user-btn" class="btn-primary px-4 py-2 rounded-lg font-semibold text-white transition-all">
+                        <span class="flex items-center space-x-2">
+                            <i data-feather="user-plus" class="w-4 h-4"></i>
+                            <span>Neuer Benutzer</span>
+                        </span>
+                    </button>
+                </div>
+                <div id="user-list" class="space-y-3">
                     <!-- Benutzer werden hier dynamisch eingefügt -->
                 </div>
             </div>
 
             <!-- KI-Training -->
-            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 class="text-2xl font-semibold mb-4">KI-Training</h2>
+            <div class="glass-card p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-semibold mb-6 text-white flex items-center">
+                    <i data-feather="cpu" class="w-6 h-6 mr-3"></i>
+                    KI-Training
+                </h2>
+                
                 <!-- Analyse-Modell -->
-                <div class="bg-gray-700 p-4 rounded-md mb-4">
-                    <h3 class="text-xl font-semibold">Analyse-Modell</h3>
-                    <p class="text-gray-400 text-sm my-2">Trainiert das allgemeine Modell zur Befehlsextraktion.</p>
-                    <button id="train-analysis-btn" class="w-full px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">Analyse-Training starten</button>
+                <div class="glass-card p-4 rounded-lg mb-4">
+                    <h3 class="text-lg font-semibold text-white flex items-center mb-2">
+                        <i data-feather="search" class="w-5 h-5 mr-2"></i>
+                        Analyse-Modell
+                    </h3>
+                    <p class="text-gray-400 text-sm mb-4">Trainiert das allgemeine Modell zur Befehlsextraktion.</p>
+                    <button id="train-analysis-btn" class="w-full px-4 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
+                        <span class="flex items-center justify-center space-x-2">
+                            <i data-feather="play" class="w-4 h-4"></i>
+                            <span>Analyse-Training starten</span>
+                        </span>
+                    </button>
                 </div>
 
                 <!-- Erzähl-Modell -->
-                <div class="bg-gray-700 p-4 rounded-md">
-                    <h3 class="text-xl font-semibold">Erzähl-Modell (Welt-spezifisch)</h3>
-                    <p class="text-gray-400 text-sm my-2">Trainiert ein Modell für eine spezifische Welt.</p>
-                    <div class="flex items-center space-x-4">
-                        <select id="world-select" class="flex-grow px-4 py-2 text-white bg-gray-800 border border-gray-600 rounded-md"></select>
-                        <button id="train-narrative-btn" class="px-6 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500" disabled>Training starten</button>
+                <div class="glass-card p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-white flex items-center mb-2">
+                        <i data-feather="book-open" class="w-5 h-5 mr-2"></i>
+                        Erzähl-Modell (Welt-spezifisch)
+                    </h3>
+                    <p class="text-gray-400 text-sm mb-4">Trainiert ein Modell für eine spezifische Welt.</p>
+                    <div class="space-y-3">
+                        <select id="world-select" class="input-field w-full px-4 py-3 text-white rounded-lg focus:outline-none">
+                            <option value="">-- Bitte eine Welt wählen --</option>
+                        </select>
+                        <button id="train-narrative-btn" class="w-full px-4 py-3 font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-500 transition-colors" disabled>
+                            <span class="flex items-center justify-center space-x-2">
+                                <i data-feather="play" class="w-4 h-4"></i>
+                                <span>Training starten</span>
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Status-Log -->
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mt-8">
-            <h2 class="text-2xl font-semibold mb-4">Status-Log</h2>
-            <div id="status-log" class="bg-black h-48 p-4 rounded font-mono text-sm overflow-y-auto">
-                <p class="text-gray-500">Warte auf Aktionen...</p>
+        <div class="glass-card p-6 rounded-xl shadow-lg mt-8">
+            <h2 class="text-2xl font-semibold mb-4 text-white flex items-center">
+                <i data-feather="terminal" class="w-6 h-6 mr-3"></i>
+                Status-Log
+            </h2>
+            <div id="status-log" class="bg-black bg-opacity-50 h-48 p-4 rounded-lg font-mono text-sm overflow-y-auto border border-gray-700">
+                <div class="flex items-center space-x-2 text-gray-500">
+                    <i data-feather="clock" class="w-4 h-4"></i>
+                    <span>Warte auf Aktionen...</span>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Modal für "Neuen Benutzer anlegen" -->
-    <div id="user-modal" class="fixed inset-0 w-full h-full items-center justify-center p-8 modal hidden">
-        <div class="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-6">
-            <h2 id="modal-title" class="text-2xl font-bold mb-4">Neuen Benutzer anlegen</h2>
+    <div id="user-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-8 hidden">
+        <div class="glass-card w-full max-w-md rounded-xl shadow-2xl p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="modal-title" class="text-2xl font-bold text-white">Neuen Benutzer anlegen</h2>
+                <button id="close-user-modal" class="p-2 hover:bg-gray-700 rounded-lg transition-colors">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
             <input type="hidden" id="modal-user-id">
             <div class="space-y-4">
-                <input type="text" id="modal-username" placeholder="Benutzername" class="w-full px-4 py-2 text-white bg-gray-900 border-gray-700 rounded">
-                <input type="password" id="modal-password" placeholder="Neues Passwort (leer lassen, um nicht zu ändern)" class="w-full px-4 py-2 text-white bg-gray-900 border-gray-700 rounded">
                 <div>
-                    <label class="font-semibold">Rollen:</label>
-                    <div class="flex space-x-4 mt-2">
-                        <label><input type="checkbox" id="role-admin" class="form-checkbox bg-gray-900"> Admin</label>
-                        <label><input type="checkbox" id="role-gamemaster" class="form-checkbox bg-gray-900"> GameMaster</label>
+                    <label class="text-sm font-medium text-gray-300 block mb-2">Benutzername</label>
+                    <input type="text" id="modal-username" placeholder="Benutzername eingeben" 
+                           class="input-field w-full px-4 py-3 text-white rounded-lg focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-300 block mb-2">Passwort</label>
+                    <input type="password" id="modal-password" placeholder="Neues Passwort (leer lassen, um nicht zu ändern)" 
+                           class="input-field w-full px-4 py-3 text-white rounded-lg focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-300 block mb-3">Rollen:</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="role-admin" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500">
+                            <span class="text-white">Administrator</span>
+                        </label>
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="role-gamemaster" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500">
+                            <span class="text-white">GameMaster</span>
+                        </label>
                     </div>
                 </div>
             </div>
-            <div class="flex justify-end space-x-4 mt-6">
-                <button id="cancel-user-modal-btn" class="px-6 py-2 bg-gray-600 rounded hover:bg-gray-700">Abbrechen</button>
-                <button id="save-user-modal-btn" class="px-6 py-2 bg-blue-600 rounded hover:bg-blue-700">Speichern</button>
+            
+            <div class="flex space-x-3 mt-6">
+                <button id="cancel-user-modal-btn" class="flex-1 px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors">
+                    Abbrechen
+                </button>
+                <button id="save-user-modal-btn" class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors">
+                    Speichern
+                </button>
             </div>
         </div>
     </div>
 
     <script src="admin.js" defer></script>
+    <script>
+        // Initialize Feather icons
+        feather.replace();
+    </script>
 </body>
 </html>
