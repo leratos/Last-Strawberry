@@ -37,7 +37,8 @@ def main():
         logger.info("Aktualisierung der DM-Daten abgeschlossen.")
         print("-" * 50)
     else:
-        logger.warning("Konnte das Skript zur Datengenerierung nicht importieren.")
+        logger.warning("Konnte das Skript zur Datengenerierung nicht importieren. Überspringe diesen Schritt.")
+        
     # Schritt 2: Training durchführen
     db_manager = DatabaseManager()
     
@@ -46,7 +47,7 @@ def main():
     
     config = {
         "max_seq_length": 1024,
-        "output_dir": str(temp_output_dir) # Sage dem Tuner, wohin er speichern soll
+        "output_dir": str(temp_output_dir)
     } 
     fine_tuner = HFFineTuner(
         db_manager=db_manager,
@@ -60,7 +61,6 @@ def main():
 
     if not success:
         logger.error("Fine-Tuning ist fehlgeschlagen. Es werden keine Dateien verschoben oder gelöscht.")
-        # Lösche das temporäre Verzeichnis, falls es erstellt wurde
         if temp_output_dir.exists():
             shutil.rmtree(temp_output_dir)
         return
@@ -68,23 +68,33 @@ def main():
     # Schritt 3: Aufräumen und Versionieren nach erfolgreichem Training
     logger.info("Training erfolgreich. Versioniere den neuen Adapter...")
     
-    # Finde alle alten Analyse-Adapter im Hauptverzeichnis
-    for old_adapter in project_root.glob("analysis_adapter_v*"):
+    # Finde alle alten Analyse-Adapter im Zielverzeichnis 'adapter'
+    adapter_dir = project_root / "adapter"
+    adapter_dir.mkdir(exist_ok=True) # Stelle sicher, dass der Ordner existiert
+
+    for old_adapter in adapter_dir.glob("analysis_adapter_v*"):
         if old_adapter.is_dir():
-            logger.info(f"Lösche alten Adapter: {old_adapter.name}")
-            shutil.rmtree(old_adapter)
+            logger.info(f"Versuche, alten Adapter zu löschen: {old_adapter.name}")
+            try:
+                # NEU: Robuster Löschversuch mit Fehlerbehandlung
+                shutil.rmtree(old_adapter)
+                logger.info(f"Alter Adapter '{old_adapter.name}' erfolgreich gelöscht.")
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Konnte alten Adapter '{old_adapter.name}' nicht löschen: {e}")
+                logger.warning("BITTE LÖSCHE DEN ORDNER MANUELL, um Konflikte zu vermeiden.")
 
     # Erstelle einen neuen, eindeutigen Namen für den Adapter
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     new_adapter_name = f"analysis_adapter_v{timestamp}"
-    final_adapter_path = project_root / new_adapter_name
+    final_adapter_path = adapter_dir / new_adapter_name
     
     # Verschiebe und benenne den neuen Adapter um
     try:
         shutil.move(str(temp_output_dir), str(final_adapter_path))
-        logger.info(f"Neuer Adapter erfolgreich nach '{final_adapter_path.name}' verschoben.")
+        logger.info(f"Neuer Adapter erfolgreich nach '{final_adapter_path}' verschoben.")
     except Exception as e:
-        logger.error(f"Fehler beim Verschieben des neuen Adapters: {e}")
+        logger.error(f"FATALER FEHLER: Konnte den neuen Adapter von '{temp_output_dir}' nicht verschieben: {e}")
+        logger.error("Der neue Adapter befindet sich noch im temporären Ordner. Bitte manuell verschieben!")
 
     print("-" * 50)
     logger.info("Analyse-Modell-Training und Verwaltung abgeschlossen.")

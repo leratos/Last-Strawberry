@@ -68,8 +68,8 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     return user
 
 # --- Konfiguration ---
-AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.run.app" # Die Adresse unseres Docker-Containers
-# AI_SERVICE_URL = "http://127.0.0.1:8080"  # Lokaler Server für Entwicklung
+# AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.run.app" # Die Adresse unseres Docker-Containers
+AI_SERVICE_URL = "http://127.0.0.1:8080"  # Lokaler Server für Entwicklung
 # --- FastAPI App ---
 key_path = project_root / "backend_server" / "key.json"
 if key_path.exists():
@@ -214,6 +214,165 @@ async def change_user_status(user_id: int, is_active: bool):
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": f"User status set to {'active' if is_active else 'inactive'}"}
+
+# --- User Profile Management ---
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.put("/profile/password", tags=["Profile"])
+async def change_own_password(request: PasswordChangeRequest, current_user: dict = Depends(get_current_user)):
+    """Ermöglicht es Benutzern, ihr eigenes Passwort zu ändern."""
+    # Aktuelles Passwort verifizieren
+    if not verify_password(request.current_password, current_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch")
+    
+    # Neues Passwort validieren
+    if len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Neues Passwort muss mindestens 6 Zeichen lang sein")
+    
+    # Passwort aktualisieren
+    success = db_manager.update_user_password(current_user["user_id"], get_password_hash(request.new_password))
+    if not success:
+        raise HTTPException(status_code=500, detail="Passwort konnte nicht aktualisiert werden")
+    
+    return {"message": "Passwort erfolgreich geändert"}
+
+@app.get("/profile", tags=["Profile"])
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    """Gibt die Profil-Informationen des aktuellen Benutzers zurück."""
+    return {
+        "user_id": current_user["user_id"],
+        "username": current_user["username"],
+        "roles": current_user.get("roles", []),
+        "created_at": current_user.get("created_at", ""),
+        "is_active": current_user.get("is_active", True)
+    }
+
+# --- Story Export & Management ---
+from fastapi.responses import Response
+import json
+from datetime import datetime
+
+@app.get("/worlds/{world_id}/story/export", tags=["Story"])
+async def export_story(world_id: int, format: str = "txt", current_user: dict = Depends(get_current_user)):
+    """Exportiert die komplette Story einer Welt in verschiedenen Formaten."""
+    try:
+        # Hole alle Story-Events für diese Welt
+        story_events = db_manager.get_story_events_for_world(world_id)
+        
+        if not story_events:
+            raise HTTPException(status_code=404, detail="Keine Story-Events für diese Welt gefunden")
+        
+        # Hole Welt-Informationen
+        world_info = db_manager.get_world_info(world_id)
+        player_info = db_manager.get_player_info_for_world(world_id)
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"{world_info['world_name']}_{timestamp}"
+        
+        if format.lower() == "json":
+            # JSON Export mit vollständigen Metadaten
+            export_data = {
+                "metadata": {
+                    "world_name": world_info['world_name'],
+                    "character_name": player_info['character_name'] if player_info else "Unknown",
+                    "export_date": datetime.now().isoformat(),
+                    "total_events": len(story_events)
+                },
+                "world_lore": world_info.get('lore', ''),
+                "character_backstory": player_info.get('backstory', '') if player_info else '',
+                "story_events": story_events
+            }
+            
+            content = json.dumps(export_data, indent=2, ensure_ascii=False)
+            media_type = "application/json"
+            filename += ".json"
+            
+        elif format.lower() == "markdown":
+            # Markdown Export für bessere Lesbarkeit
+            content = f"# {world_info['world_name']} - Abenteuer-Log\n\n"
+            content += f"**Charakter:** {player_info['character_name'] if player_info else 'Unknown'}\n"
+            content += f"**Exportiert am:** {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+            
+            if world_info.get('lore'):
+                content += f"## Welt-Lore\n{world_info['lore']}\n\n"
+            
+            if player_info and player_info.get('backstory'):
+                content += f"## Charakter-Hintergrund\n{player_info['backstory']}\n\n"
+            
+            content += "## Abenteuer-Verlauf\n\n"
+            
+            for i, event in enumerate(story_events, 1):
+                event_time = datetime.fromisoformat(event['timestamp']).strftime('%d.%m.%Y %H:%M')
+                content += f"### {i}. {event_time}\n\n"
+                
+                if event['event_type'] == 'PLAYER_ACTION':
+                    content += f"**Spieler-Aktion:** {event['content']}\n\n"
+                elif event['event_type'] == 'STORY':
+                    content += f"{event['content']}\n\n"
+                elif event['event_type'] == 'LEVEL_UP':
+                    content += f"🎉 **Level Up!** {event['content']}\n\n"
+                
+                content += "---\n\n"
+            
+            media_type = "text/markdown"
+            filename += ".md"
+            
+        else:  # TXT format (default)
+            # Einfacher Text Export
+            content = f"{world_info['world_name']} - Abenteuer-Log\n"
+            content += f"Charakter: {player_info['character_name'] if player_info else 'Unknown'}\n"
+            content += f"Exportiert am: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            content += "=" * 50 + "\n\n"
+            
+            if world_info.get('lore'):
+                content += f"WELT-LORE:\n{world_info['lore']}\n\n"
+            
+            if player_info and player_info.get('backstory'):
+                content += f"CHARAKTER-HINTERGRUND:\n{player_info['backstory']}\n\n"
+            
+            content += "ABENTEUER-VERLAUF:\n\n"
+            
+            for i, event in enumerate(story_events, 1):
+                event_time = datetime.fromisoformat(event['timestamp']).strftime('%d.%m.%Y %H:%M')
+                content += f"{i}. [{event_time}]\n"
+                
+                if event['event_type'] == 'PLAYER_ACTION':
+                    content += f"Spieler: {event['content']}\n"
+                elif event['event_type'] == 'STORY':
+                    content += f"Story: {event['content']}\n"
+                elif event['event_type'] == 'LEVEL_UP':
+                    content += f"Level Up: {event['content']}\n"
+                
+                content += "\n" + "-" * 40 + "\n\n"
+            
+            media_type = "text/plain"
+            filename += ".txt"
+        
+        # Return file as download
+        return Response(
+            content=content.encode('utf-8'),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": f"{media_type}; charset=utf-8"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exporting story for world {world_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Fehler beim Exportieren der Story: {str(e)}")
+
+@app.get("/worlds/{world_id}/statistics", tags=["Story"])
+async def get_world_statistics(world_id: int, current_user: dict = Depends(get_current_user)):
+    """Gibt Statistiken für eine Welt zurück."""
+    try:
+        stats = db_manager.get_world_statistics(world_id)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting statistics for world {world_id}: {e}")
+        raise HTTPException(status_code=500, detail="Fehler beim Laden der Statistiken")
 
 def run_script_in_background(allowed_key: str, world_id: int = None, world_name: str = None):
     """Führt ein zugelassenes Python-Skript im Hintergrund aus und validiert die Argumente."""
@@ -389,6 +548,17 @@ async def load_game_summary(world_id: int, player_id: int, current_user: dict = 
     
     summary = await game_manager_instance.get_load_game_summary()
     return {"response": summary}
+
+@app.get("/")
+async def root():
+    """Root endpoint für die API."""
+    return {
+        "message": "Last-Strawberry Backend Server",
+        "version": "1.4.0",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 @app.get("/health")
 async def root_health_check():

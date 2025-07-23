@@ -45,9 +45,15 @@ class InferenceService:
         self.base_model: Optional[AutoModelForCausalLM] = None
         self.model: Optional[AutoModelForCausalLM] = None
         self.tokenizer: Optional[AutoTokenizer] = None
+        self.pipe: Optional[pipeline] = None
         self.base_model_loaded = False
         self.device = config.DEVICE
         self.load_status = "Not Loaded"
+        
+        # Adapter-Cache für bessere Performance bei häufigen Wechseln
+        self.adapter_cache = {}
+        self.current_adapter_type = None
+        self.current_world_name = None
 
         if not HF_LIBRARIES_AVAILABLE:
             self.load_status = "Error: Required libraries (transformers, peft) not found."
@@ -55,6 +61,7 @@ class InferenceService:
             return
 
         self._load_base_model_and_tokenizer()
+        self._initialize_pipeline()
 
     def _find_adapter_for_world(self, world_name: str) -> Optional[str]:
         """Finds the most recent adapter for a specific world name."""
@@ -127,9 +134,22 @@ class InferenceService:
             self.model = None
             self.tokenizer = None
     
+    def _initialize_pipeline(self):
+        """Initializes the text-generation pipeline once."""
+        if self.model and self.tokenizer and not self.pipe:
+            logger.info("Initializing text-generation pipeline...")
+            self.pipe = pipeline(
+                "text-generation",
+                model=self.model,
+                tokenizer=self.tokenizer,
+                torch_dtype=config.BNB_4BIT_COMPUTE_DTYPE,
+                device_map=self.device,
+            )
+            logger.info("Pipeline initialized successfully.")
+
     def _find_specific_adapter(self, adapter_name_part: str) -> Optional[str]:
         """Findet den neuesten Adapter, der einen bestimmten Text im Namen enthält."""
-        adapter_base_dir = Path("./") # Wir suchen im Hauptverzeichnis
+        adapter_base_dir = Path("./adapter")
         if not adapter_base_dir.exists():
             return None
         
@@ -147,93 +167,124 @@ class InferenceService:
     def switch_to_adapter(self, adapter_type: str, world_name: str):
         """
         Wechselt den aktiven LoRA-Adapter des Modells dynamisch basierend auf der Anfrage.
+        Optimiert mit Caching für bessere Performance.
         """
+        # Cache-Check: Wenn derselbe Adapter bereits aktiv ist, nichts tun
+        if (self.current_adapter_type == adapter_type and 
+            self.current_world_name == world_name and 
+            self.model != self.base_model):
+            logger.info(f"Adapter {adapter_type} for world '{world_name}' already active. Skipping switch.")
+            return
+
         logger.info(f"Switching to {adapter_type} adapter for world '{world_name}'...")
         adapter_path = None
+        cache_key = f"{adapter_type}_{world_name}"
+        
         if adapter_type == 'NARRATIVE':
             adapter_path = self._find_adapter_for_world(world_name)
         elif adapter_type == 'ANALYSIS':
             adapter_path = self._find_specific_adapter("analysis_adapter")
+            cache_key = f"{adapter_type}_global"  # Analyse-Adapter ist weltunabhängig
         else:
             logger.error(f"Unknown adapter type '{adapter_type}'")
             self.model = self.base_model
+            self.current_adapter_type = None
+            self.current_world_name = None
             return
 
-        self.model = self.base_model
-        self.load_status = "Base model loaded"
-
-        if adapter_path and Path(adapter_path).exists():
-            try:
-                self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-                self.load_status = f"Model with {adapter_type} adapter loaded from {adapter_path}"
-                logger.info(self.load_status)
-            except Exception as e:
-                logger.error(f"Failed to load adapter from {adapter_path}: {e}", exc_info=True)
-                self.load_status = f"Error loading {adapter_type} adapter. Using base model."
+        # Prüfe Cache
+        if cache_key in self.adapter_cache and adapter_path:
+            logger.info(f"Loading adapter from cache: {cache_key}")
+            self.model = self.adapter_cache[cache_key]
         else:
-            logger.info(f"No adapter path found for {adapter_type} and world '{world_name}'. Using base model.")
+            # Lade Adapter neu
+            self.model = self.base_model
+            if adapter_path and Path(adapter_path).exists():
+                try:
+                    self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+                    # In Cache speichern (begrenzt auf 3 Adapter um Speicher zu schonen)
+                    if len(self.adapter_cache) >= 3:
+                        # Entferne ältesten Cache-Eintrag
+                        oldest_key = next(iter(self.adapter_cache))
+                        del self.adapter_cache[oldest_key]
+                        logger.info(f"Removed oldest adapter from cache: {oldest_key}")
+                    
+                    self.adapter_cache[cache_key] = self.model
+                    logger.info(f"Cached new adapter: {cache_key}")
+                    self.load_status = f"Model with {adapter_type} adapter loaded from {adapter_path}"
+                except Exception as e:
+                    logger.error(f"Failed to load adapter from {adapter_path}: {e}", exc_info=True)
+                    self.load_status = f"Error loading {adapter_type} adapter. Using base model."
+            else:
+                logger.info(f"No adapter path found for {adapter_type} and world '{world_name}'. Using base model.")
         
+        # Update Pipeline nur wenn nötig
+        if self.pipe and hasattr(self.pipe, 'model'):
+            self.pipe.model = self.model
+            
         self.model.eval()
+        self.current_adapter_type = adapter_type
+        self.current_world_name = world_name
 
     def generate_story_response(self, prompt: str) -> str:
         """
         Generates a story response from the AI based on a given prompt.
+        Optimiert für bessere GPU-Nutzung durch direkte Tokenizer/Model-Verwendung.
         """
         if not self.model or not self.tokenizer:
-            return "Fehler: Das KI-Modell ist nicht geladen."
+            return "Fehler: Model/Tokenizer ist nicht initialisiert."
 
         logger.info("Generating AI response...")
         try:
-            model_max_length = self.model.config.max_position_embeddings
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+            # Direkte Tokenizer-Nutzung für bessere Kontrolle
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True)
+            
+            # GPU-Speicher optimieren
+            if torch.cuda.is_available():
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
             prompt_tokens = inputs['input_ids'].shape[1]
+            model_max_length = getattr(self.model.config, 'max_position_embeddings', 2048)
             safety_buffer = 150
-            max_new_tokens_dynamic = model_max_length - prompt_tokens - safety_buffer
+            max_new_tokens_dynamic = min(512, model_max_length - prompt_tokens - safety_buffer)
             
             if max_new_tokens_dynamic <= 0:
                 logger.error(f"Prompt is too long ({prompt_tokens} tokens) for the model to generate a response.")
                 return "[Fehler: Der Kontext der Geschichte ist zu lang geworden.]"
-            pipe = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                torch_dtype=config.BNB_4BIT_COMPUTE_DTYPE,
-                device_map=self.device,
-            )
 
-            terminators = [
-                pipe.tokenizer.eos_token_id,
-                pipe.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-            ]
+            # Direkte Model-Generierung ohne Pipeline für bessere Performance
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    inputs['input_ids'],
+                    attention_mask=inputs.get('attention_mask'),
+                    max_new_tokens=max_new_tokens_dynamic,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    repetition_penalty=1.15,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=[
+                        self.tokenizer.eos_token_id,
+                        self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+                    ],
+                    use_cache=True  # Aktiviert Key-Value-Cache für bessere Performance
+                )
 
-            sequences = pipe(
-                prompt,
-                max_new_tokens=max_new_tokens_dynamic,
-                eos_token_id=terminators,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                repetition_penalty=1.15, 
-                pad_token_id=pipe.tokenizer.eos_token_id
-            )
-
-            if sequences and isinstance(sequences, list):
-                full_text = sequences[0]['generated_text']
-                
-                # VERBESSERTE LOGIK: Finde die Antwort des Assistenten
-                assistant_header = "<|start_header_id|>assistant<|end_header_id|>\n"
-                assistant_pos = full_text.rfind(assistant_header)
-
-                if assistant_pos != -1:
-                    # Nimm den Text nach dem letzten Assistenten-Header
-                    response = full_text[assistant_pos + len(assistant_header):].strip()
-                    # Entferne das End-Token, falls vorhanden
-                    if response.endswith("<|eot_id|>"):
-                        response = response[:-len("<|eot_id|>")].strip()
-                    
-                    if response: # Stelle sicher, dass die Antwort nicht leer ist
-                        logger.info("AI response generated successfully.")
-                        return response
+            # Dekodiere die Antwort
+            generated_tokens = outputs[0][prompt_tokens:]  # Nur neue Tokens
+            full_response = self.tokenizer.decode(generated_tokens, skip_special_tokens=False)
+            
+            # Säubere die Antwort
+            response = full_response.strip()
+            if response.endswith("<|eot_id|>"):
+                response = response[:-len("<|eot_id|>")].strip()
+            
+            if response:
+                logger.info("AI response generated successfully.")
+                # GPU-Speicher freigeben
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return response
 
             logger.warning("AI did not generate a valid response or the response was empty.")
             return "Die KI schweigt..."

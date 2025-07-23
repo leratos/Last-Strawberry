@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const userListContainer = document.getElementById('user-list');
     const addUserBtn = document.getElementById('add-user-btn');
     const userModal = document.getElementById('user-modal');
+    const closeUserModal = document.getElementById('close-user-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalUserId = document.getElementById('modal-user-id');
     const modalUsername = document.getElementById('modal-username');
@@ -24,15 +25,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Anwendungs-Zustand ---
     const authToken = localStorage.getItem('lastStrawberryToken');
 
-    // --- Funktionen ---
+    // --- Utility Functions ---
+    
+    function showModal(modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        setTimeout(() => feather.replace(), 100);
+    }
+
+    function hideModal(modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
 
     function logStatus(message, type = 'info') {
-        const p = document.createElement('p');
+        const p = document.createElement('div');
         const timestamp = new Date().toLocaleTimeString();
-        p.innerHTML = `<span class="text-gray-500">${timestamp}:</span> ${message}`;
-        if (type === 'error') p.className = 'text-red-400';
-        else if (type === 'success') p.className = 'text-green-400';
+        p.className = 'flex items-center space-x-2 mb-2';
+        
+        let iconName = 'info';
+        let colorClass = 'text-blue-400';
+        
+        if (type === 'error') {
+            iconName = 'alert-circle';
+            colorClass = 'text-red-400';
+        } else if (type === 'success') {
+            iconName = 'check-circle';
+            colorClass = 'text-green-400';
+        }
+        
+        p.innerHTML = `
+            <i data-feather="${iconName}" class="w-4 h-4 ${colorClass}"></i>
+            <span class="text-gray-500">${timestamp}:</span>
+            <span class="${colorClass}">${message}</span>
+        `;
+        
         statusLog.appendChild(p);
+        feather.replace();
         statusLog.scrollTop = statusLog.scrollHeight;
     }
 
@@ -40,7 +69,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const headers = { 'Authorization': `Bearer ${authToken}` };
         if (body) headers['Content-Type'] = 'application/json';
         
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, { 
+            method, 
+            headers, 
+            body: body ? JSON.stringify(body) : null 
+        });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
         return data;
@@ -60,13 +93,11 @@ document.addEventListener('DOMContentLoaded', () => {
         modalRoleGm.checked = user ? user.roles.includes('gamemaster') : true;
         modalRoleAdmin.disabled = user && user.user_id === 1;
 
-        userModal.classList.remove('hidden');
-        userModal.classList.add('flex');
+        showModal(userModal);
     }
 
-    function closeUserModal() {
-        userModal.classList.add('hidden');
-        userModal.classList.remove('flex');
+    function closeUserModalHandler() {
+        hideModal(userModal);
     }
 
     async function saveUser() {
@@ -86,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await apiRequest('/admin/users', 'POST', { username, password, roles });
                 logStatus(`Benutzer ${username} erfolgreich erstellt.`, 'success');
             }
-            closeUserModal();
+            closeUserModalHandler();
             fetchUsers();
         } catch (error) {
             logStatus(`Fehler beim Speichern des Benutzers: ${error.message}`, 'error');
@@ -98,28 +129,62 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const users = await apiRequest('/admin/users');
             userListContainer.innerHTML = '';
+            
+            if (users.length === 0) {
+                userListContainer.innerHTML = `
+                    <div class="text-center py-8">
+                        <i data-feather="users" class="w-12 h-12 mx-auto text-gray-500 mb-4"></i>
+                        <p class="text-gray-400">Noch keine Benutzer vorhanden.</p>
+                    </div>
+                `;
+                feather.replace();
+                return;
+            }
+            
             users.forEach(user => {
                 const userDiv = document.createElement('div');
-                userDiv.className = 'p-3 bg-gray-700 rounded flex justify-between items-center';
-                userDiv.innerHTML = `<div>
-                    <p class="font-semibold">${user.username} <span class="text-gray-400 text-sm">(ID: ${user.user_id})</span></p>
-                    <p class="text-sm text-gray-400">Rollen: ${user.roles.join(', ')}</p>
-                </div>
-                <div class="flex space-x-2">
-                    <button data-user-id="${user.user_id}" class="edit-user-btn px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-700">Bearbeiten</button>
-                </div>`;
+                userDiv.className = 'glass-card p-4 rounded-lg flex justify-between items-center hover:bg-opacity-80 transition-all';
+                userDiv.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center">
+                            <span class="text-sm font-bold text-white">${user.username.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-white">${user.username}</p>
+                            <p class="text-sm text-gray-400">ID: ${user.user_id} • Rollen: ${user.roles.join(', ')}</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button data-user-id="${user.user_id}" class="edit-user-btn px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                            <span class="flex items-center space-x-1">
+                                <i data-feather="edit-2" class="w-4 h-4"></i>
+                                <span>Bearbeiten</span>
+                            </span>
+                        </button>
+                    </div>
+                `;
                 userListContainer.appendChild(userDiv);
             });
 
+            // Update feather icons
+            feather.replace();
+
             document.querySelectorAll('.edit-user-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const userId = e.target.dataset.userId;
+                    const userId = e.target.closest('button').dataset.userId;
                     const user = users.find(u => u.user_id == userId);
                     openUserModal(user);
                 });
             });
         } catch (error) {
             logStatus(`Fehler beim Laden der Benutzer: ${error.message}`, 'error');
+            userListContainer.innerHTML = `
+                <div class="text-center py-8">
+                    <i data-feather="alert-circle" class="w-12 h-12 mx-auto text-red-500 mb-4"></i>
+                    <p class="text-red-400">${error.message}</p>
+                </div>
+            `;
+            feather.replace();
         }
     }
 
@@ -165,11 +230,13 @@ document.addEventListener('DOMContentLoaded', () => {
             btn = trainNarrativeBtn;
         } else return;
         
-        originalTexts.analysis = trainAnalysisBtn.textContent;
-        originalTexts.narrative = trainNarrativeBtn.textContent;
+        originalTexts.analysis = trainAnalysisBtn.innerHTML;
+        originalTexts.narrative = trainNarrativeBtn.innerHTML;
+        
         trainAnalysisBtn.disabled = true;
         trainNarrativeBtn.disabled = true;
-        btn.textContent = 'Training läuft...';
+        btn.innerHTML = '<i data-feather="loader" class="w-4 h-4 animate-spin"></i> <span>Training läuft...</span>';
+        feather.replace();
         
         logStatus(`Sende Anfrage für ${type}-Training... Server startet den Prozess im Hintergrund.`);
         try {
@@ -180,24 +247,37 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             trainAnalysisBtn.disabled = false;
             trainNarrativeBtn.disabled = !worldSelect.value;
-            trainAnalysisBtn.textContent = originalTexts.analysis;
-            trainNarrativeBtn.textContent = originalTexts.narrative;
+            trainAnalysisBtn.innerHTML = originalTexts.analysis;
+            trainNarrativeBtn.innerHTML = originalTexts.narrative;
+            feather.replace();
         }
     }
     
     // --- Event-Listener ---
     addUserBtn.addEventListener('click', () => openUserModal());
-    cancelUserModalBtn.addEventListener('click', closeUserModal);
+    closeUserModal.addEventListener('click', closeUserModalHandler);
+    cancelUserModalBtn.addEventListener('click', closeUserModalHandler);
     saveUserModalBtn.addEventListener('click', saveUser);
     trainAnalysisBtn.addEventListener('click', () => triggerTraining('analysis'));
     trainNarrativeBtn.addEventListener('click', () => triggerTraining('narrative'));
+
+    // Close modal on outside click
+    userModal.addEventListener('click', (e) => {
+        if (e.target === userModal) {
+            closeUserModalHandler();
+        }
+    });
 
     // --- Initialisierung ---
     if (!authToken) {
         logStatus("Fehler: Nicht angemeldet. Bitte loggen Sie sich zuerst in der Hauptanwendung ein und laden Sie diese Seite neu.", "error");
         document.querySelectorAll('button, select').forEach(el => el.disabled = true);
     } else {
+        logStatus("Admin-Panel initialisiert. Lade Daten...", "success");
         fetchUsers();
         fetchWorldsForTraining();
     }
+    
+    // Initialize feather icons
+    feather.replace();
 });

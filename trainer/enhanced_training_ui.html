@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Training Data Generator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .control-panel {
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            padding: 30px;
+        }
+
+        .control-section {
+            margin-bottom: 30px;
+        }
+
+        .control-section h3 {
+            color: #374151;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        select, input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-batch {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-batch:hover {
+            background: #d97706;
+        }
+
+        .work-area {
+            padding: 30px;
+            background: white;
+        }
+
+        .step-container {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .step-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .step-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .step-meta {
+            font-size: 0.9em;
+            color: #6b7280;
+            background: #e5e7eb;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .content-box {
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .content-box h4 {
+            color: #374151;
+            margin-bottom: 10px;
+            font-size: 1em;
+            font-weight: 600;
+        }
+
+        .content-text {
+            line-height: 1.6;
+            color: #4b5563;
+        }
+
+        .commands-list {
+            background: #f3f4f6;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .command-item {
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .command-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .batch-results {
+            background: #ecfccb;
+            border: 1px solid #bef264;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .batch-example {
+            background: white;
+            border: 1px solid #d4d4aa;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-ready { background: #dbeafe; color: #1e40af; }
+        .status-generating { background: #fef3c7; color: #92400e; }
+        .status-complete { background: #d1fae5; color: #065f46; }
+        .status-error { background: #fee2e2; color: #dc2626; }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .command-count {
+            background: #4f46e5;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-panel {
+                border-right: none;
+                border-bottom: 1px solid #e2e8f0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Enhanced Training Data Generator</h1>
+            <p>Gezielte Erstellung von Trainingsdaten für spezifische Befehlstypen</p>
+        </div>
+
+        <div class="main-content">
+            <div class="control-panel">
+                <div class="control-section">
+                    <h3>🎮 Generierungs-Modus</h3>
+                    <div class="form-group">
+                        <label>Ziel-Befehl:</label>
+                        <select id="targetCommand">
+                            <option value="">Zufällig (Standard)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Spieler-Persona:</label>
+                        <select id="playerPersona">
+                            <option value="mutig und direkt">Standard</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>📊 Einzelgenerierung</h3>
+                    <button class="btn btn-primary" onclick="generateStep()">
+                        🎲 Generiere Schritt
+                    </button>
+                    <button class="btn btn-secondary" onclick="resetSession()">
+                        🔄 Session zurücksetzen
+                    </button>
+                </div>
+
+                <div class="control-section">
+                    <h3>⚡ Batch-Generierung</h3>
+                    <div class="form-group">
+                        <label>Anzahl Beispiele:</label>
+                        <input type="number" id="batchCount" min="1" max="10" value="3">
+                    </div>
+                    <button class="btn btn-batch" onclick="generateBatch()">
+                        🎯 Generiere Batch
+                    </button>
+                </div>
+
+                <div class="control-section">
+                    <h3>💾 Speichern</h3>
+                    <button class="btn btn-success" onclick="saveCurrentExample()" id="saveBtn" disabled>
+                        ✅ Beispiel speichern
+                    </button>
+                    <button class="btn btn-success" onclick="saveAllBatchExamples()" id="saveBatchBtn" disabled>
+                        📦 Alle Batch speichern
+                    </button>
+                </div>
+
+                <div class="control-section">
+                    <h3>📈 Statistiken</h3>
+                    <div id="stats" style="font-size: 0.9em; color: #6b7280;">
+                        <div>Generiert: <span id="generatedCount">0</span></div>
+                        <div>Gespeichert: <span id="savedCount">0</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="work-area">
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Generiere Trainingsdaten...</p>
+                </div>
+
+                <div id="currentExample" class="hidden">
+                    <div class="step-container">
+                        <div class="step-header">
+                            <div class="step-title">Aktuelles Beispiel</div>
+                            <div class="step-meta">
+                                <span class="status-indicator status-ready" id="exampleStatus">Bereit</span>
+                                <span id="targetInfo"></span>
+                            </div>
+                        </div>
+
+                        <div class="content-box">
+                            <h4>📝 Spieler-Aktion</h4>
+                            <div class="content-text" id="playerAction"></div>
+                        </div>
+
+                        <div class="content-box">
+                            <h4>📖 Erzähltext</h4>
+                            <div class="content-text" id="narrativeText"></div>
+                        </div>
+
+                        <div class="content-box">
+                            <h4>⚙️ Generierte Befehle<span class="command-count" id="commandCount">0</span></h4>
+                            <div class="commands-list" id="commandsList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="batchResults" class="hidden">
+                    <div class="batch-results">
+                        <h3>📦 Batch-Ergebnisse</h3>
+                        <div id="batchExamples"></div>
+                    </div>
+                </div>
+
+                <div id="welcomeMessage" class="step-container">
+                    <div class="step-title">Willkommen! 🚀</div>
+                    <p>Wähle einen Ziel-Befehl und eine Persona aus, dann klicke auf "Generiere Schritt" für einzelne Beispiele oder "Generiere Batch" für mehrere Beispiele auf einmal.</p>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f9ff; border-radius: 8px;">
+                        <h4 style="color: #0369a1; margin-bottom: 10px;">💡 Verfügbare Befehlstypen:</h4>
+                        <ul style="color: #0f172a; line-height: 1.6;">
+                            <li><strong>NPC_CREATE:</strong> Neue Charaktere einführen</li>
+                            <li><strong>NPC_MOVE:</strong> NSCs bewegen oder entfernen</li>
+                            <li><strong>PLAYER_MOVE:</strong> Spieler-Ortswechsel</li>
+                            <li><strong>ROLL_CHECK:</strong> Fähigkeitsproben</li>
+                            <li><strong>PLAYER_STATE_UPDATE:</strong> Spielerzustand ändern</li>
+                            <li><strong>NPC_STATE_UPDATE:</strong> NSC-Eigenschaften ändern</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentExampleData = null;
+        let batchData = [];
+        let generatedCount = 0;
+        let savedCount = 0;
+        let lastNarrativeText = '';
+
+        // Initialisierung
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAvailableOptions();
+            updateStats();
+        });
+
+        async function loadAvailableOptions() {
+            try {
+                const response = await fetch('/api/get_available_commands');
+                const data = await response.json();
+                
+                // Populate command dropdown
+                const commandSelect = document.getElementById('targetCommand');
+                data.commands.forEach(cmd => {
+                    const option = document.createElement('option');
+                    option.value = cmd;
+                    option.textContent = `${cmd} - ${data.command_descriptions[cmd]}`;
+                    commandSelect.appendChild(option);
+                });
+                
+                // Populate persona dropdown
+                const personaSelect = document.getElementById('playerPersona');
+                data.personas.forEach(persona => {
+                    const option = document.createElement('option');
+                    option.value = persona;
+                    option.textContent = persona.charAt(0).toUpperCase() + persona.slice(1);
+                    personaSelect.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error('Fehler beim Laden der Optionen:', error);
+            }
+        }
+
+        async function generateStep() {
+            showLoading(true);
+            hideElements(['currentExample', 'batchResults', 'welcomeMessage']);
+            
+            const targetCommand = document.getElementById('targetCommand').value;
+            const playerPersona = document.getElementById('playerPersona').value;
+            
+            try {
+                const response = await fetch('/api/generate_step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        last_narrative_text: lastNarrativeText,
+                        target_command: targetCommand || null,
+                        player_persona: playerPersona
+                    })
+                });
+                
+                const data = await response.json();
+                displayCurrentExample(data);
+                
+                lastNarrativeText = data.narrativeText;
+                currentExampleData = data;
+                generatedCount++;
+                updateStats();
+                
+                document.getElementById('saveBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('Fehler bei der Generierung:', error);
+                alert('Fehler bei der Generierung: ' + error.message);
+            }
+            
+            showLoading(false);
+        }
+
+        async function generateBatch() {
+            showLoading(true);
+            hideElements(['currentExample', 'batchResults', 'welcomeMessage']);
+            
+            const targetCommand = document.getElementById('targetCommand').value;
+            const count = parseInt(document.getElementById('batchCount').value);
+            
+            if (!targetCommand) {
+                alert('Bitte wähle einen Ziel-Befehl für die Batch-Generierung!');
+                showLoading(false);
+                return;
+            }
+            
+            try {
+                const personas = ['aggressive', 'curious', 'diplomatic', 'cautious', 'sneaky', 'impulsive'];
+                
+                const response = await fetch('/api/generate_targeted_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_command: targetCommand,
+                        count: count,
+                        personas: personas
+                    })
+                });
+                
+                const data = await response.json();
+                displayBatchResults(data);
+                
+                batchData = data.examples;
+                generatedCount += data.count;
+                updateStats();
+                
+                document.getElementById('saveBatchBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('Fehler bei der Batch-Generierung:', error);
+                alert('Fehler bei der Batch-Generierung: ' + error.message);
+            }
+            
+            showLoading(false);
+        }
+
+        function displayCurrentExample(data) {
+            document.getElementById('currentExample').classList.remove('hidden');
+            
+            // Update header info
+            const targetInfo = document.getElementById('targetInfo');
+            if (data.targetCommand) {
+                targetInfo.textContent = `Ziel: ${data.targetCommand} | Persona: ${data.playerPersona}`;
+            } else {
+                targetInfo.textContent = `Persona: ${data.playerPersona}`;
+            }
+            
+            // Display content
+            document.getElementById('playerAction').textContent = data.playerAction;
+            document.getElementById('narrativeText').textContent = data.narrativeText;
+            
+            // Display commands
+            const allCommands = [...(data.actionAnalysis || []), ...(data.narrativeAnalysis || [])];
+            displayCommands(allCommands);
+            
+            document.getElementById('exampleStatus').textContent = 'Generiert';
+            document.getElementById('exampleStatus').className = 'status-indicator status-complete';
+        }
+
+        function displayBatchResults(data) {
+            document.getElementById('batchResults').classList.remove('hidden');
+            
+            const container = document.getElementById('batchExamples');
+            container.innerHTML = `<h4>🎯 ${data.target_command} - ${data.count} Beispiele</h4>`;
+            
+            data.examples.forEach((example, index) => {
+                const exampleDiv = document.createElement('div');
+                exampleDiv.className = 'batch-example';
+                exampleDiv.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong>Beispiel ${index + 1}</strong>
+                        <span class="step-meta">Persona: ${example.persona}</span>
+                    </div>
+                    <div><strong>Aktion:</strong> ${example.playerAction}</div>
+                    <div style="margin: 10px 0;"><strong>Erzählung:</strong> ${example.narrativeText}</div>
+                    <div><strong>Befehle:</strong> ${example.commands.length} gefunden</div>
+                `;
+                container.appendChild(exampleDiv);
+            });
+        }
+
+        function displayCommands(commands) {
+            const container = document.getElementById('commandsList');
+            const count = document.getElementById('commandCount');
+            
+            count.textContent = commands.length;
+            container.innerHTML = '';
+            
+            if (commands.length === 0) {
+                container.innerHTML = '<div style="color: #6b7280; font-style: italic;">Keine Befehle erkannt</div>';
+                return;
+            }
+            
+            commands.forEach(cmd => {
+                const cmdDiv = document.createElement('div');
+                cmdDiv.className = 'command-item';
+                cmdDiv.textContent = JSON.stringify(cmd, null, 2);
+                container.appendChild(cmdDiv);
+            });
+        }
+
+        async function saveCurrentExample() {
+            if (!currentExampleData) return;
+            
+            const allCommands = [...(currentExampleData.actionAnalysis || []), ...(currentExampleData.narrativeAnalysis || [])];
+            
+            try {
+                const response = await fetch('/api/save_example', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        playerAction: currentExampleData.playerAction,
+                        narrativeText: currentExampleData.narrativeText,
+                        finalCommands: allCommands
+                    })
+                });
+                
+                if (response.ok) {
+                    savedCount++;
+                    updateStats();
+                    document.getElementById('exampleStatus').textContent = 'Gespeichert';
+                    document.getElementById('exampleStatus').className = 'status-indicator status-complete';
+                    alert('Trainingsbeispiel erfolgreich gespeichert!');
+                } else {
+                    alert('Fehler beim Speichern!');
+                }
+            } catch (error) {
+                console.error('Speicherfehler:', error);
+                alert('Fehler beim Speichern: ' + error.message);
+            }
+        }
+
+        async function saveAllBatchExamples() {
+            if (batchData.length === 0) return;
+            
+            let successCount = 0;
+            
+            for (const example of batchData) {
+                try {
+                    const response = await fetch('/api/save_example', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            playerAction: example.playerAction,
+                            narrativeText: example.narrativeText,
+                            finalCommands: example.commands
+                        })
+                    });
+                    
+                    if (response.ok) successCount++;
+                } catch (error) {
+                    console.error('Fehler beim Speichern von Beispiel:', error);
+                }
+            }
+            
+            savedCount += successCount;
+            updateStats();
+            alert(`${successCount}/${batchData.length} Beispiele erfolgreich gespeichert!`);
+            
+            document.getElementById('saveBatchBtn').disabled = true;
+        }
+
+        function resetSession() {
+            lastNarrativeText = '';
+            currentExampleData = null;
+            batchData = [];
+            
+            hideElements(['currentExample', 'batchResults']);
+            document.getElementById('welcomeMessage').classList.remove('hidden');
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('saveBatchBtn').disabled = true;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function hideElements(ids) {
+            ids.forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('generatedCount').textContent = generatedCount;
+            document.getElementById('savedCount').textContent = savedCount;
+        }
+    </script>
+</body>
+</html>

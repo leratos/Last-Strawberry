@@ -850,6 +850,162 @@ class DatabaseManager:
             conn.rollback()
             return False
 
+    # --- Story Export & Statistics Methods ---
+    
+    def get_story_events_for_world(self, world_id: int) -> List[Dict[str, Any]]:
+        """Holt alle Story-Events für eine Welt in chronologischer Reihenfolge."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT event_id, world_id, player_id, event_type, content, timestamp, metadata
+                FROM events 
+                WHERE world_id = ? 
+                ORDER BY timestamp ASC
+            """, (world_id,))
+            
+            events = []
+            for row in cursor.fetchall():
+                event = {
+                    "event_id": row['event_id'],
+                    "world_id": row['world_id'],
+                    "player_id": row['player_id'],
+                    "event_type": row['event_type'],
+                    "content": row['content'],
+                    "timestamp": row['timestamp'],
+                    "metadata": json.loads(row['metadata']) if row['metadata'] else {}
+                }
+                events.append(event)
+            
+            return events
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Laden der Story-Events für Welt {world_id}: {e}")
+            return []
+
+    def get_world_info(self, world_id: int) -> Dict[str, Any]:
+        """Holt detaillierte Informationen über eine Welt."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT world_id, world_name, lore, created_at, is_active
+                FROM worlds 
+                WHERE world_id = ?
+            """, (world_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "world_id": row['world_id'],
+                    "world_name": row['world_name'],
+                    "lore": row['lore'],
+                    "created_at": row['created_at'],
+                    "is_active": row['is_active']
+                }
+            return {}
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Laden der Welt-Info für {world_id}: {e}")
+            return {}
+
+    def get_player_info_for_world(self, world_id: int) -> Dict[str, Any]:
+        """Holt Spieler-Informationen für eine Welt."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.char_id, c.character_name, c.backstory, c.level, c.xp,
+                       c.strength, c.dexterity, c.constitution, c.intelligence, 
+                       c.wisdom, c.charisma, c.perception
+                FROM characters c
+                WHERE c.world_id = ?
+                LIMIT 1
+            """, (world_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "char_id": row['char_id'],
+                    "character_name": row['character_name'],
+                    "backstory": row['backstory'],
+                    "level": row['level'],
+                    "xp": row['xp'],
+                    "attributes": {
+                        "strength": row['strength'],
+                        "dexterity": row['dexterity'],
+                        "constitution": row['constitution'],
+                        "intelligence": row['intelligence'],
+                        "wisdom": row['wisdom'],
+                        "charisma": row['charisma'],
+                        "perception": row['perception']
+                    }
+                }
+            return {}
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Laden der Spieler-Info für Welt {world_id}: {e}")
+            return {}
+
+    def get_world_statistics(self, world_id: int) -> Dict[str, Any]:
+        """Berechnet und gibt Statistiken für eine Welt zurück."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Gesamt-Events
+            cursor.execute("SELECT COUNT(*) as total_events FROM events WHERE world_id = ?", (world_id,))
+            total_events = cursor.fetchone()['total_events']
+            
+            # Events nach Typ
+            cursor.execute("""
+                SELECT event_type, COUNT(*) as count 
+                FROM events 
+                WHERE world_id = ? 
+                GROUP BY event_type
+            """, (world_id,))
+            events_by_type = {row['event_type']: row['count'] for row in cursor.fetchall()}
+            
+            # Erstes und letztes Event
+            cursor.execute("""
+                SELECT MIN(timestamp) as first_event, MAX(timestamp) as last_event 
+                FROM events 
+                WHERE world_id = ?
+            """, (world_id,))
+            event_times = cursor.fetchone()
+            
+            # Charakter-Level und XP
+            cursor.execute("""
+                SELECT level, xp 
+                FROM characters 
+                WHERE world_id = ? 
+                LIMIT 1
+            """, (world_id,))
+            char_info = cursor.fetchone()
+            
+            # Spielzeit berechnen (grob basierend auf Events)
+            playtime_hours = 0
+            if event_times['first_event'] and event_times['last_event']:
+                from datetime import datetime
+                first = datetime.fromisoformat(event_times['first_event'])
+                last = datetime.fromisoformat(event_times['last_event'])
+                playtime_hours = round((last - first).total_seconds() / 3600, 1)
+            
+            return {
+                "total_events": total_events,
+                "events_by_type": events_by_type,
+                "first_event": event_times['first_event'],
+                "last_event": event_times['last_event'],
+                "estimated_playtime_hours": playtime_hours,
+                "character_level": char_info['level'] if char_info else 1,
+                "character_xp": char_info['xp'] if char_info else 0,
+                "player_actions": events_by_type.get('PLAYER_ACTION', 0),
+                "story_events": events_by_type.get('STORY', 0),
+                "level_ups": events_by_type.get('LEVEL_UP', 0)
+            }
+            
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Berechnen der Statistiken für Welt {world_id}: {e}")
+            return {}
+            return False
+
     def update_character_attributes(self, char_id: int, new_attributes: Dict[str, int]) -> bool:
         """Aktualisiert die Attributwerte eines Charakters in der Datenbank."""
         try:
