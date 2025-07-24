@@ -71,12 +71,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const correctionModal = document.getElementById('correction-modal');
     const closeCorrectionModal = document.getElementById('close-correction-modal');
+    const narrativeTextarea = document.getElementById('narrative-textarea');
+    const jsonTextarea = document.getElementById('json-textarea');
+    const cancelCorrectionBtn = document.getElementById('cancel-correction-btn');
+    const saveCorrectionBtn = document.getElementById('save-correction-btn');
 
     // --- Anwendungs-Zustand ---
     let authToken = null;
     let currentUser = null;
     let activeWorld = { world_id: null, player_id: null };
     let attributePoints = {};
+    let currentEventForCorrection = null;
 
     // --- Utility Funktionen ---
     
@@ -102,8 +107,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show/hide game input area based on screen and game state
         if (screenName === 'game' && activeWorld.world_id && activeWorld.player_id) {
             gameInputArea.classList.add('active');
+            // Show correction button only for gamemasters/admins
+            if (currentUser && currentUser.roles && 
+                (currentUser.roles.includes('admin') || currentUser.roles.includes('gamemaster'))) {
+                correctLastBtn.classList.remove('hidden');
+            } else {
+                correctLastBtn.classList.add('hidden');
+            }
         } else {
             gameInputArea.classList.remove('active');
+            correctLastBtn.classList.add('hidden');
         }
         
         // Update feather icons after DOM changes
@@ -336,6 +349,76 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Correction Management ---
+
+    async function loadLastEventForCorrection() {
+        if (!activeWorld.world_id) {
+            showNotification('Keine aktive Welt für Korrektur gefunden.', 'error');
+            return;
+        }
+
+        try {
+            const data = await apiRequest(`/events/last?world_id=${activeWorld.world_id}`);
+            currentEventForCorrection = data;
+            
+            // Fill the form fields
+            narrativeTextarea.value = data.ai_output || '';
+            jsonTextarea.value = JSON.stringify(data.extracted_commands_json || [], null, 2);
+            
+        } catch (error) {
+            showNotification(`Fehler beim Laden des Events: ${error.message}`, 'error');
+            console.error('Error loading last event:', error);
+        }
+    }
+
+    async function saveEventCorrection() {
+        if (!currentEventForCorrection) {
+            showNotification('Kein Event zum Korrigieren geladen.', 'error');
+            return;
+        }
+
+        const correctedText = narrativeTextarea.value.trim();
+        let correctedCommands;
+
+        try {
+            correctedCommands = JSON.parse(jsonTextarea.value || '[]');
+        } catch (error) {
+            showNotification('Ungültiges JSON in den Befehlen. Bitte korrigieren Sie die Syntax.', 'error');
+            return;
+        }
+
+        if (!correctedText) {
+            showNotification('Der Erzähltext darf nicht leer sein.', 'error');
+            return;
+        }
+
+        saveCorrectionBtn.disabled = true;
+        const originalText = saveCorrectionBtn.textContent;
+        saveCorrectionBtn.textContent = 'Speichere...';
+
+        try {
+            await apiRequest('/events/correct', 'POST', {
+                event_id: currentEventForCorrection.event_id,
+                corrected_text: correctedText,
+                corrected_commands: correctedCommands
+            });
+
+            showNotification('Korrektur erfolgreich gespeichert!', 'success');
+            hideModal(correctionModal);
+            
+            // Clear the form
+            narrativeTextarea.value = '';
+            jsonTextarea.value = '';
+            currentEventForCorrection = null;
+
+        } catch (error) {
+            showNotification(`Fehler beim Speichern der Korrektur: ${error.message}`, 'error');
+        } finally {
+            saveCorrectionBtn.disabled = false;
+            saveCorrectionBtn.textContent = originalText;
+        }
+    }
+
     // --- World Management ---
 
     async function loadWorlds() {
@@ -497,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const data = await apiRequest(`/load_game_summary?world_id=${worldId}&player_id=${playerId}`);
                 chatContainer.innerHTML = '';
-                displayMessage(data.summary || 'Willkommen zurück! Was möchtest du tun?', 'story');
+                displayMessage(data.response || 'Willkommen zurück! Was möchtest du tun?', 'story');
                 // Aktiviere die Eingabemaske nach dem Laden
                 gameInputArea.classList.add('active');
                 commandInput.focus();
@@ -609,8 +692,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Correction modal
-    correctLastBtn.addEventListener('click', () => showModal(correctionModal));
+    correctLastBtn.addEventListener('click', async () => {
+        showModal(correctionModal);
+        await loadLastEventForCorrection();
+    });
     closeCorrectionModal.addEventListener('click', () => hideModal(correctionModal));
+    cancelCorrectionBtn.addEventListener('click', () => hideModal(correctionModal));
+    saveCorrectionBtn.addEventListener('click', saveEventCorrection);
     
     // Story Export modal
     storyExportBtn.addEventListener('click', () => {

@@ -273,8 +273,9 @@ class DatabaseManager:
                     w.world_id, 
                     w.name as world_name, 
                     c.char_id as player_id, 
-                    c.name as player_name,
-                    u.username as owner_name
+                    c.name as character_name,  -- Korrigiert: character_name statt player_name
+                    u.username as owner_name,
+                    w.created_at  -- Hinzugefügt: created_at für das Erstellungsdatum
                 FROM worlds w 
                 JOIN characters c ON w.world_id = c.world_id
                 JOIN users u ON c.user_id = u.user_id
@@ -858,7 +859,8 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT event_id, world_id, player_id, event_type, content, timestamp, metadata
+                SELECT event_id, world_id, char_id as player_id, 'STORY' as event_type, 
+                       COALESCE(player_input, '') as content, timestamp, '{}' as metadata
                 FROM events 
                 WHERE world_id = ? 
                 ORDER BY timestamp ASC
@@ -888,7 +890,7 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT world_id, world_name, lore, created_at, is_active
+                SELECT world_id, name as world_name, lore_prompt as lore, created_at, 1 as is_active
                 FROM worlds 
                 WHERE world_id = ?
             """, (world_id,))
@@ -913,9 +915,14 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT c.char_id, c.character_name, c.backstory, c.level, c.xp,
-                       c.strength, c.dexterity, c.constitution, c.intelligence, 
-                       c.wisdom, c.charisma, c.perception
+                SELECT c.char_id, c.name as character_name, c.backstory, c.level, c.xp,
+                       JSON_EXTRACT(c.attributes_json, '$.strength') as strength,
+                       JSON_EXTRACT(c.attributes_json, '$.dexterity') as dexterity,
+                       JSON_EXTRACT(c.attributes_json, '$.constitution') as constitution,
+                       JSON_EXTRACT(c.attributes_json, '$.intelligence') as intelligence,
+                       JSON_EXTRACT(c.attributes_json, '$.wisdom') as wisdom,
+                       JSON_EXTRACT(c.attributes_json, '$.charisma') as charisma,
+                       JSON_EXTRACT(c.attributes_json, '$.perception') as perception
                 FROM characters c
                 WHERE c.world_id = ?
                 LIMIT 1
@@ -926,17 +933,17 @@ class DatabaseManager:
                 return {
                     "char_id": row['char_id'],
                     "character_name": row['character_name'],
-                    "backstory": row['backstory'],
-                    "level": row['level'],
-                    "xp": row['xp'],
+                    "backstory": row['backstory'] or "",
+                    "level": row['level'] or 1,
+                    "xp": row['xp'] or 0,
                     "attributes": {
-                        "strength": row['strength'],
-                        "dexterity": row['dexterity'],
-                        "constitution": row['constitution'],
-                        "intelligence": row['intelligence'],
-                        "wisdom": row['wisdom'],
-                        "charisma": row['charisma'],
-                        "perception": row['perception']
+                        "strength": row['strength'] or 10,
+                        "dexterity": row['dexterity'] or 10,
+                        "constitution": row['constitution'] or 10,
+                        "intelligence": row['intelligence'] or 10,
+                        "wisdom": row['wisdom'] or 10,
+                        "charisma": row['charisma'] or 10,
+                        "perception": row['perception'] or 10
                     }
                 }
             return {}

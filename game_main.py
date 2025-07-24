@@ -139,7 +139,9 @@ class AdventureWindow(QMainWindow):
     def initialize_services_and_start_game(self):
         """Leitet den Startprozess basierend auf dem gewählten Spielmodus ein."""
         if self.game_mode == "offline":
-            self.start_offline_mode()
+            # Offline-Modus ist temporär deaktiviert
+            QMessageBox.warning(self, "Hinweis", "Offline-Modus ist temporär deaktiviert. Bitte verwenden Sie den Online-Modus.")
+            self.close()
         elif self.game_mode == "online":
             # ## GEÄNDERT: Startet die ereignisgesteuerte Kette
             self.start_online_mode()
@@ -213,9 +215,15 @@ class AdventureWindow(QMainWindow):
 
     async def _perform_login(self, username: str, password: str) -> bool:
         """Asynchrone Coroutine, die den Login durchführt."""
-        SERVER_URL = "http://localhost:8000"
-        self.online_client = OnlineClient(SERVER_URL)
-        return await self.online_client.login(username, password)
+        try:
+            SERVER_URL = "http://localhost:8001"
+            self.online_client = OnlineClient(SERVER_URL)
+            result = await self.online_client.login(username, password)
+            logger.info(f"Login result: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Login failed: {e}")
+            return False
 
     @Slot(object)
     def on_login_finished(self, success: bool):
