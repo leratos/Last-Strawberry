@@ -13,27 +13,24 @@ class ModeSelectionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Spielmodus auswählen")
         self.setModal(True)
-        self.mode = "online"  # Standardwert auf online gesetzt
+        self.mode = "offline"  # Standardwert
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Webserver-Modus wird verwendet."))
-        layout.addWidget(QLabel("(Lokale Varianten sind temporär deaktiviert)"))
+        layout.addWidget(QLabel("Wie möchten Sie spielen?"))
 
-        online_button = QPushButton("Mit Server verbinden")
+        offline_button = QPushButton("Offline (Lokale KI)")
+        offline_button.clicked.connect(self.select_offline)
+        layout.addWidget(offline_button)
+
+        online_button = QPushButton("Online (Mit Server verbinden)")
         online_button.clicked.connect(self.select_online)
         layout.addWidget(online_button)
 
-        # Deaktivierte Buttons für später
-        offline_button = QPushButton("Offline (Lokale KI) - Deaktiviert")
-        offline_button.setEnabled(False)
-        offline_button.setStyleSheet("color: #666; background-color: #333;")
-        layout.addWidget(offline_button)
-
-        self.setFixedSize(350, 150)
+        self.setFixedSize(300, 120)
 
     def select_offline(self):
-        # Momentan deaktiviert
-        pass
+        self.mode = "offline"
+        self.accept()
 
     def select_online(self):
         self.mode = "online"

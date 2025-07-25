@@ -285,6 +285,30 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"DB error fetching worlds and players: {e}")
             return []
+
+    def get_all_worlds_and_players_for_user(self, user_id: int) -> List[Dict[str, Any]]:
+        """Holt alle Welten und Spieler für einen spezifischen Benutzer."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    w.world_id, 
+                    w.name as world_name, 
+                    c.char_id as player_id, 
+                    c.name as player_name,
+                    u.username as owner_name,
+                    w.created_at
+                FROM worlds w 
+                JOIN characters c ON w.world_id = c.world_id
+                JOIN users u ON c.user_id = u.user_id
+                WHERE c.is_player = 1 AND u.user_id = ? 
+                ORDER BY w.created_at DESC
+            """, (user_id,))
+            return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"DB error fetching worlds and players for user {user_id}: {e}")
+            return []
             
     def save_world_rules_as_template(self, world_id: int, new_template_name: str) -> bool:
         sanitized_name = re.sub(r'\s+', '_', new_template_name.strip())
