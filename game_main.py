@@ -125,6 +125,8 @@ class AdventureWindow(QMainWindow):
         control_group = QGroupBox("Spielsteuerung")
 
         control_group.setObjectName("control_group")  # Für späteren Zugriff
+
+        control_layout = QVBoxLayout(control_group)
         
         self.correct_button = QPushButton("Letzte Antwort korrigieren")
         self.save_button = QPushButton("Spiel speichern")
