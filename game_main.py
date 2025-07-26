@@ -55,6 +55,7 @@ class AdventureWindow(QMainWindow):
         logger.info('AdventureWindow wird initialisiert...')
         
         self.setWindowTitle("Last-Strawberry - KI Text-Adventure")
+
         self.setGeometry(100, 100, 1400, 900)
 
         self.game_manager: Optional[GameManager] = None
@@ -122,8 +123,8 @@ class AdventureWindow(QMainWindow):
         
         # Spielsteuerung
         control_group = QGroupBox("Spielsteuerung")
+
         control_group.setObjectName("control_group")  # Für späteren Zugriff
-        control_layout = QVBoxLayout(control_group)
         
         self.correct_button = QPushButton("Letzte Antwort korrigieren")
         self.save_button = QPushButton("Spiel speichern")
@@ -132,6 +133,7 @@ class AdventureWindow(QMainWindow):
         control_layout.addWidget(self.correct_button)
         control_layout.addWidget(self.save_button)
         control_layout.addWidget(self.settings_button)
+
         control_layout.addStretch()
         right_layout.addWidget(control_group)
         
@@ -214,6 +216,7 @@ class AdventureWindow(QMainWindow):
 
     def start_player_selection(self):
         """Startet die Spielerauswahl und bietet direkt Einstellungszugriff."""
+
         logger.info('Starte Spielerauswahl...')
         
         # Zeige Player-Selection-Dialog
@@ -356,7 +359,8 @@ class AdventureWindow(QMainWindow):
                 self.process_ai_response(response)
             except Exception as e:
                 logger.error(f"Fehler beim Verarbeiten des Befehls: {e}")
-                self.process_ai_response(f"Fehler: {e}")
+
+                self.process_ai_response("Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.")
 
     def process_ai_response(self, response_text: str):
         """Zeigt die KI-Antwort im Story-Display an."""
@@ -369,8 +373,7 @@ class AdventureWindow(QMainWindow):
         # Scrolle zum Ende
         scrollbar = self.story_display.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
-        
-        # 🔧 FIX: Eingabefeld wieder entsperren nach AI-Antwort
+
         self.set_input_enabled(True)
 
     def set_input_enabled(self, enabled: bool):
@@ -592,6 +595,7 @@ class AdventureWindow(QMainWindow):
                     f"Einstellungen wurden gespeichert.\n"
                     f"Aktueller Modus: {current_mode}"
                 )
+
     
     def closeEvent(self, event):
         """Stellt sicher, dass alle Ressourcen sauber freigegeben werden."""
