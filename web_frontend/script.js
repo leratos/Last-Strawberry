@@ -633,7 +633,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (storyMessages.length > 0) {
                 const lastStoryMessage = storyMessages[storyMessages.length - 1];
                 // Markdown-ähnliches Parsing für Fett und Kursiv
-                let processedContent = narrativeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                function escapeHTML(str) {
+                    return str
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#39;");
+                }
+                let processedContent = narrativeText;
+                // Escape HTML first, then parse Markdown-like syntax
+                processedContent = processedContent.split('\n').map(p => escapeHTML(p)).join('\n');
+                processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
                 processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
                 lastStoryMessage.innerHTML = processedContent.split('\n').map(p => `<p>${p}</p>`).join('');
             }
