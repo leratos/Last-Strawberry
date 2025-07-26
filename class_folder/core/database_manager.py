@@ -275,8 +275,8 @@ class DatabaseManager:
                     c.char_id as player_id, 
                     c.name as character_name,  -- Korrigiert: character_name statt player_name
                     u.username as owner_name,
-                    w.created_at  -- Hinzugefügt: created_at für das Erstellungsdatum
-                FROM worlds w 
+                    w.created_at
+                FROM worlds w  # Hinzugefügt: created_at für das Erstellungsdatum
                 JOIN characters c ON w.world_id = c.world_id
                 JOIN users u ON c.user_id = u.user_id
                 WHERE c.is_player = 1 ORDER BY w.created_at DESC
