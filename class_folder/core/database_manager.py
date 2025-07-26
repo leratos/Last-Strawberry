@@ -273,7 +273,7 @@ class DatabaseManager:
                     w.world_id, 
                     w.name as world_name, 
                     c.char_id as player_id, 
-                    c.name as character_name,  -- Korrigiert: character_name statt player_name
+                    c.name as character_name,
                     u.username as owner_name,
                     w.created_at
                 FROM worlds w  # Hinzugefügt: created_at für das Erstellungsdatum
