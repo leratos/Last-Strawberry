@@ -8,7 +8,9 @@ Unterstützt sowohl Offline- als auch Online-Modus.
 """
 
 import sys
+import os
 import logging
+import json
 from typing import Optional
 from pathlib import Path
 
@@ -22,7 +24,9 @@ from PySide6.QtWidgets import (
 # Korrigierte Importpfade
 from class_folder.game_logic.game_manager import GameManager
 from class_folder.core.inference_service import InferenceService
+from class_folder.core.cloud_inference_service import CloudInferenceService
 from class_folder.ui.player_selection_dialog import PlayerSelectionDialog
+from class_folder.ui.settings_dialog import SettingsDialog
 from class_folder.core.database_manager import DatabaseManager
 
 # Logging-Konfiguration
@@ -50,16 +54,18 @@ class AdventureWindow(QMainWindow):
         super().__init__()
         logger.info('AdventureWindow wird initialisiert...')
         
-        self.setWindowTitle("Last-Strawberry - KI Text-Adventure (Offline)")
+        self.setWindowTitle("Last-Strawberry - KI Text-Adventure")
         self.setGeometry(100, 100, 1400, 900)
 
         self.game_manager: Optional[GameManager] = None
         self.inference_service: Optional[InferenceService] = None
         self.current_user: Optional[dict] = None
         self.db_manager: Optional[DatabaseManager] = None
+        self.settings: Optional[dict] = None
 
         self.setup_ui()
         self.apply_stylesheet()
+        self.load_settings()
         
         # Starte die Initialisierung nach dem Event-Loop-Start
         QTimer.singleShot(0, self.start_player_selection)
@@ -116,13 +122,16 @@ class AdventureWindow(QMainWindow):
         
         # Spielsteuerung
         control_group = QGroupBox("Spielsteuerung")
+        control_group.setObjectName("control_group")  # Für späteren Zugriff
         control_layout = QVBoxLayout(control_group)
         
         self.correct_button = QPushButton("Letzte Antwort korrigieren")
         self.save_button = QPushButton("Spiel speichern")
+        self.settings_button = QPushButton("⚙️ Einstellungen")
         
         control_layout.addWidget(self.correct_button)
         control_layout.addWidget(self.save_button)
+        control_layout.addWidget(self.settings_button)
         control_layout.addStretch()
         right_layout.addWidget(control_group)
         
@@ -137,6 +146,7 @@ class AdventureWindow(QMainWindow):
         self.input_line.returnPressed.connect(self.on_send_command)
         self.correct_button.clicked.connect(self.on_correct_last_answer)
         self.save_button.clicked.connect(self.on_save_game)
+        self.settings_button.clicked.connect(self.on_open_settings)
 
     def apply_stylesheet(self):
         """Wendet das moderne Dark-Theme an."""
@@ -203,7 +213,7 @@ class AdventureWindow(QMainWindow):
         """)
 
     def start_player_selection(self):
-        """Startet die Spielerauswahl für den lokalen Modus."""
+        """Startet die Spielerauswahl und bietet direkt Einstellungszugriff."""
         logger.info('Starte Spielerauswahl...')
         
         # Zeige Player-Selection-Dialog
@@ -218,11 +228,71 @@ class AdventureWindow(QMainWindow):
         
         logger.info(f"Spieler ausgewählt: {selected_user['username']} (ID: {selected_user['user_id']})")
         
-        # Update window title
-        self.setWindowTitle(f"Last-Strawberry - {selected_user['username']} (Offline)")
+        # Ermögliche Einstellungen sofort nach Spielerauswahl
+        self.show_startup_options()
+
+    def show_startup_options(self):
+        """Zeigt Optionen vor dem Spielstart an."""
+        service_mode = "Cloud-API" if self.is_cloud_mode() else "Lokale KI"
         
-        # Starte den Offline-Modus
-        self.start_offline_mode()
+        # Update window title
+        self.setWindowTitle(f"Last-Strawberry - {self.current_user['username']} ({service_mode})")
+        
+        # Zeige Info und Einstellungsoptionen
+        self.story_display.setHtml(f"""
+        <div style='color: #dcdcaa; text-align: center; padding: 30px;'>
+            <h2>🎮 Willkommen, {self.current_user['username']}!</h2>
+            <h3>Aktueller Modus: <span style='color: #4caf50;'>{service_mode}</span></h3>
+            
+            <div style='margin: 30px 0; padding: 20px; background-color: #2d2d30; border-radius: 8px;'>
+                <p><strong>💡 Hinweis:</strong></p>
+                <p>• <strong>Lokale KI:</strong> Verwendet dein lokales NVIDIA GPU-Modell (benötigt CUDA)</p>
+                <p>• <strong>Cloud-API:</strong> Nutzt einen externen KI-Service (z.B. 127.0.0.1:8080)</p>
+                <br>
+                <p>Klicken Sie auf <strong>"⚙️ Einstellungen"</strong> um den Modus zu wechseln,<br>
+                oder auf <strong>"🚀 Spiel starten"</strong> um mit dem aktuellen Modus zu beginnen.</p>
+            </div>
+        </div>
+        """)
+        
+        # Aktiviere Einstellungs-Button sofort
+        self.settings_button.setEnabled(True)
+        
+        # Entferne vorherigen Start-Button falls vorhanden
+        if hasattr(self, 'start_game_button'):
+            self.start_game_button.setParent(None)
+            delattr(self, 'start_game_button')
+        
+        # Füge temporären Start-Button hinzu
+        self.start_game_button = QPushButton("🚀 Spiel starten")
+        self.start_game_button.clicked.connect(self.begin_game_loading)
+        
+        # Finde das control_group und füge den Button hinzu
+        control_group = self.findChild(QGroupBox, "control_group")
+        if not control_group:
+            # Fallback: Finde über Layout
+            for widget in self.findChildren(QGroupBox):
+                if "Spielsteuerung" in widget.title():
+                    control_group = widget
+                    break
+        
+        if control_group:
+            layout = control_group.layout()
+            # Füge Start-Button vor dem Stretch hinzu
+            layout.insertWidget(layout.count() - 1, self.start_game_button)
+
+    def begin_game_loading(self):
+        """Beginnt das eigentliche Laden des Spiels basierend auf den Einstellungen."""
+        # Entferne den Start-Button
+        if hasattr(self, 'start_game_button'):
+            self.start_game_button.setParent(None)
+            delattr(self, 'start_game_button')
+        
+        # Starte den entsprechenden Modus
+        if self.is_cloud_mode():
+            self.start_cloud_mode()
+        else:
+            self.start_offline_mode()
 
     def start_offline_mode(self):
         """Startet das Laden des lokalen KI-Modells."""
@@ -299,6 +369,9 @@ class AdventureWindow(QMainWindow):
         # Scrolle zum Ende
         scrollbar = self.story_display.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+        
+        # 🔧 FIX: Eingabefeld wieder entsperren nach AI-Antwort
+        self.set_input_enabled(True)
 
     def set_input_enabled(self, enabled: bool):
         """Aktiviert oder deaktiviert die Eingabeelemente."""
@@ -349,6 +422,176 @@ class AdventureWindow(QMainWindow):
                 <p>Status wird geladen...</p>
             </div>
             """)
+    
+    def load_settings(self):
+        """Lädt die aktuellen Einstellungen."""
+        settings_file = Path("settings.json")
+        default_settings = {
+            'ki_service': {
+                'use_cloud': False,
+                'cloud': {
+                    'service_url': 'http://127.0.0.1:8080',  # Standard für lokale Tests
+                    'api_key_path': '',
+                    'timeout': 30
+                }
+            },
+            'general': {
+                'debug_logging': False,
+                'log_to_file': True,
+                'dark_theme': True
+            }
+        }
+        
+        if settings_file.exists():
+            try:
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    self.settings = json.load(f)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der Einstellungen: {e}")
+                self.settings = default_settings
+        else:
+            self.settings = default_settings
+    
+    def is_cloud_mode(self) -> bool:
+        """Prüft ob Cloud-Modus aktiviert ist."""
+        if not self.settings:
+            return False
+        return self.settings.get('ki_service', {}).get('use_cloud', False)
+    
+    def start_cloud_mode(self):
+        """Startet den Cloud-Modus mit API-Service."""
+        logger.info('Starte Cloud-Modus...')
+        self.story_display.setHtml("""
+        <div style='color: #dcdcaa; text-align: center; padding: 20px;'>
+            <h3>☁️ Verbinde mit Cloud-KI-Service...</h3>
+            <p>Bitte warten, während die Verbindung hergestellt wird.</p>
+        </div>
+        """)
+        
+        try:
+            cloud_settings = self.settings.get('ki_service', {}).get('cloud', {})
+            service_url = cloud_settings.get('service_url', '')
+            api_key_path = cloud_settings.get('api_key_path', '')
+            
+            if not service_url:
+                self.on_cloud_service_error("Keine Service-URL konfiguriert. Bitte überprüfen Sie die Einstellungen.")
+                return
+            
+            # Prüfe ob es sich um eine lokale URL handelt
+            is_local = service_url.lower().startswith('http://127.0.0.1') or service_url.lower().startswith('http://localhost')
+            
+            if not is_local and (not api_key_path or not Path(api_key_path).exists()):
+                self.on_cloud_service_error("API-Key-Datei für externe Cloud-API nicht gefunden. Bitte überprüfen Sie die Einstellungen.")
+                return
+            
+            # Hier würde die echte Cloud-Service-Initialisierung stattfinden
+            # Für jetzt simulieren wir einen funktionierenden Service
+            if is_local:
+                logger.info(f"Lokale API simuliert für URL: {service_url}")
+            else:
+                logger.info(f"Cloud-Service simuliert für URL: {service_url}")
+            
+            # Erstelle einen Mock-InferenceService für Cloud-Modus
+            self.inference_service = self.create_mock_cloud_service()
+            self.on_model_loaded(self.inference_service)
+            
+        except Exception as e:
+            self.on_cloud_service_error(f"Fehler beim Verbinden mit Cloud-Service: {e}")
+    
+    def create_mock_cloud_service(self):
+        """Erstellt einen echten Cloud-Service für die konfigurierte API."""
+        try:
+            cloud_settings = self.settings.get('ki_service', {}).get('cloud', {})
+            service_url = cloud_settings.get('service_url', '')
+            api_key_path = cloud_settings.get('api_key_path', '')
+            timeout = cloud_settings.get('timeout', 30)
+            
+            # Setze Google Application Credentials falls verfügbar
+            if api_key_path and Path(api_key_path).exists():
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = api_key_path
+                logger.info(f"Google Application Credentials gesetzt: {api_key_path}")
+            
+            # Erstelle echten CloudInferenceService
+            cloud_service = CloudInferenceService(
+                service_url=service_url,
+                api_key_path=api_key_path if api_key_path else None,
+                timeout=timeout
+            )
+            
+            # Teste die Verbindung (kann bei Google Cloud Run länger dauern)
+            logger.info("Teste Cloud-Service Verbindung...")
+            if 'run.app' in service_url.lower():
+                logger.info("Google Cloud Run erkannt - Kaltstart kann bis zu 6 Minuten dauern...")
+                
+            if cloud_service.test_connection():
+                logger.info(f"Cloud-Service erfolgreich verbunden: {service_url}")
+                return cloud_service
+            else:
+                logger.warning("Cloud-Service Verbindungstest fehlgeschlagen, verwende lokalen Fallback")
+                return InferenceService()
+                
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen des Cloud-Service: {e}")
+            # Fallback zum lokalen Service
+            return InferenceService()
+    
+    def on_cloud_service_error(self, error_message: str):
+        """Wird aufgerufen, wenn ein Fehler beim Cloud-Service auftritt."""
+        logger.error(f"Cloud-Service Fehler: {error_message}")
+        
+        # Frage ob auf lokalen Modus zurückfallen soll
+        reply = QMessageBox.question(
+            self, 
+            "Cloud-Service Fehler", 
+            f"Fehler beim Cloud-Service:\n{error_message}\n\n"
+            "Möchten Sie stattdessen den lokalen Offline-Modus verwenden?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Schalte temporär auf lokalen Modus um
+            self.settings['ki_service']['use_cloud'] = False
+            logger.info("Wechsle zu lokalem Modus...")
+            self.start_offline_mode()
+        else:
+            self.close()
+    
+    def on_open_settings(self):
+        """Öffnet den Einstellungsdialog."""
+        logger.info("Öffne Einstellungsdialog...")
+        
+        settings = SettingsDialog.show_settings(self)
+        if settings:
+            logger.info("Einstellungen wurden geändert")
+            old_mode = self.is_cloud_mode()
+            self.settings = settings
+            new_mode = self.is_cloud_mode()
+            
+            # Prüfe ob sich der Service-Modus geändert hat
+            current_mode = "Cloud-API" if new_mode else "Lokale KI"
+            
+            if old_mode != new_mode:
+                # Service-Modus hat sich geändert - Update UI
+                self.setWindowTitle(f"Last-Strawberry - {self.current_user['username']} ({current_mode})")
+                
+                # Wenn wir noch nicht gestartet haben, update die Anzeige
+                if hasattr(self, 'start_game_button'):
+                    self.show_startup_options()
+                else:
+                    # Spiel läuft bereits - Neustart erforderlich
+                    QMessageBox.information(
+                        self, 
+                        "Einstellungen gespeichert", 
+                        f"Service-Modus geändert zu: {current_mode}\n\n"
+                        "Starten Sie das Spiel neu, um die Änderungen zu übernehmen."
+                    )
+            else:
+                QMessageBox.information(
+                    self, 
+                    "Einstellungen gespeichert", 
+                    f"Einstellungen wurden gespeichert.\n"
+                    f"Aktueller Modus: {current_mode}"
+                )
     
     def closeEvent(self, event):
         """Stellt sicher, dass alle Ressourcen sauber freigegeben werden."""

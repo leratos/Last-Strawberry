@@ -71,12 +71,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const correctionModal = document.getElementById('correction-modal');
     const closeCorrectionModal = document.getElementById('close-correction-modal');
+    const narrativeTextarea = document.getElementById('narrative-textarea');
+    const jsonTextarea = document.getElementById('json-textarea');
+    const cancelCorrectionBtn = document.getElementById('cancel-correction-btn');
+    const saveCorrectionBtn = document.getElementById('save-correction-btn');
 
     // --- Anwendungs-Zustand ---
     let authToken = null;
     let currentUser = null;
     let activeWorld = { world_id: null, player_id: null };
     let attributePoints = {};
+    let lastAIResponse = null; // Speichert die letzte AI-Antwort für Korrekturen
 
     // --- Utility Funktionen ---
     
@@ -497,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const data = await apiRequest(`/load_game_summary?world_id=${worldId}&player_id=${playerId}`);
                 chatContainer.innerHTML = '';
-                displayMessage(data.summary || 'Willkommen zurück! Was möchtest du tun?', 'story');
+                displayMessage(data.response || data.summary || 'Willkommen zurück! Was möchtest du tun?', 'story');
                 // Aktiviere die Eingabemaske nach dem Laden
                 gameInputArea.classList.add('active');
                 commandInput.focus();
@@ -534,6 +539,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Keine Antwort vom Server erhalten.');
             }
 
+            // Speichere die letzte AI-Antwort für Korrekturen
+            lastAIResponse = {
+                response: data.response,
+                event_type: data.event_type || 'STORY',
+                raw_data: data
+            };
+
             if (data.event_type === 'STORY') {
                 displayMessage(data.response, 'story');
             } else if (data.event_type === 'LEVEL_UP') {
@@ -551,6 +563,86 @@ document.addEventListener('DOMContentLoaded', () => {
             sendButton.innerHTML = '<i data-feather="send" class="w-5 h-5"></i>';
             feather.replace();
             commandInput.focus();
+        }
+    }
+
+    // --- Correction Functions ---
+
+    async function openCorrectionModal() {
+        if (!activeWorld.world_id || !activeWorld.player_id) {
+            showNotification('Keine aktive Spielwelt verfügbar.', 'error');
+            return;
+        }
+
+        try {
+            // Lade das letzte Event aus der Datenbank
+            showNotification('Lade letztes Event...', 'info');
+            
+            const data = await apiRequest(`/get_last_event?world_id=${activeWorld.world_id}&player_id=${activeWorld.player_id}`);
+            
+            if (!data || !data.event) {
+                showNotification('Kein Event zum Korrigieren verfügbar.', 'error');
+                return;
+            }
+
+            const event = data.event;
+            
+            // Fülle die Textfelder mit den Event-Daten
+            narrativeTextarea.value = event.ai_output || '';
+            jsonTextarea.value = event.extracted_commands_json || '[]';
+
+            showModal(correctionModal);
+            showNotification('Event-Daten geladen.', 'success');
+            
+        } catch (error) {
+            showNotification(`Fehler beim Laden des Events: ${error.message}`, 'error');
+        }
+    }
+
+    async function saveCorrectionData() {
+        try {
+            const narrativeText = narrativeTextarea.value.trim();
+            const jsonText = jsonTextarea.value.trim();
+
+            if (!narrativeText) {
+                showNotification('Erzähltext darf nicht leer sein.', 'error');
+                return;
+            }
+
+            // Validiere JSON
+            let jsonData;
+            try {
+                jsonData = JSON.parse(jsonText);
+            } catch (error) {
+                showNotification('Ungültiges JSON-Format in extracted_commands_json.', 'error');
+                return;
+            }
+
+            // Sende Korrektur an Backend
+            const correctionData = {
+                world_id: activeWorld.world_id,
+                player_id: activeWorld.player_id,
+                ai_output: narrativeText,
+                extracted_commands_json: jsonText
+            };
+
+            await apiRequest('/save_event_correction', 'POST', correctionData);
+
+            // Aktualisiere auch die Anzeige im Chat (falls die Korrektur den aktuell sichtbaren Text betrifft)
+            const storyMessages = chatContainer.querySelectorAll('.story-text');
+            if (storyMessages.length > 0) {
+                const lastStoryMessage = storyMessages[storyMessages.length - 1];
+                // Markdown-ähnliches Parsing für Fett und Kursiv
+                let processedContent = narrativeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
+                lastStoryMessage.innerHTML = processedContent.split('\n').map(p => `<p>${p}</p>`).join('');
+            }
+
+            hideModal(correctionModal);
+            showNotification('Event-Korrektur erfolgreich gespeichert!', 'success');
+
+        } catch (error) {
+            showNotification(`Fehler beim Speichern der Korrektur: ${error.message}`, 'error');
         }
     }
 
@@ -609,8 +701,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Correction modal
-    correctLastBtn.addEventListener('click', () => showModal(correctionModal));
+    correctLastBtn.addEventListener('click', openCorrectionModal);
     closeCorrectionModal.addEventListener('click', () => hideModal(correctionModal));
+    cancelCorrectionBtn.addEventListener('click', () => hideModal(correctionModal));
+    saveCorrectionBtn.addEventListener('click', saveCorrectionData);
     
     // Story Export modal
     storyExportBtn.addEventListener('click', () => {

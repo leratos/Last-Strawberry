@@ -62,7 +62,8 @@ class GameManager(BaseGameManager):
             pass
         
         # Phase 3: Kreative Erzählung
-        self.inference_service.switch_to_adapter('NARRATIVE', world_name)
+        template_key = self.game_state.get('template_key', 'system_fantasy')
+        self.inference_service.switch_to_adapter(template_key, world_name)  # Verwende template_key statt 'NARRATIVE'
         creative_prompt = self._build_creative_rag_prompt(command, roll_outcome)
         narrative_text = self.inference_service.generate_story_response(creative_prompt)
 

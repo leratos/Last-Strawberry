@@ -55,7 +55,7 @@ class GameManagerOnline(BaseGameManager):
 
         # Phase 3: Kreative Erzählung
         creative_prompt = self._build_creative_rag_prompt(command, roll_outcome)
-        narrative_text = await self.ai_caller(creative_prompt, world_name, 'NARRATIVE')
+        narrative_text = await self.ai_caller(creative_prompt, world_name, 'NARRATIVE')  # Cloud-Service verwendet 'NARRATIVE'
 
         # Phase 4: Analyse der neuen Erzählung
         npc_analysis_prompt = self._build_analysis_prompt("", narrative_text, player_name, npc_context, attributes_str)
