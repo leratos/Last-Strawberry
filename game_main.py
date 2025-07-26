@@ -286,7 +286,7 @@ class AdventureWindow(QMainWindow):
                 self.process_ai_response(response)
             except Exception as e:
                 logger.error(f"Fehler beim Verarbeiten des Befehls: {e}")
-                self.process_ai_response(f"Fehler: {e}")
+                self.process_ai_response("Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.")
 
     def process_ai_response(self, response_text: str):
         """Zeigt die KI-Antwort im Story-Display an."""
