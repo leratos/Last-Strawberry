@@ -165,7 +165,7 @@ class CloudInferenceService:
                 'temperature': temperature,
                 'stop': ['<|endoftext|>', '\n\n'],
                 'world_name': getattr(self, 'current_world_name', 'default'),  # Erforderlich für Docker API
-                'adapter_type': getattr(self, 'current_adapter_type', 'system_fantasy')  # Wichtig für Prompt-Templates
+                'adapter_type': getattr(self, 'current_adapter_type', 'NARRATIVE')  # Wichtig für Prompt-Templates
             }
             
             # API-Endpunkt (anpassbar)
