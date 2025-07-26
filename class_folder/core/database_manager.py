@@ -275,7 +275,7 @@ class DatabaseManager:
                     c.char_id as player_id, 
                     c.name as character_name,
                     u.username as owner_name,
-                    w.created_at  -- Hinzugefügt: created_at für das Erstellungsdatum
+                    w.created_at
                 FROM worlds w 
                 JOIN characters c ON w.world_id = c.world_id
                 JOIN users u ON c.user_id = u.user_id
@@ -707,22 +707,50 @@ class DatabaseManager:
             logger.error(f"Fehler beim Holen des letzten Events für Welt {world_id}: {e}")
             return None
 
-    def update_event_correction(self, event_id: int, corrected_text: str, corrected_commands: List[Dict[str, Any]]) -> bool:
+    def get_last_event_for_world_player(self, world_id: int, player_id: int) -> Optional[Dict[str, Any]]:
+        """Holt das letzte Event für eine spezifische Welt und Spieler."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT event_id, ai_output, extracted_commands_json, player_input, timestamp FROM events WHERE world_id = ? AND char_id = ? ORDER BY event_id DESC LIMIT 1",
+                (world_id, player_id)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Holen des letzten Events für Welt {world_id}, Spieler {player_id}: {e}")
+            return None
+
+    def update_event_correction(self, event_id: int = None, corrected_text: str = None, corrected_commands: List[Dict[str, Any]] = None, corrected_ai_output: str = None, corrected_commands_json: str = None) -> bool:
         """Aktualisiert den Text und die Befehle eines Events und markiert es als korrigiert."""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            commands_json = json.dumps(corrected_commands, indent=2, ensure_ascii=False)
             
-            cursor.execute(
-                "UPDATE events SET ai_output = ?, extracted_commands_json = ?, quality_label = ? WHERE event_id = ?",
-                (corrected_text, commands_json, "human_corrected", event_id)
-            )
+            # Unterstütze beide API-Versionen (alte und neue)
+            if corrected_ai_output is not None and corrected_commands_json is not None:
+                # Neue API-Version vom Frontend
+                cursor.execute(
+                    "UPDATE events SET ai_output = ?, extracted_commands_json = ?, quality_label = ? WHERE event_id = ?",
+                    (corrected_ai_output, corrected_commands_json, "human_corrected", event_id)
+                )
+            elif corrected_text is not None and corrected_commands is not None:
+                # Alte API-Version
+                commands_json = json.dumps(corrected_commands, indent=2, ensure_ascii=False)
+                cursor.execute(
+                    "UPDATE events SET ai_output = ?, extracted_commands_json = ?, quality_label = ? WHERE event_id = ?",
+                    (corrected_text, commands_json, "human_corrected", event_id)
+                )
+            else:
+                logger.error("Ungültige Parameter für update_event_correction")
+                return False
+            
             conn.commit()
             if cursor.rowcount == 0:
                 logger.warning(f"Konnte Event mit ID {event_id} für Korrektur nicht finden.")
                 return False
-            logger.info(f"Event {event_id} erfolgreich mit neuem Text und Befehlen aktualisiert.")
+            logger.info(f"Event {event_id} erfolgreich mit korrigierten Daten aktualisiert.")
             return True
         except sqlite3.Error as e:
             logger.error(f"Fehler beim Aktualisieren von Event {event_id}: {e}", exc_info=True)
