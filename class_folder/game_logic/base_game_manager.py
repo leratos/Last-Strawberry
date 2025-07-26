@@ -43,7 +43,7 @@ class BaseGameManager:
             return
             
         self.game_state['world_id'] = world_id
-        self.game_state['world_name'] = world_info['name']
+        self.game_state['world_name'] = world_info['world_name']  # Verwendet 'world_name' statt 'name'
         self.game_state['character_info'] = char_info
         self.game_state['template_key'] = world_info.get('template_key', 'system_fantasy')
         

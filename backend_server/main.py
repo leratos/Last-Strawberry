@@ -526,10 +526,13 @@ async def process_command(request: CommandRequest, current_user: dict = Depends(
     """Nimmt einen Spieler-Befehl entgegen und gibt die Antwort des Spiels zurück."""
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], request.player_id):
+        
+    # player_id ist eigentlich char_id aus der Datenbank
+    char_id = request.player_id
+    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
         raise HTTPException(status_code=403, detail="Permission denied to act for this player.")
 
-    game_manager_instance._load_game_state(request.world_id, request.player_id)
+    game_manager_instance._load_game_state(request.world_id, char_id)
     response = await game_manager_instance.process_player_command(request.command)
     
     return response
@@ -540,10 +543,12 @@ async def load_game_summary(world_id: int, player_id: int, current_user: dict = 
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
 
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], player_id):
+    # player_id ist eigentlich char_id aus der Datenbank
+    char_id = player_id
+    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
         raise HTTPException(status_code=403, detail="Permission denied to access this game summary.")
 
-    game_manager_instance._load_game_state(world_id, player_id)
+    game_manager_instance._load_game_state(world_id, char_id)
     game_manager_instance.is_new_game = False
     
     summary = await game_manager_instance.get_load_game_summary()

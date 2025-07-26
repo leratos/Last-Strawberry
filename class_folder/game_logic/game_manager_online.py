@@ -135,34 +135,91 @@ class GameManagerOnline(BaseGameManager):
         if not recent_events:
             return static_summary + "Was möchtest du als Nächstes tun?"
 
-        history_parts = []
-        for p_input, ai_output in recent_events:
-            history_parts.append(f"- Spieler: \"{p_input}\"\n- Spielleiter: \"{ai_output}\"")
-        history_str = "\n".join(history_parts)
+        # Erstelle lokale Zusammenfassung als Standardverhalten
+        local_summary = self._create_local_event_summary(recent_events)
+        summary_text = local_summary
 
-        system_prompt = (
-            "GOLDENE REGEL: Antworte IMMER NUR auf Deutsch."
-            "Du bist ein hilfreicher Assistent. Deine Aufgabe ist es, eine kurze, "
-            "fesselnde Zusammenfassung der letzten Ereignisse eines Abenteuers zu schreiben. "
-            "Fasse die Ereignisse in 2-3 Sätzen zusammen. Sprich den Spieler direkt mit 'Du' an. "
-            "Beende deine Zusammenfassung mit den Worten 'Die aktuelle Situation ist:'"
-        )
-        
-        user_prompt = f"Hier sind die letzten Ereignisse:\n\n{history_str}"
-        summary_prompt = self._format_llama3_prompt(system_prompt, user_prompt)
-        
-        world_name = self.game_state.get('world_name', 'default')
-        # Rufe den entfernten KI-Dienst auf
-        ai_summary = await self.ai_caller(summary_prompt, world_name, 'NARRATIVE')
+        # Versuche AI-Service zu nutzen falls verfügbar
+        if hasattr(self, 'ai_caller') and self.ai_caller:
+            try:
+                history_parts = []
+                for p_input, ai_output in recent_events:
+                    history_parts.append(f"- Spieler: \"{p_input}\"\n- Spielleiter: \"{ai_output}\"")
+                history_str = "\n".join(history_parts)
+
+                system_prompt = (
+                    "GOLDENE REGEL: Antworte IMMER NUR auf Deutsch."
+                    "Du bist ein hilfreicher Assistent. Deine Aufgabe ist es, eine kurze, "
+                    "fesselnde Zusammenfassung der letzten Ereignisse eines Abenteuers zu schreiben. "
+                    "Fasse die Ereignisse in 2-3 Sätzen zusammen. Sprich den Spieler direkt mit 'Du' an. "
+                    "Beende deine Zusammenfassung mit den Worten 'Die aktuelle Situation ist:'"
+                )
+                
+                user_prompt = f"Hier sind die letzten Ereignisse:\n\n{history_str}"
+                summary_prompt = self._format_llama3_prompt(system_prompt, user_prompt)
+                
+                world_name = self.game_state.get('world_name', 'default')
+                # Rufe den entfernten KI-Dienst auf
+                ai_summary = await self.ai_caller(summary_prompt, world_name, 'NARRATIVE')
+                
+                # Verwende AI-Zusammenfassung wenn verfügbar und nicht leer
+                if ai_summary and ai_summary.strip():
+                    summary_text = ai_summary
+                    logger.info("AI-Service Zusammenfassung erfolgreich erhalten")
+                else:
+                    logger.warning("AI-Service gab leere Antwort - verwende lokale Zusammenfassung")
+                    
+            except Exception as e:
+                logger.error(f"Fehler beim AI-Service - verwende lokale Zusammenfassung: {e}")
+        else:
+            logger.info("AI-Service nicht verfügbar - verwende lokale Zusammenfassung")
 
         # --- Teil 3: Alles kombinieren ---
         full_summary = (
             f"{static_summary}"
-            f"**Zusammenfassung der letzten Ereignisse:**\n{ai_summary}\n\n"
+            f"**Zusammenfassung der letzten Ereignisse:**\n{summary_text}\n\n"
             "Was möchtest du als Nächstes tun?"
         )
         
         return full_summary
+
+    def _create_local_event_summary(self, recent_events: List[tuple]) -> str:
+        """Erstellt eine lokale Zusammenfassung der Events falls AI-Service nicht verfügbar ist."""
+        if not recent_events:
+            return "Bisher sind noch keine besonderen Ereignisse aufgetreten. Die aktuelle Situation ist:"
+        
+        # Nimm die letzten 2-3 Events für die Zusammenfassung
+        latest_events = recent_events[:3]
+        
+        summary_parts = []
+        for i, (player_input, ai_output) in enumerate(latest_events):
+            # Extrahiere wichtige Informationen aus der AI-Ausgabe
+            # Kürze auf etwa 80-100 Zeichen und entferne Anführungszeichen
+            clean_output = ai_output.replace('"', '').replace('\n', ' ')
+            
+            # Finde den ersten Satz oder kürze auf 100 Zeichen
+            first_sentence_end = clean_output.find('.') 
+            if first_sentence_end != -1 and first_sentence_end < 100:
+                short_output = clean_output[:first_sentence_end + 1]
+            else:
+                short_output = clean_output[:100] + "..." if len(clean_output) > 100 else clean_output
+            
+            if i == 0:  # Neuestes Event
+                summary_parts.append(f"Zuletzt hast du '{player_input}' getan. {short_output}")
+            else:  # Ältere Events
+                summary_parts.append(f"Davor: '{player_input}' - {short_output}")
+        
+        summary = " ".join(summary_parts)
+        
+        # Füge eine zusammenfassende Aussage hinzu
+        if len(latest_events) >= 2:
+            char_name = self.game_state.get('character_info', {}).get('name', 'Du')
+            location_name = self.game_state.get('location_info', {}).get('name', 'diesem Ort')
+            summary += f" {char_name} befindet sich nun an {location_name}. Die aktuelle Situation ist:"
+        else:
+            summary += " Die aktuelle Situation ist:"
+            
+        return summary
 
     def _grant_xp(self, xp_amount: int) -> Optional[Dict[str, Any]]:
         """Vergibt XP und gibt ein Level-Up-Signal zurück, falls eines auftritt."""

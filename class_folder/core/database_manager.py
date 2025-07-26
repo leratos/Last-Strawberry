@@ -273,8 +273,9 @@ class DatabaseManager:
                     w.world_id, 
                     w.name as world_name, 
                     c.char_id as player_id, 
-                    c.name as player_name,
-                    u.username as owner_name
+                    c.name as character_name,
+                    u.username as owner_name,
+                    w.created_at  -- Hinzugefügt: created_at für das Erstellungsdatum
                 FROM worlds w 
                 JOIN characters c ON w.world_id = c.world_id
                 JOIN users u ON c.user_id = u.user_id
@@ -283,6 +284,30 @@ class DatabaseManager:
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"DB error fetching worlds and players: {e}")
+            return []
+
+    def get_all_worlds_and_players_for_user(self, user_id: int) -> List[Dict[str, Any]]:
+        """Holt alle Welten und Spieler für einen spezifischen Benutzer."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    w.world_id, 
+                    w.name as world_name, 
+                    c.char_id as player_id, 
+                    c.name as player_name,
+                    u.username as owner_name,
+                    w.created_at
+                FROM worlds w 
+                JOIN characters c ON w.world_id = c.world_id
+                JOIN users u ON c.user_id = u.user_id
+                WHERE c.is_player = 1 AND u.user_id = ? 
+                ORDER BY w.created_at DESC
+            """, (user_id,))
+            return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"DB error fetching worlds and players for user {user_id}: {e}")
             return []
             
     def save_world_rules_as_template(self, world_id: int, new_template_name: str) -> bool:
@@ -858,7 +883,8 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT event_id, world_id, player_id, event_type, content, timestamp, metadata
+                SELECT event_id, world_id, char_id as player_id, 'STORY' as event_type, 
+                       COALESCE(player_input, '') as content, timestamp, '{}' as metadata
                 FROM events 
                 WHERE world_id = ? 
                 ORDER BY timestamp ASC
@@ -888,7 +914,7 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT world_id, world_name, lore, created_at, is_active
+                SELECT world_id, name as world_name, lore_prompt as lore, created_at, 1 as is_active
                 FROM worlds 
                 WHERE world_id = ?
             """, (world_id,))
@@ -913,9 +939,14 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT c.char_id, c.character_name, c.backstory, c.level, c.xp,
-                       c.strength, c.dexterity, c.constitution, c.intelligence, 
-                       c.wisdom, c.charisma, c.perception
+                SELECT c.char_id, c.name as character_name, c.backstory, c.level, c.xp,
+                       JSON_EXTRACT(c.attributes_json, '$.strength') as strength,
+                       JSON_EXTRACT(c.attributes_json, '$.dexterity') as dexterity,
+                       JSON_EXTRACT(c.attributes_json, '$.constitution') as constitution,
+                       JSON_EXTRACT(c.attributes_json, '$.intelligence') as intelligence,
+                       JSON_EXTRACT(c.attributes_json, '$.wisdom') as wisdom,
+                       JSON_EXTRACT(c.attributes_json, '$.charisma') as charisma,
+                       JSON_EXTRACT(c.attributes_json, '$.perception') as perception
                 FROM characters c
                 WHERE c.world_id = ?
                 LIMIT 1
@@ -926,17 +957,17 @@ class DatabaseManager:
                 return {
                     "char_id": row['char_id'],
                     "character_name": row['character_name'],
-                    "backstory": row['backstory'],
-                    "level": row['level'],
-                    "xp": row['xp'],
+                    "backstory": row['backstory'] or "",
+                    "level": row['level'] or 1,
+                    "xp": row['xp'] or 0,
                     "attributes": {
-                        "strength": row['strength'],
-                        "dexterity": row['dexterity'],
-                        "constitution": row['constitution'],
-                        "intelligence": row['intelligence'],
-                        "wisdom": row['wisdom'],
-                        "charisma": row['charisma'],
-                        "perception": row['perception']
+                        "strength": row['strength'] or 10,
+                        "dexterity": row['dexterity'] or 10,
+                        "constitution": row['constitution'] or 10,
+                        "intelligence": row['intelligence'] or 10,
+                        "wisdom": row['wisdom'] or 10,
+                        "charisma": row['charisma'] or 10,
+                        "perception": row['perception'] or 10
                     }
                 }
             return {}
