@@ -107,3 +107,7 @@ yarn-debug.log*
 yarn-error.log*
 analysis_dataset_final.jsonl
 analysis_dataset.jsonl
+backup_test_files/
+tools/db_migration_tool.py
+tools/migrate_database.py
+tools/verify_migration.py
