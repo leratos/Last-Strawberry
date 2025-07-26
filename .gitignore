@@ -28,6 +28,14 @@ analysis_adapter_v2/
 key.json
 lora_adapter_output_temp/
 adapter/
+tools/
+
+# Test und Debug Dateien
+backup_test_files/
+test_*.py
+debug_*.py
+*_test.py
+check_*.py
 
 # 2. Python Cache & Virtuelle Umgebungen
 __pycache__/

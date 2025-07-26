@@ -80,7 +80,8 @@ async def generate_text(request: InferenceRequest):
         raise HTTPException(status_code=503, detail="KI-Modell ist nicht verfügbar oder wird noch geladen.")
 
     try:
-        logger.info(f"Anfrage für Welt '{request.world_name}' mit Adapter-Typ '{request.adapter_type}' erhalten.")
+        logger.info(f"🎯 Anfrage für Welt '{request.world_name}' mit Adapter-Typ '{request.adapter_type}' erhalten.")
+        logger.info(f"📝 Prompt-Preview (erste 200 Zeichen): {request.prompt[:200]}...")
         
         # Lade den passenden Adapter für die Anfrage
         inference_service.switch_to_adapter(request.adapter_type, request.world_name)
@@ -88,12 +89,14 @@ async def generate_text(request: InferenceRequest):
         # Generiere die Antwort
         generated_text = inference_service.generate_story_response(request.prompt)
         
+        logger.info(f"✅ Antwort generiert ({len(generated_text)} Zeichen) für Adapter '{request.adapter_type}'")
+        
         return InferenceResponse(
             generated_text=generated_text,
             model_load_status=inference_service.load_status
         )
     except Exception as e:
-        logger.error(f"Fehler während der Inferenz: {e}", exc_info=True)
+        logger.error(f"❌ Fehler während der Inferenz: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ein interner Fehler ist aufgetreten: {e}")
 
 @app.get("/health")

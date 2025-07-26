@@ -437,36 +437,74 @@ def trigger_train_narrative(world_id: int, world_name: str):
 
     return {"message": f"Erzähl-Training für Welt '{world_name}' wurde im Hintergrund gestartet."}
 
-class CorrectionRequest(BaseModel):
-    event_id: int
-    corrected_text: str
-    corrected_commands: List[Dict[str, Any]]
-
-@app.get("/events/last")
-def get_last_event_for_correction(world_id: int, current_user: dict = Depends(get_current_active_user)):
-    if "gamemaster" not in current_user.get("roles", []):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung")
-    event = db_manager.get_last_event_details(world_id)
-    if not event:
-        raise HTTPException(status_code=404, detail="Kein Event für diese Welt gefunden")
+@app.get("/get_last_event", tags=["Game"])
+async def get_last_event(world_id: int, player_id: int, current_user: dict = Depends(get_current_active_user)):
+    """
+    Lädt das letzte Event für das DM-Korrekturwerkzeug.
+    Gibt ai_output und extracted_commands_json zurück.
+    """
     try:
-        event['extracted_commands_json'] = json.loads(event['extracted_commands_json'])
-    except (json.JSONDecodeError, TypeError):
-        event['extracted_commands_json'] = []
-    return event
+        # Hole das letzte Event aus der Datenbank
+        event = db_manager.get_last_event_for_world_player(world_id, player_id)
+        if not event:
+            raise HTTPException(status_code=404, detail="Kein Event für diese Welt/Spieler gefunden")
+        
+        # Stelle sicher, dass extracted_commands_json als String zurückgegeben wird
+        if event.get('extracted_commands_json'):
+            try:
+                # Validiere JSON und konvertiere zurück zu String für Frontend
+                json.loads(event['extracted_commands_json'])
+            except (json.JSONDecodeError, TypeError):
+                event['extracted_commands_json'] = '[]'
+        else:
+            event['extracted_commands_json'] = '[]'
+        
+        return {"event": event}
+        
+    except Exception as e:
+        logger.error(f"Fehler beim Laden des letzten Events: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/events/correct")
-def save_event_correction(request: CorrectionRequest, current_user: dict = Depends(get_current_active_user)):
-    if "gamemaster" not in current_user.get("roles", []):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung")
-    success = db_manager.update_event_correction(
-        event_id=request.event_id,
-        corrected_text=request.corrected_text,
-        corrected_commands=request.corrected_commands
-    )
-    if not success:
-        raise HTTPException(status_code=500, detail="Event konnte nicht in der DB aktualisiert werden")
-    return {"message": "Korrektur erfolgreich als Trainingsdatenpunkt gespeichert."}
+class EventCorrectionRequest(BaseModel):
+    world_id: int
+    player_id: int  
+    ai_output: str
+    extracted_commands_json: str
+
+@app.post("/save_event_correction", tags=["Game"])
+async def save_event_correction(request: EventCorrectionRequest, current_user: dict = Depends(get_current_active_user)):
+    """
+    Speichert Korrekturen des letzten Events für Trainingsdaten.
+    """
+    try:
+        # Validiere JSON
+        try:
+            json.loads(request.extracted_commands_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Ungültiges JSON-Format in extracted_commands_json")
+        
+        # Hole das letzte Event
+        event = db_manager.get_last_event_for_world_player(request.world_id, request.player_id)
+        if not event:
+            raise HTTPException(status_code=404, detail="Kein Event zum Korrigieren gefunden")
+        
+        # Speichere die Korrektur
+        success = db_manager.update_event_correction(
+            event_id=event['event_id'],
+            corrected_ai_output=request.ai_output,
+            corrected_commands_json=request.extracted_commands_json
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Korrektur konnte nicht gespeichert werden")
+        
+        return {"message": "Event-Korrektur erfolgreich gespeichert"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern der Event-Korrektur: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 class WorldCreateRequest(BaseModel):
     world_name: str
@@ -526,10 +564,13 @@ async def process_command(request: CommandRequest, current_user: dict = Depends(
     """Nimmt einen Spieler-Befehl entgegen und gibt die Antwort des Spiels zurück."""
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], request.player_id):
+        
+    # player_id ist eigentlich char_id aus der Datenbank
+    char_id = request.player_id
+    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
         raise HTTPException(status_code=403, detail="Permission denied to act for this player.")
 
-    game_manager_instance._load_game_state(request.world_id, request.player_id)
+    game_manager_instance._load_game_state(request.world_id, char_id)
     response = await game_manager_instance.process_player_command(request.command)
     
     return response
@@ -540,10 +581,12 @@ async def load_game_summary(world_id: int, player_id: int, current_user: dict = 
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
 
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], player_id):
+    # player_id ist eigentlich char_id aus der Datenbank
+    char_id = player_id
+    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
         raise HTTPException(status_code=403, detail="Permission denied to access this game summary.")
 
-    game_manager_instance._load_game_state(world_id, player_id)
+    game_manager_instance._load_game_state(world_id, char_id)
     game_manager_instance.is_new_game = False
     
     summary = await game_manager_instance.get_load_game_summary()
