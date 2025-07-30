@@ -967,13 +967,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!successful) {
             console.warn('Server warmup failed after all retries');
         }
+        return successful; // Return whether the warmup was successful
     }
     
     // Erweiterte apiRequest-Funktion mit Warmup
     async function apiRequestWithWarmup(endpoint, method = 'GET', body = null) {
         // Warmup nur bei wichtigen API-Calls (nicht bei ping selbst)
         if (endpoint !== '/ping') {
-            await warmupServerIfNeeded();
+            await warmupServerIfNeeded(); // Ensure server is warm before making the request
         }
         
         const result = await apiRequest(endpoint, method, body);
