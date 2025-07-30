@@ -2,7 +2,20 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Konstanten ---
-    const API_BASE_URL = 'http://localhost:8001';
+    const API_BASE_URL = 'http://127.0.0.1:8001';
+
+    // --- Utility Funktionen ---
+    
+    // HTML-Escaping Funktion für XSS-Schutz
+    function escapeHTML(str) {
+        if (typeof str !== 'string') return str;
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
 
     // --- DOM-Elemente ---
     const trainAnalysisBtn = document.getElementById('train-analysis-btn');
@@ -57,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         p.innerHTML = `
             <i data-feather="${iconName}" class="w-4 h-4 ${colorClass}"></i>
             <span class="text-gray-500">${timestamp}:</span>
-            <span class="${colorClass}">${message}</span>
+            <span class="${colorClass}">${escapeHTML(message)}</span>
         `;
         
         statusLog.appendChild(p);
@@ -147,15 +160,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 userDiv.innerHTML = `
                     <div class="flex items-center space-x-3">
                         <div class="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center">
-                            <span class="text-sm font-bold text-white">${user.username.charAt(0).toUpperCase()}</span>
+                            <span class="text-sm font-bold text-white">${escapeHTML(user.username.charAt(0).toUpperCase())}</span>
                         </div>
                         <div>
-                            <p class="font-semibold text-white">${user.username}</p>
-                            <p class="text-sm text-gray-400">ID: ${user.user_id} • Rollen: ${user.roles.join(', ')}</p>
+                            <p class="font-semibold text-white">${escapeHTML(user.username)}</p>
+                            <p class="text-sm text-gray-400">ID: ${escapeHTML(user.user_id.toString())} • Rollen: ${escapeHTML(user.roles.join(', '))}</p>
                         </div>
                     </div>
                     <div class="flex space-x-2">
-                        <button data-user-id="${user.user_id}" class="edit-user-btn px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        <button data-user-id="${escapeHTML(user.user_id.toString())}" class="edit-user-btn px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
                             <span class="flex items-center space-x-1">
                                 <i data-feather="edit-2" class="w-4 h-4"></i>
                                 <span>Bearbeiten</span>
@@ -181,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userListContainer.innerHTML = `
                 <div class="text-center py-8">
                     <i data-feather="alert-circle" class="w-12 h-12 mx-auto text-red-500 mb-4"></i>
-                    <p class="text-red-400">${error.message}</p>
+                    <p class="text-red-400">${escapeHTML(error.message)}</p>
                 </div>
             `;
             feather.replace();
