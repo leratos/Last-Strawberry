@@ -784,7 +784,7 @@ async def root_health_check():
         "service": "Backend Server", 
         "database": db_status,
         "ai_service_status": ai_status,
-        "timestamp": "2025-07-30T07:00:00"
+        "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/ping")
