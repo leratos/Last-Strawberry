@@ -29,6 +29,7 @@ key.json
 lora_adapter_output_temp/
 adapter/
 tools/
+installer/
 
 # Test und Debug Dateien
 backup_test_files/

@@ -2,7 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Konstanten und Konfiguration ---
-    const API_BASE_URL = 'http://localhost:8001';
+    const API_BASE_URL = window.LastStrawberryConfig?.API_BASE_URL || 'http://127.0.0.1:8001';
     const ATTRIBUTES = ["Stärke", "Geschicklichkeit", "Konstitution", "Intelligenz", "Weisheit", "Charisma", "Wahrnehmung"];
     const POINT_BUY_BUDGET = 75;
     const MIN_SCORE = 8;
@@ -82,8 +82,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeWorld = { world_id: null, player_id: null };
     let attributePoints = {};
     let lastAIResponse = null; // Speichert die letzte AI-Antwort für Korrekturen
+    let lastServerActivity = 0; // Zeitstempel der letzten Server-Aktivität für Warmup-Logik
 
     // --- Utility Funktionen ---
+    
+    // HTML-Escaping Funktion für XSS-Schutz
+    function escapeHTML(str) {
+        if (typeof str !== 'string') return str;
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
     
     function showScreen(screenName) {
         Object.values(screens).forEach(screen => screen.classList.remove('active'));
@@ -171,25 +183,71 @@ document.addEventListener('DOMContentLoaded', () => {
             headers['Content-Type'] = 'application/json';
         }
         
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        console.log('🚀 API Request:', {
+            url: `${API_BASE_URL}${endpoint}`,
             method,
-            headers,
-            body: body ? JSON.stringify(body) : null
+            userAgent: navigator.userAgent.substring(0, 50) + '...'
         });
         
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
+        // Versuche erst die primäre API URL
+        try {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : null
+            });
+            
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
+            }
+            console.log('✅ Primary API success');
+            return data;
+        } catch (error) {
+            console.warn('❌ Primary API failed:', error);
+            console.log('🔄 Trying fallback URLs...');
+            
+            // Versuche Fallback URLs
+            if (window.LastStrawberryConfig?.fallbackUrls) {
+                for (const fallbackUrl of window.LastStrawberryConfig.fallbackUrls) {
+                    if (fallbackUrl === API_BASE_URL) continue; // Skip bereits versuchte URL
+                    
+                    console.log(`🔄 Trying fallback: ${fallbackUrl}${endpoint}`);
+                    
+                    try {
+                        const response = await fetch(`${fallbackUrl}${endpoint}`, {
+                            method,
+                            headers,
+                            body: body ? JSON.stringify(body) : null
+                        });
+                        
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
+                        }
+                        
+                        console.log(`✅ Fallback success: ${fallbackUrl}`);
+                        return data;
+                    } catch (fallbackError) {
+                        console.warn(`❌ Fallback ${fallbackUrl} failed:`, fallbackError);
+                        continue;
+                    }
+                }
+            }
+            
+            // Alle URLs fehlgeschlagen
+            console.error('💥 All API endpoints failed!');
+            throw error;
         }
-        return data;
     }
 
     function displayMessage(htmlContent, type = 'story') {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'mb-4 p-4 rounded-lg';
 
-        // Markdown-ähnliches Parsing für Fett und Kursiv
-        let processedContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        // Sichere Verarbeitung: HTML-Escape ZUERST, dann Markdown-Parsing
+        let processedContent = escapeHTML(htmlContent);
+        processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
         processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
 
         if (type === 'story') {
@@ -199,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.className += ' player-input-text text-blue-400 font-semibold bg-blue-900 bg-opacity-30';
             messageDiv.innerHTML = `<div class="flex items-center space-x-2">
                 <i data-feather="user" class="w-4 h-4"></i>
-                <span>${htmlContent}</span>
+                <span>${escapeHTML(htmlContent)}</span>
             </div>`;
         } else if (type === 'event') {
             messageDiv.className += ' text-yellow-400 bg-yellow-900 bg-opacity-30';
@@ -224,17 +282,38 @@ document.addEventListener('DOMContentLoaded', () => {
         loginButton.innerHTML = '<i data-feather="loader" class="w-5 h-5 animate-spin"></i>';
         feather.replace();
 
+        console.log('🚀 Starting login process...');
+        console.log('🔧 Using API_BASE_URL:', API_BASE_URL);
+
         try {
             const formData = new FormData();
             formData.append('username', usernameInput.value);
             formData.append('password', passwordInput.value);
 
-            const response = await fetch(`${API_BASE_URL}/token`, { method: 'POST', body: formData });
+            console.log('📡 Making login request to:', `${API_BASE_URL}/token`);
+            console.log('🌐 User agent:', navigator.userAgent);
+
+            const response = await fetch(`${API_BASE_URL}/token`, { 
+                method: 'POST', 
+                body: formData,
+                mode: 'cors',
+                credentials: 'same-origin'
+            });
+            
+            console.log('📨 Response received:', {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok,
+                headers: Object.fromEntries(response.headers.entries())
+            });
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Anmeldung fehlgeschlagen.');
             }
             const data = await response.json();
+            console.log('✅ Login successful:', data);
+            
             authToken = data.access_token;
             localStorage.setItem('lastStrawberryToken', authToken);
             
@@ -245,6 +324,13 @@ document.addEventListener('DOMContentLoaded', () => {
             showScreen('worldSelection');
             showNotification('Erfolgreich angemeldet!', 'success');
         } catch (error) {
+            console.error('❌ Login failed:', error);
+            console.error('❌ Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            
             loginError.textContent = `Fehler: ${error.message}`;
             showNotification(`Anmeldung fehlgeschlagen: ${error.message}`, 'error');
         } finally {
@@ -364,9 +450,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     worldDiv.innerHTML = `
                         <div class="flex justify-between items-center">
                             <div class="flex-1">
-                                <h4 class="font-semibold text-white group-hover:text-purple-300 transition-colors">${world.world_name}</h4>
-                                <p class="text-sm text-gray-400 mt-1">Spieler: ${world.character_name || 'Unbekannt'}</p>
-                                <p class="text-xs text-gray-500 mt-1">Erstellt: ${new Date(world.created_at).toLocaleDateString('de-DE')}</p>
+                                <h4 class="font-semibold text-white group-hover:text-purple-300 transition-colors">${escapeHTML(world.world_name)}</h4>
+                                <p class="text-sm text-gray-400 mt-1">Spieler: ${escapeHTML(world.character_name || 'Unbekannt')}</p>
+                                <p class="text-xs text-gray-500 mt-1">Erstellt: ${escapeHTML(new Date(world.created_at).toLocaleDateString('de-DE'))}</p>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <i data-feather="play-circle" class="w-5 h-5 text-purple-400"></i>
@@ -384,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             worldListContainer.innerHTML = `
                 <div class="text-center py-8">
                     <i data-feather="alert-circle" class="w-12 h-12 mx-auto text-red-500 mb-4"></i>
-                    <p class="text-red-400">${error.message}</p>
+                    <p class="text-red-400">${escapeHTML(error.message)}</p>
                 </div>
             `;
             feather.replace();
@@ -468,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("Alle Felder für die neue Welt sind erforderlich.");
             }
             
-            const data = await apiRequest('/worlds/create', 'POST', worldData);
+            const data = await apiRequestWithWarmup('/worlds/create', 'POST', worldData);
             showNotification('Welt erfolgreich erstellt!', 'success');
             startGame(data.world_id, data.player_id, worldData.world_name, data.initial_story);
             
@@ -500,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             displayMessage('Lade Spielzusammenfassung...', 'story');
             try {
-                const data = await apiRequest(`/load_game_summary?world_id=${worldId}&player_id=${playerId}`);
+                const data = await apiRequestWithWarmup(`/load_game_summary?world_id=${worldId}&player_id=${playerId}`);
                 chatContainer.innerHTML = '';
                 displayMessage(data.response || data.summary || 'Willkommen zurück! Was möchtest du tun?', 'story');
                 // Aktiviere die Eingabemaske nach dem Laden
@@ -529,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         feather.replace();
 
         try {
-            const data = await apiRequest('/command', 'POST', {
+            const data = await apiRequestWithWarmup('/command', 'POST', {
                 command,
                 world_id: activeWorld.world_id,
                 player_id: activeWorld.player_id
@@ -632,18 +718,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyMessages = chatContainer.querySelectorAll('.story-text');
             if (storyMessages.length > 0) {
                 const lastStoryMessage = storyMessages[storyMessages.length - 1];
-                // Markdown-ähnliches Parsing für Fett und Kursiv
-                function escapeHTML(str) {
-                    return str
-                        .replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;")
-                        .replace(/"/g, "&quot;")
-                        .replace(/'/g, "&#39;");
-                }
-                let processedContent = narrativeText;
-                // Escape HTML first, then parse Markdown-like syntax
-                processedContent = processedContent.split('\n').map(p => escapeHTML(p)).join('\n');
+                // Sichere Verarbeitung: HTML-Escape ZUERST, dann Markdown-Parsing
+                let processedContent = escapeHTML(narrativeText);
                 processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
                 processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
                 lastStoryMessage.innerHTML = processedContent.split('\n').map(p => `<p>${p}</p>`).join('');
@@ -737,6 +813,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initialisierung ---
     
+    // Initialisiere Warmup-System
+    lastServerActivity = Date.now();
+    
     // Stelle sicher, dass beim ersten Laden nur der Login-Screen sichtbar ist
     Object.values(screens).forEach(screen => screen.classList.remove('active'));
     gameInputArea.classList.remove('active');
@@ -775,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const worldId = activeWorld.world_id;
         
         if (!worldId) {
-            showErrorNotification('Keine aktive Welt zum Exportieren.');
+            showNotification('Keine aktive Welt zum Exportieren.', 'error');
             return;
         }
         
@@ -816,17 +895,84 @@ document.addEventListener('DOMContentLoaded', () => {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
 
-            showSuccessNotification('Story erfolgreich exportiert!');
+            showNotification('Story erfolgreich exportiert!', 'success');
             hideModal(storyExportModal);
 
         } catch (error) {
             console.error('Story export error:', error);
-            showErrorNotification(`Export-Fehler: ${error.message}`);
+            showNotification(`Export-Fehler: ${error.message}`, 'error');
         } finally {
             startExportBtn.disabled = false;
             startExportBtn.innerHTML = '<i data-feather="download" class="w-4 h-4 mr-2"></i>Export starten';
             feather.replace();
         }
+    }
+    
+    // --- Cloud Run Warmup System für kosteneffiziente Nutzung ---
+    const WARMUP_THRESHOLD = 5 * 60 * 1000; // 5 Minuten
+    
+    async function warmupServerIfNeeded() {
+        const now = Date.now();
+        const timeSinceLastActivity = now - lastServerActivity;
+        
+        // Wenn der Server länger als 5 Minuten inaktiv war, warm ihn auf
+        if (timeSinceLastActivity > WARMUP_THRESHOLD) {
+            console.log('Server potentially cold, warming up...');
+            await performWarmupPings();
+            lastServerActivity = now;
+        }
+    }
+    
+    async function performWarmupPings() {
+        const maxRetries = 5;
+        let successful = false;
+        
+        for (let i = 0; i < maxRetries && !successful; i++) {
+            try {
+                console.log(`Warmup ping ${i + 1}/${maxRetries}...`);
+                const response = await fetch(`${API_BASE_URL}/ping`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(3000) // 3s timeout per ping
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Server warmup successful:', data.timestamp);
+                    successful = true;
+                } else {
+                    console.warn(`Warmup ping ${i + 1} failed:`, response.status);
+                    // Bei Ping-Fehlschlag 60 Sekunden warten (außer beim letzten Versuch)
+                    if (i < maxRetries - 1) {
+                        console.log('Waiting 60 seconds before next ping attempt...');
+                        await new Promise(resolve => setTimeout(resolve, 60000));
+                    }
+                }
+            } catch (error) {
+                console.warn(`Warmup ping ${i + 1} error:`, error.message);
+                // Bei Ping-Error auch 60 Sekunden warten (außer beim letzten Versuch)
+                if (i < maxRetries - 1) {
+                    console.log('Waiting 60 seconds before next ping attempt...');
+                    await new Promise(resolve => setTimeout(resolve, 60000));
+                }
+            }
+        }
+        
+        if (!successful) {
+            console.warn('Server warmup failed after all retries');
+        }
+    }
+    
+    // Erweiterte apiRequest-Funktion mit Warmup
+    async function apiRequestWithWarmup(endpoint, method = 'GET', body = null) {
+        // Warmup nur bei wichtigen API-Calls (nicht bei ping selbst)
+        if (endpoint !== '/ping') {
+            await warmupServerIfNeeded();
+        }
+        
+        const result = await apiRequest(endpoint, method, body);
+        lastServerActivity = Date.now(); // Aktualisiere letzte Aktivität
+        return result;
     }
     
     // Initialize feather icons

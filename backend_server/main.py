@@ -25,9 +25,11 @@ from google.auth.transport import requests
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import time
 
 # Wir importieren jetzt die neue Online-Version des GameManagers
 from class_folder.game_logic.game_manager_online import GameManagerOnline
@@ -40,8 +42,51 @@ ALLOWED_SCRIPTS = {
 }
 
 # --- Logging-Konfiguration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Bestimme Log-Pfad je nach Umgebung
+if os.path.exists("/var/www/vhosts/last-strawberry.com/last-strawberry-backend/logs/"):
+    # Produktionsserver-Pfad
+    log_path = "/var/www/vhosts/last-strawberry.com/last-strawberry-backend/logs/backend.log"
+    access_log_path = "/var/www/vhosts/last-strawberry.com/last-strawberry-backend/logs/access.log"
+else:
+    # Lokaler Entwicklungspfad
+    log_path = project_root / "backend_server" / "backend.log"
+    access_log_path = project_root / "backend_server" / "access.log"
+
+# Erstelle File-Handler für Backend-Logs
+file_handler = logging.FileHandler(log_path, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+
+# Erstelle separaten Handler für Access-Logs (Login-Versuche, etc.)
+access_handler = logging.FileHandler(access_log_path, encoding='utf-8')
+access_handler.setLevel(logging.INFO)
+access_formatter = logging.Formatter('%(asctime)s - ACCESS - %(levelname)s - %(message)s')
+access_handler.setFormatter(access_formatter)
+
+# Console Handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+# Root Logger Konfiguration
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
+# Separater Logger für Access-Events
+access_logger = logging.getLogger("access")
+access_logger.setLevel(logging.INFO)
+access_logger.addHandler(access_handler)
+access_logger.addHandler(console_handler)  # Auch in Console ausgeben
+
 logger = logging.getLogger(__name__)
+logger.info(f"🚀 Backend-Server wird gestartet - Logging initialisiert")
+logger.info(f"📁 Backend-Logs: {log_path}")
+logger.info(f"📁 Access-Logs: {access_log_path}")
 
 class WorldCreationResponse(BaseModel):
     message: str
@@ -68,8 +113,8 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     return user
 
 # --- Konfiguration ---
-# AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.run.app" # Die Adresse unseres Docker-Containers
-AI_SERVICE_URL = "http://127.0.0.1:8080"  # Lokaler Server für Entwicklung
+AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.run.app" # Die Adresse unseres Docker-Containers
+# AI_SERVICE_URL = "http://127.0.0.1:8080"  # Lokaler Server für Entwicklung
 # --- FastAPI App ---
 key_path = project_root / "backend_server" / "key.json"
 if key_path.exists():
@@ -80,6 +125,56 @@ app = FastAPI(
     description="Verwaltet die Spiellogik und Benutzer.",
     version="1.4.0"
 )
+
+# Request Logging Middleware - MUSS vor CORS stehen
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # Sammle Request-Details
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    method = request.method
+    url = str(request.url)
+    
+    # Log eingehende Anfrage in access.log
+    access_logger.info(f"🌐 {method} {url} | IP: {client_ip} | UA: {user_agent[:100]}")
+    
+    # Spezielle Behandlung für kritische Endpunkte
+    if "/token" in url:
+        access_logger.info(f"🔐 Login-Versuch von IP: {client_ip} | User-Agent: {user_agent}")
+        
+        # Log Request Headers für CORS-Debugging
+        origin = request.headers.get("origin", "None")
+        referer = request.headers.get("referer", "None")
+        content_type = request.headers.get("content-type", "None")
+        
+        access_logger.info(f"📋 Headers: Origin={origin} | Referer={referer} | Content-Type={content_type}")
+    
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        # Log Response Details
+        status_code = response.status_code
+        access_logger.info(f"✅ {method} {url} | Status: {status_code} | Time: {process_time:.3f}s")
+        
+        # Log Fehler-Details
+        if status_code >= 400:
+            access_logger.warning(f"❌ Fehler {status_code} für {method} {url} | IP: {client_ip}")
+            
+        return response
+        
+    except Exception as e:
+        process_time = time.time() - start_time
+        access_logger.error(f"💥 Exception für {method} {url} | IP: {client_ip} | Error: {str(e)} | Time: {process_time:.3f}s")
+        
+        # Return error response
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "error": str(e)}
+        )
+
 origins = [
     "*",  # Erlaubt alle Origins, für die Entwicklung am einfachsten.
 ]
@@ -91,6 +186,9 @@ app.add_middleware(
     allow_methods=["*"], # Erlaubt alle Methoden (GET, POST, etc.)
     allow_headers=["*"], # Erlaubt alle Header
 )
+
+# Log CORS configuration
+logger.info(f"🌍 CORS-Konfiguration: Origins={origins}, Credentials=True, Methods=*, Headers=*")
 
 # --- Globale Instanzen ---
 # Diese werden beim Start der Anwendung initialisiert
@@ -160,16 +258,68 @@ def get_current_admin_user(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Keine Berechtigung für diese Aktion")
     return current_user
 
-@app.post("/token", tags=["Auth"])
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Überprüft Benutzerdaten gegen die DB und gibt einen Token zurück."""
-    user = db_manager.get_user_by_username(form_data.username)
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-    if not user.get('is_active', False):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+@app.get("/debug/test-logging")
+async def test_logging(request: Request):
+    """Test-Endpunkt für Logging-Funktionalität."""
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
     
-    return {"access_token": user["username"], "token_type": "bearer", "roles": user.get("roles", [])}
+    logger.info(f"🧪 Debug-Test aufgerufen von IP: {client_ip} | UA: {user_agent}")
+    logger.warning(f"⚠️ Test-Warning-Message")
+    logger.error(f"❌ Test-Error-Message")
+    
+    return {
+        "message": "Logging-Test erfolgreich",
+        "ip": client_ip,
+        "user_agent": user_agent,
+        "timestamp": datetime.now().isoformat(),
+        "log_file": str(project_root / "backend_server" / "backend.log")
+    }
+
+@app.get("/token", tags=["Auth"])
+async def token_info():
+    """Gibt Informationen über den Token-Endpunkt zurück (GET-Version für Tests)."""
+    return {
+        "message": "Token-Endpunkt ist erreichbar",
+        "method": "POST",
+        "description": "Verwende POST mit username/password für Anmeldung",
+        "format": "application/x-www-form-urlencoded",
+        "fields": ["username", "password"],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.post("/token", tags=["Auth"])
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Request = None):
+    """Überprüft Benutzerdaten gegen die DB und gibt einen Token zurück."""
+    client_ip = request.client.host if request and request.client else "unknown"
+    username = form_data.username
+    
+    access_logger.info(f"🔑 Login-Versuch für Benutzer '{username}' von IP: {client_ip}")
+    
+    try:
+        user = db_manager.get_user_by_username(username)
+        
+        if not user:
+            access_logger.warning(f"❌ Login fehlgeschlagen: Benutzer '{username}' nicht gefunden | IP: {client_ip}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+        
+        if not verify_password(form_data.password, user["hashed_password"]):
+            access_logger.warning(f"❌ Login fehlgeschlagen: Falsches Passwort für '{username}' | IP: {client_ip}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+        
+        if not user.get('is_active', False):
+            access_logger.warning(f"❌ Login fehlgeschlagen: Benutzer '{username}' ist deaktiviert | IP: {client_ip}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+        
+        access_logger.info(f"✅ Login erfolgreich für Benutzer '{username}' | IP: {client_ip} | Rollen: {user.get('roles', [])}")
+        return {"access_token": user["username"], "token_type": "bearer", "roles": user.get("roles", [])}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        access_logger.error(f"💥 Unerwarteter Fehler beim Login für '{username}' | IP: {client_ip} | Error: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 # --- Admin-Bereich: Benutzerverwaltung ---
 class UserCreate(BaseModel):
@@ -605,16 +755,49 @@ async def root():
 
 @app.get("/health")
 async def root_health_check():
-    ai_status = {"status": "unreachable"}
+    """Health check endpoint - testet Backend-Funktionalität ohne AI-Service Dependencies."""
+    ai_status = {"status": "not_checked", "message": "AI service check skipped for stability"}
+    
+    # Teste nur die Datenbankverbindung, nicht den AI-Service
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        # Einfacher DB-Test
+        test_user = db_manager.get_user_by_username("test_connection")
+        db_status = "ok"
+    except Exception as e:
+        logger.warning(f"Database health check failed: {e}")
+        db_status = "error"
+    
+    # Optional: AI-Service testen, aber Fehler ignorieren
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{AI_SERVICE_URL}/health")
-            response.raise_for_status()
-            ai_status = response.json()
-    except httpx.RequestError as e:
-        logger.warning(f"Health check for AI service failed: {e}")
+            if response.status_code == 200:
+                ai_status = {"status": "ok", "response": response.json()}
+            else:
+                ai_status = {"status": "unreachable", "code": response.status_code}
+    except Exception as e:
+        ai_status = {"status": "unreachable", "error": str(e)[:100]}
+    
+    return {
+        "status": "ok",
+        "service": "Backend Server", 
+        "database": db_status,
+        "ai_service_status": ai_status,
+        "timestamp": "2025-07-30T07:00:00"
+    }
 
-    return {"status": "ok", "service": "Backend Server", "ai_service_status": ai_status}
+@app.get("/ping")
+async def ping():
+    """
+    Ping-Endpunkt für Google Cloud Run Kaltstart-Vermeidung.
+    Kann verwendet werden, um den Service warm zu halten.
+    """
+    return {
+        "status": "pong", 
+        "service": "Backend Server",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.4.0"
+    }
 
 class AttributeUpdateRequest(BaseModel):
     player_id: int

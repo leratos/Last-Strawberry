@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from class_folder.game_logic.game_manager import GameManager
 from class_folder.core.inference_service import InferenceService
 from class_folder.core.cloud_inference_service import CloudInferenceService
+from class_folder.core.model_download_manager import ModelDownloadManager
 from class_folder.ui.player_selection_dialog import PlayerSelectionDialog
 from class_folder.ui.settings_dialog import SettingsDialog
 from class_folder.core.database_manager import DatabaseManager
@@ -63,6 +64,7 @@ class AdventureWindow(QMainWindow):
         self.current_user: Optional[dict] = None
         self.db_manager: Optional[DatabaseManager] = None
         self.settings: Optional[dict] = None
+        self.model_manager: Optional[ModelDownloadManager] = None
 
         self.setup_ui()
         self.apply_stylesheet()
@@ -230,6 +232,7 @@ class AdventureWindow(QMainWindow):
         
         self.current_user = selected_user
         self.db_manager = DatabaseManager()
+        self.model_manager = ModelDownloadManager()
         
         logger.info(f"Spieler ausgewählt: {selected_user['username']} (ID: {selected_user['user_id']})")
         
@@ -240,8 +243,24 @@ class AdventureWindow(QMainWindow):
         """Zeigt Optionen vor dem Spielstart an."""
         service_mode = "Cloud-API" if self.is_cloud_mode() else "Lokale KI"
         
+        # Prüfe Model-Status
+        model_status = self.model_manager.check_models_available()
+        models_available = model_status['base_model']
+        
         # Update window title
         self.setWindowTitle(f"Last-Strawberry - {self.current_user['username']} ({service_mode})")
+        
+        # Erstelle Status-Info basierend auf verfügbaren Modellen
+        model_info = ""
+        if models_available:
+            model_info = f"""
+                <p style='color: #4caf50;'>✅ <strong>Lokale Modelle verfügbar</strong> ({model_status['total_size_gb']:.1f} GB)</p>
+            """
+        else:
+            model_info = f"""
+                <p style='color: #ff9800;'>⚠️ <strong>Keine lokalen Modelle gefunden</strong></p>
+                <p>Für Offline-Modus müssen Modelle heruntergeladen werden (~17 GB)</p>
+            """
         
         # Zeige Info und Einstellungsoptionen
         self.story_display.setHtml(f"""
@@ -250,11 +269,13 @@ class AdventureWindow(QMainWindow):
             <h3>Aktueller Modus: <span style='color: #4caf50;'>{service_mode}</span></h3>
             
             <div style='margin: 30px 0; padding: 20px; background-color: #2d2d30; border-radius: 8px;'>
-                <p><strong>💡 Hinweis:</strong></p>
+                <p><strong>💡 Status:</strong></p>
+                {model_info}
                 <p>• <strong>Lokale KI:</strong> Verwendet dein lokales NVIDIA GPU-Modell (benötigt CUDA)</p>
                 <p>• <strong>Cloud-API:</strong> Nutzt einen externen KI-Service (z.B. 127.0.0.1:8080)</p>
                 <br>
                 <p>Klicken Sie auf <strong>"⚙️ Einstellungen"</strong> um den Modus zu wechseln,<br>
+                {'<strong>"📥 Modelle laden"</strong> zum Download,' if not models_available else ''}<br>
                 oder auf <strong>"🚀 Spiel starten"</strong> um mit dem aktuellen Modus zu beginnen.</p>
             </div>
         </div>
@@ -263,12 +284,15 @@ class AdventureWindow(QMainWindow):
         # Aktiviere Einstellungs-Button sofort
         self.settings_button.setEnabled(True)
         
-        # Entferne vorherigen Start-Button falls vorhanden
+        # Entferne vorherige Buttons falls vorhanden
         if hasattr(self, 'start_game_button'):
             self.start_game_button.setParent(None)
             delattr(self, 'start_game_button')
+        if hasattr(self, 'download_models_button'):
+            self.download_models_button.setParent(None)
+            delattr(self, 'download_models_button')
         
-        # Füge temporären Start-Button hinzu
+        # Füge Buttons hinzu
         self.start_game_button = QPushButton("🚀 Spiel starten")
         self.start_game_button.clicked.connect(self.begin_game_loading)
         
@@ -285,6 +309,62 @@ class AdventureWindow(QMainWindow):
             layout = control_group.layout()
             # Füge Start-Button vor dem Stretch hinzu
             layout.insertWidget(layout.count() - 1, self.start_game_button)
+            
+            # Füge Download-Button hinzu falls Modelle fehlen
+            if not models_available:
+                self.download_models_button = QPushButton("📥 Modelle laden")
+                self.download_models_button.clicked.connect(self.start_model_download)
+                layout.insertWidget(layout.count() - 1, self.download_models_button)
+
+    def start_model_download(self):
+        """Startet den Model-Download-Prozess"""
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import QThread, pyqtSignal
+        
+        # Erstelle Progress-Dialog
+        progress_dialog = QProgressDialog("Lade KI-Modelle...", "Abbrechen", 0, 100, self)
+        progress_dialog.setWindowTitle("Model-Download")
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.show()
+        
+        # Update-Funktion für Progress
+        def update_progress(message: str, progress: float):
+            progress_dialog.setLabelText(message)
+            progress_dialog.setValue(int(progress))
+            QApplication.processEvents()  # UI responsive halten
+        
+        self.model_manager.set_progress_callback(update_progress)
+        
+        try:
+            # Starte Download
+            success = self.model_manager.download_all_models()
+            
+            progress_dialog.close()
+            
+            if success:
+                QMessageBox.information(
+                    self, 
+                    "Download erfolgreich", 
+                    "KI-Modelle wurden erfolgreich heruntergeladen!\n\n"
+                    "Sie können jetzt den Offline-Modus verwenden."
+                )
+                # Aktualisiere die Anzeige
+                self.show_startup_options()
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "Download fehlgeschlagen", 
+                    "Der Model-Download konnte nicht abgeschlossen werden.\n\n"
+                    "Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut."
+                )
+                
+        except Exception as e:
+            progress_dialog.close()
+            QMessageBox.critical(
+                self, 
+                "Download-Fehler", 
+                f"Ein Fehler ist beim Model-Download aufgetreten:\n\n{str(e)}"
+            )
 
     def begin_game_loading(self):
         """Beginnt das eigentliche Laden des Spiels basierend auf den Einstellungen."""
