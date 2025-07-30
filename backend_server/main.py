@@ -172,7 +172,7 @@ async def log_requests(request: Request, call_next):
         # Return error response
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error", "error": str(e)}
+            content={"detail": "Internal server error", "error": "An unexpected error occurred"}
         )
 
 origins = [
