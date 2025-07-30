@@ -776,7 +776,8 @@ async def root_health_check():
             else:
                 ai_status = {"status": "unreachable", "code": response.status_code}
     except Exception as e:
-        ai_status = {"status": "unreachable", "error": str(e)[:100]}
+        logger.warning(f"AI service health check failed: {e}")
+        ai_status = {"status": "unreachable", "error": "An error occurred while checking AI service health."}
     
     return {
         "status": "ok",
