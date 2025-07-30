@@ -15,6 +15,7 @@ import json
 import subprocess
 import asyncio
 import re
+from datetime import datetime
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
@@ -34,7 +35,7 @@ import time
 # Wir importieren jetzt die neue Online-Version des GameManagers
 from class_folder.game_logic.game_manager_online import GameManagerOnline
 from class_folder.core.database_manager import DatabaseManager
-from server_tools.auth_utils import verify_password, get_password_hash
+from server_tools.auth_utils import verify_password, get_password_hash, create_access_token, verify_access_token, get_current_user_from_token
 
 ALLOWED_SCRIPTS = {
     "train_analyst": project_root / "trainer/train_analyst.py",
@@ -98,18 +99,38 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     """
-    Abhängigkeit, die den Benutzer aus dem Token holt und prüft, ob er aktiv ist.
-    In unserem Fall ist der Token einfach der Benutzername.
+    Abhängigkeit, die den Benutzer aus dem JWT Token holt und prüft, ob er aktiv ist.
     """
-    user = db_manager.get_user_by_username(token)
-    if not user:
+    # Versuche JWT Token zu dekodieren
+    payload = verify_access_token(token)
+    if not payload:
         raise HTTPException(
             status_code=401,
             detail="Ungültige Authentifizierungsdaten",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Extrahiere Benutzername aus Token
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=401,
+            detail="Token enthält keinen gültigen Benutzernamen",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Lade Benutzer aus Datenbank
+    user = db_manager.get_user_by_username(username)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Benutzer nicht gefunden",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     if not user.get('is_active'):
         raise HTTPException(status_code=400, detail="Inaktiver Benutzer")
+    
     return user
 
 # --- Konfiguration ---
@@ -148,47 +169,102 @@ async def log_requests(request: Request, call_next):
         origin = request.headers.get("origin", "None")
         referer = request.headers.get("referer", "None")
         content_type = request.headers.get("content-type", "None")
-        
-        access_logger.info(f"📋 Headers: Origin={origin} | Referer={referer} | Content-Type={content_type}")
+        access_logger.info(f"🔍 Headers: Origin={origin} | Referer={referer} | Content-Type={content_type}")
     
-    try:
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        
-        # Log Response Details
-        status_code = response.status_code
-        access_logger.info(f"✅ {method} {url} | Status: {status_code} | Time: {process_time:.3f}s")
-        
-        # Log Fehler-Details
-        if status_code >= 400:
-            access_logger.warning(f"❌ Fehler {status_code} für {method} {url} | IP: {client_ip}")
-            
-        return response
-        
-    except Exception as e:
-        process_time = time.time() - start_time
-        access_logger.error(f"💥 Exception für {method} {url} | IP: {client_ip} | Error: {str(e)} | Time: {process_time:.3f}s")
-        
-        # Return error response
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error", "error": "An unexpected error occurred"}
-        )
+    # Verarbeite die Anfrage
+    response = await call_next(request)
+    
+    # Berechne Antwortzeit
+    process_time = time.time() - start_time
+    
+    # Log Response-Details
+    access_logger.info(f"📤 Response: {response.status_code} | Zeit: {process_time:.3f}s | IP: {client_ip}")
+    
+    return response
 
-origins = [
-    "*",  # Erlaubt alle Origins, für die Entwicklung am einfachsten.
-]
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Security Headers für HTTPS-Umgebung
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        f"default-src 'self'; "
+        f"script-src 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com https://unpkg.com; "
+        f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
+        f"font-src 'self' https://fonts.gstatic.com; "
+        f"connect-src 'self' https://last-strawberry.com"
+    )
+    
+    return response
+
+# CORS-Konfiguration - Umgebungsbasierte Origins
+import os
+
+# Bestimme erlaubte Origins basierend auf Umgebung
+def get_allowed_origins():
+    # Produktionsumgebung
+    production_origins = [
+        "https://last-strawberry.com",
+        "https://www.last-strawberry.com",
+        "https://last-strawberry.com:443",
+    ]
+    
+    # Entwicklungsumgebung
+    development_origins = [
+        "http://localhost:3000",
+        "http://localhost:8080", 
+        "http://localhost:5000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:5000",
+        "http://127.0.0.1",
+        "http://localhost",
+    ]
+    
+    # Prüfe ob Produktionsumgebung (anhand von Pfaden oder Environment Variables)
+    is_production = (
+        os.path.exists("/var/www/vhosts/last-strawberry.com/") or 
+        os.environ.get("ENVIRONMENT") == "production" or
+        os.environ.get("DEPLOY_ENV") == "production"
+    )
+    
+    if is_production:
+        logger.info("🌐 Produktionsumgebung erkannt - Verwende spezifische CORS Origins")
+        return production_origins
+    else:
+        logger.info("🛠️ Entwicklungsumgebung erkannt - Verwende erweiterte CORS Origins")
+        return production_origins + development_origins  # Auch Produktion für Testing
+
+allowed_origins = get_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"], # Erlaubt alle Methoden (GET, POST, etc.)
-    allow_headers=["*"], # Erlaubt alle Header
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language", 
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-CSRFToken",
+    ],
+    expose_headers=["X-Total-Count", "X-Page-Count"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Log CORS configuration
-logger.info(f"🌍 CORS-Konfiguration: Origins={origins}, Credentials=True, Methods=*, Headers=*")
+logger.info(f"🌍 CORS-Konfiguration: Origins={len(allowed_origins)} erlaubte Domains, Credentials=True")
+logger.info(f"📋 Erlaubte Origins: {', '.join(allowed_origins[:3])}{'...' if len(allowed_origins) > 3 else ''}")
 
 # --- Globale Instanzen ---
 # Diese werden beim Start der Anwendung initialisiert
@@ -244,16 +320,9 @@ def startup_event():
     logger.info("Backend-Server gestartet, DB-Schema geprüft und GameManagerOnline initialisiert.")
 
 # --- Login-System ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# oauth2_scheme wurde bereits oben definiert - Duplikat entfernt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    """Holt den Benutzer aus der DB basierend auf dem Token (hier: Benutzername)."""
-    user = db_manager.get_user_by_username(token)
-    if not user or not user.get('is_active', False):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials or inactive user")
-    return user
-
-def get_current_admin_user(current_user: dict = Depends(get_current_user)):
+def get_current_admin_user(current_user: dict = Depends(get_current_active_user)):
     if "admin" not in current_user.get("roles", []):
         raise HTTPException(status_code=403, detail="Keine Berechtigung für diese Aktion")
     return current_user
@@ -311,8 +380,23 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Reque
             access_logger.warning(f"❌ Login fehlgeschlagen: Benutzer '{username}' ist deaktiviert | IP: {client_ip}")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
         
-        access_logger.info(f"✅ Login erfolgreich für Benutzer '{username}' | IP: {client_ip} | Rollen: {user.get('roles', [])}")
-        return {"access_token": user["username"], "token_type": "bearer", "roles": user.get("roles", [])}
+        # Erstelle JWT Token mit Benutzerdaten
+        token_data = {
+            "sub": user["username"],  # Subject (Benutzername)
+            "user_id": user["user_id"],
+            "roles": user.get("roles", []),
+            "is_active": user.get("is_active", False)
+        }
+        
+        access_token = create_access_token(data=token_data)
+        
+        access_logger.info(f"✅ Login erfolgreich für Benutzer '{username}' | IP: {client_ip} | Rollen: {user.get('roles', [])} | Token erstellt")
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer", 
+            "roles": user.get("roles", []),
+            "expires_in": 24 * 60 * 60  # 24 Stunden in Sekunden
+        }
         
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -371,7 +455,7 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 
 @app.put("/profile/password", tags=["Profile"])
-async def change_own_password(request: PasswordChangeRequest, current_user: dict = Depends(get_current_user)):
+async def change_own_password(request: PasswordChangeRequest, current_user: dict = Depends(get_current_active_user)):
     """Ermöglicht es Benutzern, ihr eigenes Passwort zu ändern."""
     # Aktuelles Passwort verifizieren
     if not verify_password(request.current_password, current_user["hashed_password"]):
@@ -389,7 +473,7 @@ async def change_own_password(request: PasswordChangeRequest, current_user: dict
     return {"message": "Passwort erfolgreich geändert"}
 
 @app.get("/profile", tags=["Profile"])
-async def get_profile(current_user: dict = Depends(get_current_user)):
+async def get_profile(current_user: dict = Depends(get_current_active_user)):
     """Gibt die Profil-Informationen des aktuellen Benutzers zurück."""
     return {
         "user_id": current_user["user_id"],
@@ -405,7 +489,7 @@ import json
 from datetime import datetime
 
 @app.get("/worlds/{world_id}/story/export", tags=["Story"])
-async def export_story(world_id: int, format: str = "txt", current_user: dict = Depends(get_current_user)):
+async def export_story(world_id: int, format: str = "txt", current_user: dict = Depends(get_current_active_user)):
     """Exportiert die komplette Story einer Welt in verschiedenen Formaten."""
     try:
         # Hole alle Story-Events für diese Welt
@@ -515,7 +599,7 @@ async def export_story(world_id: int, format: str = "txt", current_user: dict = 
         raise HTTPException(status_code=500, detail=f"Fehler beim Exportieren der Story: {str(e)}")
 
 @app.get("/worlds/{world_id}/statistics", tags=["Story"])
-async def get_world_statistics(world_id: int, current_user: dict = Depends(get_current_user)):
+async def get_world_statistics(world_id: int, current_user: dict = Depends(get_current_active_user)):
     """Gibt Statistiken für eine Welt zurück."""
     try:
         stats = db_manager.get_world_statistics(world_id)
@@ -665,13 +749,13 @@ class WorldCreateRequest(BaseModel):
     template_key: str = "system_fantasy"
 
 @app.get("/worlds", tags=["Game"])
-async def get_all_worlds(current_user: dict = Depends(get_current_user)):
+async def get_all_worlds(current_user: dict = Depends(get_current_active_user)):
     """Gibt eine Liste aller existierenden Welten und deren Spieler zurück."""
     worlds = db_manager.get_all_worlds_and_players()
     return {"worlds": worlds}
 
 @app.post("/worlds/create", response_model=WorldCreationResponse, tags=["Game"])
-async def create_new_world(request: WorldCreateRequest, current_user: dict = Depends(get_current_user)):
+async def create_new_world(request: WorldCreateRequest, current_user: dict = Depends(get_current_active_user)):
     logger.info(f"Anfrage zur Welterstellung für '{request.world_name}' von Benutzer {current_user['username']} erhalten.")
     try:
         initial_conditions = await game_manager_instance._generate_initial_conditions(
@@ -710,7 +794,7 @@ class CommandRequest(BaseModel):
     player_id: int
 
 @app.post("/command", tags=["Game"])
-async def process_command(request: CommandRequest, current_user: dict = Depends(get_current_user)):
+async def process_command(request: CommandRequest, current_user: dict = Depends(get_current_active_user)):
     """Nimmt einen Spieler-Befehl entgegen und gibt die Antwort des Spiels zurück."""
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
@@ -726,7 +810,7 @@ async def process_command(request: CommandRequest, current_user: dict = Depends(
     return response
 
 @app.get("/load_game_summary", tags=["Game"])
-async def load_game_summary(world_id: int, player_id: int, current_user: dict = Depends(get_current_user)):
+async def load_game_summary(world_id: int, player_id: int, current_user: dict = Depends(get_current_active_user)):
     """Gibt die Start-Zusammenfassung für ein spezifisches Spiel zurück."""
     if not game_manager_instance:
         raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
@@ -805,7 +889,7 @@ class AttributeUpdateRequest(BaseModel):
     new_attributes: Dict[str, int]
 
 @app.post("/character/update_attributes", tags=["Game"])
-async def update_attributes(request: AttributeUpdateRequest, current_user: dict = Depends(get_current_user)):
+async def update_attributes(request: AttributeUpdateRequest, current_user: dict = Depends(get_current_active_user)):
     """Speichert die vom Spieler nach einem Level-Up verteilten Attributspunkte."""
     if not db_manager.is_user_authorized_for_player(current_user['user_id'], request.player_id):
         raise HTTPException(status_code=403, detail="Permission denied to update attributes for this player.")
@@ -816,4 +900,13 @@ async def update_attributes(request: AttributeUpdateRequest, current_user: dict 
     
     return {"message": "Attributes updated successfully."}
 
-# uvicorn backend_server.main:app --reload --port 8001
+# --- Server-Start ---
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8001,
+        reload=False,  # Reload deaktiviert für stabileren Test
+        log_level="info"
+    )

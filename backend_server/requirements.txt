@@ -5,6 +5,10 @@ fastapi
 uvicorn[standard]
 pydantic
 
+# Authentication & Security
+PyJWT[crypto]
+python-multipart
+
 # HTTP-Client für die Kommunikation mit dem KI-Dienst
 httpx
 certifi
