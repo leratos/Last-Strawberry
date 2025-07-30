@@ -10,7 +10,7 @@ function getApiBaseUrl() {
     
     // ENTWICKLUNG: Lokale IPs oder localhost
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
-        console.log('📍 Lokale Entwicklung erkannt - verwende lokalen Backend-Port');
+        console.log('📍 Lokale Entwicklung erkannt - verwende lokalen Backend-Port 8001');
         return 'http://127.0.0.1:8001';
     }
     
@@ -25,9 +25,9 @@ function getApiBaseUrl() {
             return 'http://127.0.0.1:8001';
         }
         
-        console.log('🌐 Produktionsumgebung erkannt - verwende Nginx-Proxy');
-        // Nutze die gleiche URL wie die Webseite (Nginx @backend fallback)
-        return `${protocol}//${hostname}`;
+        console.log('🌐 Produktionsumgebung erkannt - verwende HTTPS Nginx-Proxy');
+        // Nutze HTTPS für Produktionsumgebung
+        return `https://${hostname}`;
     }
     
     // Standard-Fallback für Entwicklung
@@ -38,7 +38,7 @@ function getApiBaseUrl() {
 // Server-Konfiguration
 window.LastStrawberryConfig = {
     API_BASE_URL: getApiBaseUrl(),
-    PRODUCTION_API_URL: `${window.location.protocol}//${window.location.hostname}`,
+    PRODUCTION_API_URL: `https://${window.location.hostname}`,
     LOCAL_API_URL: 'http://127.0.0.1:8001',
     
     // Manuelle Override-Funktionen für Debugging
