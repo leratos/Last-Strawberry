@@ -109,8 +109,8 @@ async def health_check():
     else:
         status_message = "KI-Modell konnte nicht geladen werden."
         if inference_service:
-            status_message = inference_service.load_status
-        return {"status": "unavailable", "message": status_message}
+            logger.error(f"Model load status: {inference_service.load_status}")
+        return {"status": "unavailable", "message": "Das KI-Modell ist derzeit nicht verfügbar."}
 
 # Um den Server lokal zu testen, führen Sie im Terminal aus:
 # uvicorn ai_service.main:app --reload
