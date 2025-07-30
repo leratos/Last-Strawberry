@@ -942,18 +942,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     successful = true;
                 } else {
                     console.warn(`Warmup ping ${i + 1} failed:`, response.status);
-                    // Bei Ping-Fehlschlag 60 Sekunden warten (außer beim letzten Versuch)
+                    // Bei Ping-Fehlschlag mit exponentiellem Backoff warten (außer beim letzten Versuch)
                     if (i < maxRetries - 1) {
-                        console.log('Waiting 60 seconds before next ping attempt...');
-                        await new Promise(resolve => setTimeout(resolve, 60000));
+                        const baseDelay = 1000; // 1 second
+                        const maxDelay = 60000; // 60 seconds
+                        const delay = Math.min(baseDelay * Math.pow(2, i), maxDelay);
+                        console.log(`Waiting ${delay / 1000} seconds before next ping attempt...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
             } catch (error) {
                 console.warn(`Warmup ping ${i + 1} error:`, error.message);
-                // Bei Ping-Error auch 60 Sekunden warten (außer beim letzten Versuch)
+                // Bei Ping-Error mit exponentiellem Backoff warten (außer beim letzten Versuch)
                 if (i < maxRetries - 1) {
-                    console.log('Waiting 60 seconds before next ping attempt...');
-                    await new Promise(resolve => setTimeout(resolve, 60000));
+                    const baseDelay = 1000; // 1 second
+                    const maxDelay = 60000; // 60 seconds
+                    const delay = Math.min(baseDelay * Math.pow(2, i), maxDelay);
+                    console.log(`Waiting ${delay / 1000} seconds before next ping attempt...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
         }
