@@ -100,25 +100,19 @@ except Exception as e:
     sys.exit(1)
 '''
             
-            # Schreibe temporäres Script
-            temp_script = self.app_dir / "temp_download.py"
-            with open(temp_script, 'w', encoding='utf-8') as f:
-                f.write(download_script)
-            
-            # Führe Download aus
-            result = subprocess.run([
-                python_exe, str(temp_script)
-            ], capture_output=True, text=True, cwd=str(self.app_dir))
-            
-            # Cleanup
-            if temp_script.exists():
-                temp_script.unlink()
-            
-            if result.returncode == 0:
+            try:
+                # Starte direkten Download mit huggingface_hub
+                self._report_progress("Starte Download von Meta-Llama-3-8B-Instruct...", 0)
+                snapshot_download(
+                    repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
+                    cache_dir=str(self.hf_cache_dir),
+                    local_dir=str(self.hf_cache_dir / "models--meta-llama--Meta-Llama-3-8B-Instruct"),
+                    local_dir_use_symlinks=False
+                )
                 self._report_progress("Basis-Modell erfolgreich heruntergeladen!", 100)
                 return True
-            else:
-                self._report_progress(f"Download-Fehler: {result.stderr}", 0)
+            except Exception as e:
+                self._report_progress(f"Download-Fehler: {e}", 0)
                 return False
                 
         except Exception as e:
