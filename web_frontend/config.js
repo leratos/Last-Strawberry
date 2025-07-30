@@ -95,7 +95,7 @@ window.testApiConnection = async function() {
     const testUrls = [
         window.LastStrawberryConfig.API_BASE_URL + '/ping',
         window.LastStrawberryConfig.API_BASE_URL + '/health',
-        'https://last-strawberry.com/ping',
+        window.LastStrawberryConfig.PRODUCTION_PING_URL,
         'https://last-strawberry.com/health'
     ];
     
