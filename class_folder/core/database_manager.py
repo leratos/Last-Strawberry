@@ -136,7 +136,7 @@ class DatabaseManager:
                     cursor.execute("SELECT world_id FROM worlds WHERE name = ?", (world_name,))
                     existing_world = cursor.fetchone()
                     counter += 1
-                    if counter > 100:  # Schutz vor Endlosschleife
+                    if counter > self.MAX_WORLD_NAME_ATTEMPTS:  # Schutz vor Endlosschleife
                         raise ValueError(f"Could not create unique world name for '{base_name}'")
                 
                 logger.info(f"Using unique world name: '{world_name}'")
