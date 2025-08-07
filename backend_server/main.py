@@ -94,6 +94,7 @@ class WorldCreationResponse(BaseModel):
     world_id: int
     player_id: int
     initial_story: str
+    final_world_name: Optional[str] = None
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -185,7 +186,12 @@ async def log_requests(request: Request, call_next):
 # Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    import secrets
+    
     response = await call_next(request)
+    
+    # Generiere einen neuen Nonce für jede Anfrage
+    nonce = secrets.token_urlsafe(16)
     
     # Security Headers für HTTPS-Umgebung
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -194,13 +200,21 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    
+    # CSP mit dynamischem Nonce - Erlaube API-Zugriff über Reverse Proxy
     response.headers["Content-Security-Policy"] = (
         f"default-src 'self'; "
         f"script-src 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com https://unpkg.com; "
         f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
         f"font-src 'self' https://fonts.gstatic.com; "
-        f"connect-src 'self' https://last-strawberry.com"
+        f"connect-src 'self' https://last-strawberry.com https://last-strawberry.com/api; "
+        f"img-src 'self' data: https:; "
+        f"object-src 'none'; "
+        f"base-uri 'self'"
     )
+    
+    # Nonce für Frontend verfügbar machen
+    response.headers["X-CSP-Nonce"] = nonce
     
     return response
 
@@ -214,15 +228,21 @@ def get_allowed_origins():
         "https://last-strawberry.com",
         "https://www.last-strawberry.com",
         "https://last-strawberry.com:443",
+        "http://last-strawberry.com",
+        "http://www.last-strawberry.com",
+        "http://last-strawberry.com:8001",
+        "https://last-strawberry.com:8001",
     ]
     
     # Entwicklungsumgebung
     development_origins = [
         "http://localhost:3000",
-        "http://localhost:8080", 
+        "http://localhost:8080",
+        "http://localhost:8001",  
         "http://localhost:5000",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8080",
+        "http://127.0.0.1:8001",
         "http://127.0.0.1:5000",
         "http://127.0.0.1",
         "http://localhost",
@@ -237,7 +257,11 @@ def get_allowed_origins():
     
     if is_production:
         logger.info("🌐 Produktionsumgebung erkannt - Verwende spezifische CORS Origins")
-        return production_origins
+        # Auch in Produktion Port 8001 für Admin-Panel erlauben
+        return production_origins + [
+            "http://last-strawberry.com:8001",
+            "https://last-strawberry.com:8001"
+        ]
     else:
         logger.info("🛠️ Entwicklungsumgebung erkannt - Verwende erweiterte CORS Origins")
         return production_origins + development_origins  # Auch Produktion für Testing
@@ -773,16 +797,41 @@ async def create_new_world(request: WorldCreateRequest, current_user: dict = Dep
             initial_location_desc=initial_conditions['location_description'],
             initial_state_dict=initial_conditions['initial_state']
         )
+        
+        # Verbesserte Fehlerbehandlung
         if not new_ids:
             raise HTTPException(status_code=500, detail="Fehler beim Speichern der neuen Welt in der Datenbank.")
+        
+        # Prüfe auf spezifische Fehler
+        if isinstance(new_ids, dict) and "error" in new_ids:
+            if new_ids["error"] == "world_name_exists":
+                raise HTTPException(status_code=400, detail=f"Ein Welt mit dem Namen '{request.world_name}' existiert bereits. Bitte wählen Sie einen anderen Namen.")
+            elif new_ids["error"] == "integrity_error":
+                raise HTTPException(status_code=400, detail="Datenintegritätsfehler beim Erstellen der Welt.")
+            elif new_ids["error"] == "database_error":
+                raise HTTPException(status_code=500, detail="Datenbankfehler beim Erstellen der Welt.")
+            else:
+                raise HTTPException(status_code=500, detail="Unbekannter Fehler beim Erstellen der Welt.")
 
         game_manager_instance._load_game_state(new_ids['world_id'], new_ids['player_id'])
         game_manager_instance.is_new_game = True
         initial_story_response = await game_manager_instance.get_initial_story_prompt()
 
+        # Extrahiere den eigentlichen Story-Text aus der AI-Antwort
+        if isinstance(initial_story_response, dict) and "response" in initial_story_response:
+            initial_story_text = initial_story_response["response"]
+        else:
+            initial_story_text = str(initial_story_response)
+
+        # Verwende den finalen Weltnamen (falls geändert)
+        final_world_name = new_ids.get('final_world_name', request.world_name)
+        
         return {
-            "message": "Welt erfolgreich erstellt", "world_id": new_ids['world_id'],
-            "player_id": new_ids['player_id'], "initial_story": initial_story_response
+            "message": f"Welt '{final_world_name}' erfolgreich erstellt", 
+            "world_id": new_ids['world_id'],
+            "player_id": new_ids['player_id'], 
+            "initial_story": initial_story_text,
+            "final_world_name": final_world_name
         }
     except Exception as e:
         logger.error(f"Fehler bei der Welterstellung: {e}", exc_info=True)

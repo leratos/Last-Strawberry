@@ -2,7 +2,25 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Konstanten ---
-    const API_BASE_URL = 'http://127.0.0.1:8001';
+    // Automatische API-URL-Erkennung basierend auf der aktuellen Domain
+    const API_BASE_URL = (() => {
+        const hostname = window.location.hostname;
+        
+        // Lokale Entwicklung
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+            return 'http://127.0.0.1:8001';
+        }
+        
+        // Produktionsserver - Verwende HTTPS mit /api Path (Reverse Proxy)
+        if (hostname === 'last-strawberry.com' || hostname === 'www.last-strawberry.com') {
+            return 'https://last-strawberry.com/api';
+        }
+        
+        // Fallback für andere Domains (z.B. IP-Adressen) - IMMER HTTPS für API
+        return `https://${hostname}/api`;
+    })();
+
+    console.log(`Admin Panel verbindet mit API: ${API_BASE_URL}`);
 
     // --- Utility Funktionen ---
     
