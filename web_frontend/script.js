@@ -2,7 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Konstanten und Konfiguration ---
-    const API_BASE_URL = window.LastStrawberryConfig?.API_BASE_URL || 'http://127.0.0.1:8001';
+    const API_BASE_URL = window.LastStrawberryConfig?.API_BASE_URL || 'http://localhost:8001';
     const ATTRIBUTES = ["Stärke", "Geschicklichkeit", "Konstitution", "Intelligenz", "Weisheit", "Charisma", "Wahrnehmung"];
     const POINT_BUY_BUDGET = 75;
     const MIN_SCORE = 8;
@@ -175,68 +175,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function apiRequest(endpoint, method = 'GET', body = null) {
-        const headers = {};
+        const headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        };
+        
         if (authToken) {
             headers['Authorization'] = `Bearer ${authToken}`;
-        }
-        if (body) {
-            headers['Content-Type'] = 'application/json';
         }
         
         console.log('🚀 API Request:', {
             url: `${API_BASE_URL}${endpoint}`,
             method,
-            userAgent: navigator.userAgent.substring(0, 50) + '...'
+            hasAuth: !!authToken,
+            bodyLength: body ? JSON.stringify(body).length : 0
         });
         
-        // Versuche erst die primäre API URL
         try {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method,
                 headers,
-                body: body ? JSON.stringify(body) : null
+                body: body ? JSON.stringify(body) : null,
+                credentials: 'include',  // Include cookies for CORS
+                mode: 'cors'            // Explicit CORS mode
             });
             
-            const data = await response.json();
+            console.log('📡 Response status:', response.status, response.statusText);
+            
             if (!response.ok) {
-                throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
-            }
-            console.log('✅ Primary API success');
-            return data;
-        } catch (error) {
-            console.warn('❌ Primary API failed:', error);
-            console.log('🔄 Trying fallback URLs...');
-            
-            // Versuche Fallback URLs
-            if (window.LastStrawberryConfig?.fallbackUrls) {
-                for (const fallbackUrl of window.LastStrawberryConfig.fallbackUrls) {
-                    if (fallbackUrl === API_BASE_URL) continue; // Skip bereits versuchte URL
-                    
-                    console.log(`🔄 Trying fallback: ${fallbackUrl}${endpoint}`);
-                    
-                    try {
-                        const response = await fetch(`${fallbackUrl}${endpoint}`, {
-                            method,
-                            headers,
-                            body: body ? JSON.stringify(body) : null
-                        });
-                        
-                        const data = await response.json();
-                        if (!response.ok) {
-                            throw new Error(data.detail || 'Ein Server-Fehler ist aufgetreten.');
-                        }
-                        
-                        console.log(`✅ Fallback success: ${fallbackUrl}`);
-                        return data;
-                    } catch (fallbackError) {
-                        console.warn(`❌ Fallback ${fallbackUrl} failed:`, fallbackError);
-                        continue;
-                    }
+                let errorMessage = `HTTP ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                } catch (parseError) {
+                    const textError = await response.text();
+                    errorMessage = textError || errorMessage;
                 }
+                throw new Error(errorMessage);
             }
             
-            // Alle URLs fehlgeschlagen
-            console.error('💥 All API endpoints failed!');
+            const data = await response.json();
+            console.log('✅ API Success:', endpoint);
+            return data;
+            
+        } catch (error) {
+            console.error('❌ API Error:', {
+                endpoint,
+                method,
+                error: error.message,
+                type: error.name
+            });
+            
+            // Spezielle Behandlung für häufige Netzwerk-Fehler
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                throw new Error('Verbindung zum Server fehlgeschlagen. Prüfen Sie, ob der Backend-Server läuft.');
+            } else if (error.name === 'AbortError') {
+                throw new Error('Anfrage wurde abgebrochen (Timeout).');
+            } else if (error.message.includes('CORS')) {
+                throw new Error('CORS-Fehler: Server-Konfiguration überprüfen.');
+            }
+            
             throw error;
         }
     }
@@ -915,16 +913,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = Date.now();
         const timeSinceLastActivity = now - lastServerActivity;
         
-        // Wenn der Server länger als 5 Minuten inaktiv war, warm ihn auf
-        if (timeSinceLastActivity > WARMUP_THRESHOLD) {
-            console.log('Server potentially cold, warming up...');
+        // Für lokale Entwicklung: Verkürzte Warmup-Schwelle
+        const isLocal = API_BASE_URL.includes('localhost') || API_BASE_URL.includes('127.0.0.1');
+        const threshold = isLocal ? 1 * 60 * 1000 : WARMUP_THRESHOLD; // 1 Minute für lokal, 5 für Cloud
+        
+        if (timeSinceLastActivity > threshold) {
+            console.log(`⏰ Server potentially cold (${Math.round(timeSinceLastActivity/1000)}s idle), warming up...`);
             await performWarmupPings();
             lastServerActivity = now;
         }
     }
     
     async function performWarmupPings() {
-        const maxRetries = 5;
+        const maxRetries = 3; // Reduziert von 5 für lokale Entwicklung
         let successful = false;
         
         for (let i = 0; i < maxRetries && !successful; i++) {
@@ -932,42 +933,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`Warmup ping ${i + 1}/${maxRetries}...`);
                 const response = await fetch(`${API_BASE_URL}/ping`, {
                     method: 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: AbortSignal.timeout(3000) // 3s timeout per ping
+                    headers: { 
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    mode: 'cors',
+                    signal: AbortSignal.timeout(5000) // 5s timeout für lokale Verbindungen
                 });
                 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Server warmup successful:', data.timestamp);
+                    console.log('✅ Server warmup successful:', data.timestamp);
                     successful = true;
                 } else {
-                    console.warn(`Warmup ping ${i + 1} failed:`, response.status);
-                    // Bei Ping-Fehlschlag mit exponentiellem Backoff warten (außer beim letzten Versuch)
+                    console.warn(`⚠️ Warmup ping ${i + 1} failed:`, response.status);
+                    // Für lokale Entwicklung: kürzere Wartezeiten
                     if (i < maxRetries - 1) {
-                        const baseDelay = 1000; // 1 second
-                        const maxDelay = 60000; // 60 seconds
-                        const delay = Math.min(baseDelay * Math.pow(2, i), maxDelay);
-                        console.log(`Waiting ${delay / 1000} seconds before next ping attempt...`);
+                        const delay = 2000; // 2 Sekunden für lokale Tests
+                        console.log(`⏳ Waiting ${delay / 1000} seconds before next ping attempt...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
             } catch (error) {
-                console.warn(`Warmup ping ${i + 1} error:`, error.message);
-                // Bei Ping-Error mit exponentiellem Backoff warten (außer beim letzten Versuch)
+                console.warn(`❌ Warmup ping ${i + 1} error:`, error.message);
+                // Für lokale Entwicklung: kürzere Wartezeiten bei Fehlern
                 if (i < maxRetries - 1) {
-                    const baseDelay = 1000; // 1 second
-                    const maxDelay = 60000; // 60 seconds
-                    const delay = Math.min(baseDelay * Math.pow(2, i), maxDelay);
-                    console.log(`Waiting ${delay / 1000} seconds before next ping attempt...`);
+                    const delay = 1000; // 1 Sekunde
+                    console.log(`⏳ Waiting ${delay / 1000} seconds before next ping attempt...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
         }
         
         if (!successful) {
-            console.warn('Server warmup failed after all retries');
+            console.warn('⚠️ Server warmup failed after all retries - continuing anyway for local development');
         }
-        return successful; // Return whether the warmup was successful
+        return successful;
     }
     
     // Erweiterte apiRequest-Funktion mit Warmup

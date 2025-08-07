@@ -120,3 +120,8 @@ backup_test_files/
 tools/db_migration_tool.py
 tools/migrate_database.py
 tools/verify_migration.py
+build_exe.bat
+build_executable.py
+Last-Strawberry.spec
+plesk_nginx_config.txt
+web_frontend/cors-test.html

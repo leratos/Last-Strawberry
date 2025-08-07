@@ -121,6 +121,26 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            
+            # Prüfe ob Weltname bereits existiert
+            cursor.execute("SELECT world_id FROM worlds WHERE name = ?", (world_name,))
+            existing_world = cursor.fetchone()
+            if existing_world:
+                logger.warning(f"World name '{world_name}' already exists. Trying to create unique name...")
+                
+                # Erstelle einen eindeutigen Namen
+                base_name = world_name
+                counter = 1
+                while existing_world:
+                    world_name = f"{base_name} ({counter})"
+                    cursor.execute("SELECT world_id FROM worlds WHERE name = ?", (world_name,))
+                    existing_world = cursor.fetchone()
+                    counter += 1
+                    if counter > 100:  # Schutz vor Endlosschleife
+                        raise ValueError(f"Could not create unique world name for '{base_name}'")
+                
+                logger.info(f"Using unique world name: '{world_name}'")
+            
             cursor.execute("INSERT INTO worlds (name, lore_prompt, template_key) VALUES (?, ?, ?)", (world_name, lore, template_key))
             world_id = cursor.lastrowid
             
@@ -139,11 +159,21 @@ class DatabaseManager:
             )
             char_id = cursor.lastrowid
             conn.commit()
-            return {"world_id": world_id, "player_id": char_id, "location_id": loc_id}
-        except sqlite3.Error as e:
-            logger.error(f"Error creating world and player: {e}", exc_info=True)
+            return {"world_id": world_id, "player_id": char_id, "location_id": loc_id, "final_world_name": world_name}
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Integrity constraint error creating world and player: {e}", exc_info=True)
             conn.rollback()
-            return None
+            if "UNIQUE constraint failed: worlds.name" in str(e):
+                return {"error": "world_name_exists", "message": f"World name '{world_name}' already exists"}
+            return {"error": "integrity_error", "message": str(e)}
+        except sqlite3.Error as e:
+            logger.error(f"Database error creating world and player: {e}", exc_info=True)
+            conn.rollback()
+            return {"error": "database_error", "message": str(e)}
+        except Exception as e:
+            logger.error(f"Unexpected error creating world and player: {e}", exc_info=True)
+            conn.rollback()
+            return {"error": "unexpected_error", "message": str(e)}
 
     def is_user_authorized_for_player(self, user_id: int, char_id: int) -> bool:
         """
