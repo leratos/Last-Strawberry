@@ -807,9 +807,11 @@ async def create_new_world(request: WorldCreateRequest, current_user: dict = Dep
             if new_ids["error"] == "world_name_exists":
                 raise HTTPException(status_code=400, detail=f"Ein Welt mit dem Namen '{request.world_name}' existiert bereits. Bitte wählen Sie einen anderen Namen.")
             elif new_ids["error"] == "integrity_error":
-                raise HTTPException(status_code=400, detail=f"Datenbankfehler: {new_ids['message']}")
+                raise HTTPException(status_code=400, detail="Datenintegritätsfehler beim Erstellen der Welt.")
+            elif new_ids["error"] == "database_error":
+                raise HTTPException(status_code=500, detail="Datenbankfehler beim Erstellen der Welt.")
             else:
-                raise HTTPException(status_code=500, detail=f"Fehler beim Erstellen der Welt: {new_ids['message']}")
+                raise HTTPException(status_code=500, detail="Unbekannter Fehler beim Erstellen der Welt.")
 
         game_manager_instance._load_game_state(new_ids['world_id'], new_ids['player_id'])
         game_manager_instance.is_new_game = True

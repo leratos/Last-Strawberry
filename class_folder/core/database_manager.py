@@ -165,11 +165,13 @@ class DatabaseManager:
             conn.rollback()
             if "UNIQUE constraint failed: worlds.name" in str(e):
                 return {"error": "world_name_exists", "message": f"World name '{world_name}' already exists"}
-            return {"error": "integrity_error", "message": str(e)}
+            # Keine rohen Datenbankfehler an Frontend weiterleiten
+            return {"error": "integrity_error", "message": "Datenintegritätsfehler beim Erstellen der Welt"}
         except sqlite3.Error as e:
             logger.error(f"Database error creating world and player: {e}", exc_info=True)
             conn.rollback()
-            return {"error": "database_error", "message": str(e)}
+            # Keine rohen Datenbankfehler an Frontend weiterleiten
+            return {"error": "database_error", "message": "Datenbankfehler beim Erstellen der Welt"}
         except Exception as e:
             logger.error(f"Unexpected error creating world and player: {e}", exc_info=True)
             conn.rollback()
