@@ -205,7 +205,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Content-Security-Policy"] = (
         f"default-src 'self'; "
         f"script-src 'self' 'nonce-{nonce}' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com; "
-        f"style-src 'self' 'nonce-{nonce}' 'unsafe-inline' https://fonts.googleapis.com; "
+        f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
         f"font-src 'self' https://fonts.gstatic.com; "
         f"connect-src 'self' https://last-strawberry.com https://last-strawberry.com/api; "
         f"img-src 'self' data: https:; "
