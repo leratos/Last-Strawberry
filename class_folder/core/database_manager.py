@@ -16,8 +16,12 @@ from typing import Optional, Any, Dict, List, Tuple
 import json
 
 logger = logging.getLogger(__name__)
+
 class DatabaseManager:
     """Handles all database operations for the game."""
+    
+    # Konstante für maximale Versuche bei der Weltnamenerstellung
+    MAX_WORLD_NAME_ATTEMPTS = 100
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path else Path("laststrawberry.db")
@@ -175,7 +179,8 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Unexpected error creating world and player: {e}", exc_info=True)
             conn.rollback()
-            return {"error": "unexpected_error", "message": str(e)}
+            # Keine rohen Fehlermeldungen an Frontend weiterleiten
+            return {"error": "unexpected_error", "message": "Unerwarteter Fehler beim Erstellen der Welt"}
 
     def is_user_authorized_for_player(self, user_id: int, char_id: int) -> bool:
         """
