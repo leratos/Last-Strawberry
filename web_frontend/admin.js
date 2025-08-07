@@ -16,8 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'https://last-strawberry.com/api';
         }
         
-        // Fallback für andere Domains (z.B. IP-Adressen) - IMMER HTTP für API
-        return `http://${hostname}:8001`;
+        // Fallback für andere Domains (z.B. IP-Adressen) - IMMER HTTPS für API
+        return `https://${hostname}/api`;
     })();
 
     console.log(`Admin Panel verbindet mit API: ${API_BASE_URL}`);
