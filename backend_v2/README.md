@@ -1,0 +1,31 @@
+# Last Strawberry Backend V2
+
+OpenRouter-first backend scaffold for the restart.
+
+## Goals
+- Model-agnostic orchestration.
+- No Google Cloud runtime dependency.
+- Fast path to 70B and non-Llama models through OpenRouter.
+
+## Quick start
+```bash
+cd backend_v2
+python -m venv .venv
+.venv\\Scripts\\activate
+pip install -r requirements.txt
+copy .env.example .env
+cd ..
+uvicorn backend_v2.app.main:app --reload --port 8002
+```
+
+## Endpoints
+- `GET /v2/health`
+- `POST /v2/game/turn`
+
+## Notes
+- `LS_ANALYSIS_MODEL` and `LS_NARRATIVE_MODEL` are fully configurable.
+- OpenRouter headers (`HTTP-Referer`, `X-Title`) are included when configured.
+- API key lookup order:
+  1. `LS_OPENROUTER_API_KEY`
+  2. `OPENROUTER_API_KEY`
+  3. System keyring (default tries `OPENROUTER_API_KEY` / `default`)

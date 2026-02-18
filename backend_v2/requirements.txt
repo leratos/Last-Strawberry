@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pydantic
+httpx
+pytest
+pytest-cov
+keyring

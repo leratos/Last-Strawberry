@@ -1,0 +1,38 @@
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "40...100"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
+
+flags:
+  backend_v2:
+    paths:
+      - backend_v2/app
+    carryforward: true
+
+status:
+  project:
+    default:
+      informational: true
+    backend_v2:
+      flags:
+        - backend_v2
+      target: 45%
+      threshold: 1%
+      if_not_found: failure
+  patch:
+    default:
+      informational: true
+    backend_v2:
+      flags:
+        - backend_v2
+      target: 70%
+      threshold: 1%
+      if_not_found: failure
