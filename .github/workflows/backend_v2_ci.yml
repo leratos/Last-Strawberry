@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   backend_v2_tests:
@@ -44,8 +45,7 @@ jobs:
         with:
           slug: leratos/Last-Strawberry
           files: coverage.xml
-          flags: backend_v2
           name: backend_v2
+          use_oidc: true
           verbose: true
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
