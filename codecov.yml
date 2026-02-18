@@ -19,6 +19,7 @@ flags:
 
 status:
   project:
+    informational: false
     default:
       target: 45%
       threshold: 1%
@@ -30,6 +31,7 @@ status:
       threshold: 1%
       if_not_found: failure
   patch:
+    informational: false
     default:
       target: 70%
       threshold: 1%
