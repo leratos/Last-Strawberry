@@ -13,6 +13,8 @@ jobs:
   backend_v2_tests:
     name: backend_v2_tests
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout
@@ -32,8 +34,8 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest backend_v2/tests \
-            --cov=backend_v2/app \
+          python -m pytest backend_v2/tests \
+            --cov=backend_v2.app \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 
