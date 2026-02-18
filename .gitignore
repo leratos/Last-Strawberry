@@ -37,6 +37,8 @@ test_*.py
 debug_*.py
 *_test.py
 check_*.py
+!backend_v2/tests/test_*.py
+!backend_server/tests/test_*.py
 
 # 2. Python Cache & Virtuelle Umgebungen
 __pycache__/
