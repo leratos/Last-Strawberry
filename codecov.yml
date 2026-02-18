@@ -20,7 +20,9 @@ flags:
 status:
   project:
     default:
-      informational: true
+      target: 45%
+      threshold: 1%
+      if_not_found: failure
     backend_v2:
       flags:
         - backend_v2
@@ -29,7 +31,9 @@ status:
       if_not_found: failure
   patch:
     default:
-      informational: true
+      target: 70%
+      threshold: 1%
+      if_not_found: failure
     backend_v2:
       flags:
         - backend_v2
