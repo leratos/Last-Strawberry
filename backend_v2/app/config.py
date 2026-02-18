@@ -1,0 +1,137 @@
+import os
+import subprocess
+from dataclasses import dataclass
+from functools import lru_cache
+
+
+def _read_env(key: str, default: str | None = None) -> str | None:
+    value = os.getenv(key)
+    return value if value is not None else default
+
+
+def _read_openrouter_api_key() -> str | None:
+    # 1) Explicit env vars have highest priority.
+    explicit = _read_env("LS_OPENROUTER_API_KEY") or _read_env("OPENROUTER_API_KEY")
+    if explicit:
+        return explicit
+
+    # 2) Fallback to keyring if available.
+    try:
+        import keyring  # type: ignore
+    except Exception:
+        return None
+
+    service_candidates = [
+        _read_env("LS_OPENROUTER_KEYRING_SERVICE", "OPENROUTER_API_KEY") or "OPENROUTER_API_KEY",
+        "OPENROUTER_API_KEY",
+        "openrouter",
+    ]
+    user_candidates = [
+        _read_env("LS_OPENROUTER_KEYRING_USERNAME"),
+        "default",
+        "OPENROUTER_API_KEY",
+        "api_key",
+        os.getenv("USERNAME"),
+        os.getenv("USER"),
+    ]
+
+    # Preserve order and remove empties/duplicates.
+    service_candidates = [s for i, s in enumerate(service_candidates) if s and s not in service_candidates[:i]]
+    user_candidates = [u for i, u in enumerate(user_candidates) if u and u not in user_candidates[:i]]
+
+    # 3) On Windows, discover matching generic credentials from Credential Manager.
+    for uname in user_candidates:
+        for discovered_service in _discover_windows_keyring_services(uname):
+            if discovered_service not in service_candidates:
+                service_candidates.append(discovered_service)
+
+    for service in service_candidates:
+        for username in user_candidates:
+            try:
+                secret = keyring.get_password(service, username)
+            except Exception:
+                continue
+            if secret:
+                return secret
+    return None
+
+
+def _discover_windows_keyring_services(username: str) -> list[str]:
+    if os.name != "nt" or not username:
+        return []
+
+    try:
+        result = subprocess.run(
+            ["cmdkey", "/list"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return []
+
+    if result.returncode != 0 or not result.stdout:
+        return []
+
+    services: list[str] = []
+    current_target: str | None = None
+
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        lower = line.lower()
+        if lower.startswith("ziel:") or lower.startswith("target:"):
+            current_target = line.split(":", 1)[1].strip()
+            continue
+        if lower.startswith("benutzer:") or lower.startswith("user:"):
+            current_user = line.split(":", 1)[1].strip()
+            if current_user != username or not current_target:
+                continue
+
+            cleaned = current_target
+            for prefix in ("LegacyGeneric:target=", "target="):
+                if cleaned.lower().startswith(prefix.lower()):
+                    cleaned = cleaned[len(prefix) :]
+                    break
+            cleaned = cleaned.strip()
+            if cleaned and cleaned not in services:
+                services.append(cleaned)
+
+    return services
+
+
+@dataclass(frozen=True)
+class Settings:
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_site_url: str | None = None
+    openrouter_site_name: str = "last-strawberry-v2"
+    analysis_model: str = "meta-llama/llama-3.3-70b-instruct"
+    narrative_model: str = "meta-llama/llama-3.3-70b-instruct"
+    analysis_temperature: float = 0.1
+    narrative_temperature: float = 0.7
+    analysis_max_tokens: int = 700
+    narrative_max_tokens: int = 1200
+    request_timeout_seconds: int = 45
+    environment: str = "development"
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        return cls(
+            openrouter_api_key=_read_openrouter_api_key(),
+            openrouter_base_url=_read_env("LS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1") or "https://openrouter.ai/api/v1",
+            openrouter_site_url=_read_env("LS_OPENROUTER_SITE_URL"),
+            openrouter_site_name=_read_env("LS_OPENROUTER_SITE_NAME", "last-strawberry-v2") or "last-strawberry-v2",
+            analysis_model=_read_env("LS_ANALYSIS_MODEL", "meta-llama/llama-3.3-70b-instruct") or "meta-llama/llama-3.3-70b-instruct",
+            narrative_model=_read_env("LS_NARRATIVE_MODEL", "meta-llama/llama-3.3-70b-instruct") or "meta-llama/llama-3.3-70b-instruct",
+            analysis_temperature=float(_read_env("LS_ANALYSIS_TEMPERATURE", "0.1") or "0.1"),
+            narrative_temperature=float(_read_env("LS_NARRATIVE_TEMPERATURE", "0.7") or "0.7"),
+            analysis_max_tokens=int(_read_env("LS_ANALYSIS_MAX_TOKENS", "700") or "700"),
+            narrative_max_tokens=int(_read_env("LS_NARRATIVE_MAX_TOKENS", "1200") or "1200"),
+            request_timeout_seconds=int(_read_env("LS_REQUEST_TIMEOUT_SECONDS", "45") or "45"),
+            environment=_read_env("LS_ENVIRONMENT", "development") or "development",
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings.from_env()

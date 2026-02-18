@@ -719,6 +719,8 @@ async def get_last_event(world_id: int, player_id: int, current_user: dict = Dep
         
         return {"event": event}
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Fehler beim Laden des letzten Events: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -833,6 +835,8 @@ async def create_new_world(request: WorldCreateRequest, current_user: dict = Dep
             "initial_story": initial_story_text,
             "final_world_name": final_world_name
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Fehler bei der Welterstellung: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ein interner Fehler ist bei der Welterstellung aufgetreten.")

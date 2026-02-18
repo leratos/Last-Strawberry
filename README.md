@@ -47,7 +47,7 @@ Dieses Projekt ist mehr als nur ein Spiel; es ist eine komplette Plattform für 
 ### 🏗️ **Architektur & Performance**
 * **Multi-Client-Architektur:** Spielbar über modernen Web-Client oder funktionsreichen Desktop-Client (PySide6).
 * **Google Cloud Integration:** Authentifizierte, skalierbare KI-Services mit automatischer GPU-Zuweisung.
-* **Robuste Benutzeraverwaltung:** Vollständiges Admin-Panel mit Rollen-Management und Profil-Verwaltung.
+* **Robuste Benutzerverwaltung:** Vollständiges Admin-Panel mit Rollen-Management und Profil-Verwaltung.
 
 ---
 
@@ -238,7 +238,7 @@ sudo systemctl enable last-strawberry.service
 ### 3. Web-Frontend
 
 ```bash
-# Frontend-Dateien deploymen
+# Frontend-Dateien deployen
 cp -r web_frontend/* /var/www/vhosts/deine-domain.de/httpdocs/
 
 # API-URLs konfigurieren
@@ -254,7 +254,7 @@ python trainer/train_analyst.py
 python trainer/train_narrative.py [WORLD_ID] "[WORLD_NAME]"
 
 # Automatische Backups und Datenanalyse
-python tools/generate_analysis_data_from_db.py
+python server_tools/generate_analysis_data_from_db.py
 ```
 
 ---
