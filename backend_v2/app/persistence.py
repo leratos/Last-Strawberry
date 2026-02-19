@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import sqlite3
@@ -95,6 +96,19 @@ class SQLiteRepository:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS embeddings_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    input_text TEXT NOT NULL,
+                    embedding TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_turns_world_created_at
                 ON turns(world_id, created_at DESC);
                 """
@@ -109,6 +123,12 @@ class SQLiteRepository:
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_dedupe
                 ON memory_items(world_id, memory_type, content);
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_embeddings_provider_model_updated
+                ON embeddings_cache(provider, model, updated_at DESC);
                 """
             )
             conn.commit()
@@ -403,3 +423,85 @@ class SQLiteRepository:
 
         ranked.sort(key=lambda pair: pair[0], reverse=True)
         return [item for _, item in ranked[:safe_limit]]
+
+    @staticmethod
+    def _embedding_cache_key(provider: str, model: str, text: str) -> str:
+        payload = f"{provider}\n{model}\n{text}".encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def get_cached_embeddings(self, provider: str, model: str, texts: list[str]) -> dict[str, list[float]]:
+        if not texts:
+            return {}
+
+        unique_texts: list[str] = []
+        for text in texts:
+            if text not in unique_texts:
+                unique_texts.append(text)
+
+        key_to_text = {self._embedding_cache_key(provider, model, text): text for text in unique_texts}
+        placeholders = ",".join(["?"] * len(key_to_text))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT cache_key, embedding FROM embeddings_cache WHERE cache_key IN ({placeholders});",
+                tuple(key_to_text.keys()),
+            ).fetchall()
+
+        cached: dict[str, list[float]] = {}
+        for row in rows:
+            cache_key = str(row["cache_key"])
+            text = key_to_text[cache_key]
+            try:
+                vector = json.loads(str(row["embedding"]))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(vector, list):
+                continue
+            try:
+                cached[text] = [float(value) for value in vector]
+            except Exception:
+                continue
+        return cached
+
+    def upsert_cached_embeddings(
+        self,
+        provider: str,
+        model: str,
+        embeddings_by_text: dict[str, list[float]],
+    ) -> int:
+        if not embeddings_by_text:
+            return 0
+
+        now = datetime.now(UTC).isoformat()
+        written = 0
+        with self._connect() as conn:
+            for text, vector in embeddings_by_text.items():
+                cache_key = self._embedding_cache_key(provider, model, text)
+                conn.execute(
+                    """
+                    INSERT INTO embeddings_cache(
+                        cache_key,
+                        provider,
+                        model,
+                        input_text,
+                        embedding,
+                        created_at,
+                        updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(cache_key) DO UPDATE SET
+                        embedding = excluded.embedding,
+                        input_text = excluded.input_text,
+                        updated_at = excluded.updated_at;
+                    """,
+                    (
+                        cache_key,
+                        provider,
+                        model,
+                        text,
+                        json.dumps(vector, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+                written += 1
+            conn.commit()
+        return written

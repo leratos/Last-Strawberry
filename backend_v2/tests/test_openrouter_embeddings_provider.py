@@ -33,6 +33,7 @@ class TestOpenRouterEmbeddingsProvider(unittest.TestCase):
         client.post.return_value = response
 
         provider = OpenRouterEmbeddingsProvider(settings=settings, client=client)
+        self.assertEqual(provider.model_name, "openai/text-embedding-3-small")
         vectors = provider.embed_texts(["alpha", "beta"])
 
         self.assertEqual(vectors, [[0.1, 0.2], [0.3, 0.4]])

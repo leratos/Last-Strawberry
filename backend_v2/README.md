@@ -38,7 +38,8 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Hybrid strategy can use pluggable embeddings (`LS_EMBEDDINGS_PROVIDER`, `LS_EMBEDDINGS_DIMENSIONS`, `LS_EMBEDDINGS_MODEL`, `LS_EMBEDDINGS_TIMEOUT_SECONDS`).
 - `LS_EMBEDDINGS_PROVIDER=openrouter` uses OpenRouter's embeddings endpoint with key-based auth.
 - Hybrid scoring weights are configurable (`LS_RETRIEVAL_VECTOR_WEIGHT`, `LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY`).
-- Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `returned`, `fallback`).
+- Retrieval embeddings are cached in SQLite (`embeddings_cache`) to reduce repeated embedding calls.
+- Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `cache_hits`, `cache_misses`, `returned`, `fallback`).
 - API key lookup order:
   1. `LS_OPENROUTER_API_KEY`
   2. `OPENROUTER_API_KEY`

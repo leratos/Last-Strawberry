@@ -13,6 +13,8 @@ class RetrievalStats:
     candidates_scanned: int
     lexical_hits: int
     semantic_hits: int
+    cache_hits: int
+    cache_misses: int
     returned: int
     fallback_used: bool
 
@@ -62,6 +64,8 @@ class LexicalMemoryRetriever:
             candidates_scanned=len(items),
             lexical_hits=len(items),
             semantic_hits=0,
+            cache_hits=0,
+            cache_misses=0,
             returned=len(items),
             fallback_used=False,
         )
@@ -114,6 +118,8 @@ class HybridMemoryRetriever:
                 candidates_scanned=0,
                 lexical_hits=0,
                 semantic_hits=0,
+                cache_hits=0,
+                cache_misses=0,
                 returned=0,
                 fallback_used=True,
             )
@@ -127,16 +133,24 @@ class HybridMemoryRetriever:
                 candidates_scanned=len(candidates),
                 lexical_hits=0,
                 semantic_hits=0,
+                cache_hits=0,
+                cache_misses=0,
                 returned=len(items),
                 fallback_used=True,
             )
             return RetrievalResult(items=items, stats=stats)
 
         semantic_scores: list[float] = [0.0 for _ in candidates]
+        cache_hits = 0
+        cache_misses = 0
         if self.embeddings_provider is not None:
             try:
                 contents = [str(item.get("content", "")) for item in candidates]
-                vectors = self.embeddings_provider.embed_texts([query] + contents)
+                texts_for_embedding = [query] + contents
+                vectors, cache_hits, cache_misses = self._embed_texts_with_cache(
+                    repository=repository,
+                    texts=texts_for_embedding,
+                )
                 if len(vectors) == len(candidates) + 1:
                     query_vector = vectors[0]
                     semantic_scores = [
@@ -144,6 +158,8 @@ class HybridMemoryRetriever:
                     ]
             except Exception:
                 semantic_scores = [0.0 for _ in candidates]
+                cache_hits = 0
+                cache_misses = 0
 
         scored: list[tuple[float, dict[str, Any]]] = []
         lexical_hits = 0
@@ -173,6 +189,8 @@ class HybridMemoryRetriever:
                 candidates_scanned=len(candidates),
                 lexical_hits=0,
                 semantic_hits=0,
+                cache_hits=cache_hits,
+                cache_misses=cache_misses,
                 returned=len(items),
                 fallback_used=True,
             )
@@ -185,7 +203,35 @@ class HybridMemoryRetriever:
             candidates_scanned=len(candidates),
             lexical_hits=lexical_hits,
             semantic_hits=semantic_hits,
+            cache_hits=cache_hits,
+            cache_misses=cache_misses,
             returned=len(items),
             fallback_used=False,
         )
         return RetrievalResult(items=items, stats=stats)
+
+    def _embed_texts_with_cache(
+        self,
+        *,
+        repository: SQLiteRepository,
+        texts: list[str],
+    ) -> tuple[list[list[float]], int, int]:
+        if self.embeddings_provider is None:
+            return [], 0, 0
+        if not texts:
+            return [], 0, 0
+
+        provider_name = getattr(self.embeddings_provider, "provider_name", "unknown")
+        model_name = getattr(self.embeddings_provider, "model_name", provider_name)
+        cached = repository.get_cached_embeddings(provider_name, model_name, texts)
+        cache_hits = len(cached)
+
+        missing_texts = [text for text in texts if text not in cached]
+        cache_misses = len(missing_texts)
+        if missing_texts:
+            fresh_vectors = self.embeddings_provider.embed_texts(missing_texts)
+            fresh = {text: vector for text, vector in zip(missing_texts, fresh_vectors)}
+            repository.upsert_cached_embeddings(provider_name, model_name, fresh)
+            cached.update(fresh)
+
+        return [cached[text] for text in texts if text in cached], cache_hits, cache_misses

@@ -10,6 +10,7 @@ class OpenRouterEmbeddingsProvider:
     def __init__(self, settings: Settings, client: httpx.Client | None = None):
         self.settings = settings
         self._client = client
+        self.model_name = settings.embeddings_model
 
     def _build_headers(self) -> dict[str, str]:
         if not self.settings.openrouter_api_key:

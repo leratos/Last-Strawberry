@@ -164,6 +164,65 @@ class TestSQLiteRepository(unittest.TestCase):
             no_overlap = repo.search_memory_items(world_id=1, query="zebra quaternion", limit=5, min_importance=0.5)
             self.assertEqual(len(no_overlap), 2)
 
+    def test_embeddings_cache_roundtrip_and_invalid_rows(self):
+        with TemporaryDirectory() as tmp_dir:
+            repo = SQLiteRepository(f"sqlite:///{tmp_dir}/v2.db")
+
+            written = repo.upsert_cached_embeddings(
+                provider="hash",
+                model="hash-64",
+                embeddings_by_text={
+                    "alpha": [0.1, 0.2],
+                    "beta": [0.3, 0.4],
+                },
+            )
+            self.assertEqual(written, 2)
+
+            cached = repo.get_cached_embeddings("hash", "hash-64", ["alpha", "beta", "gamma"])
+            self.assertIn("alpha", cached)
+            self.assertIn("beta", cached)
+            self.assertNotIn("gamma", cached)
+
+            with repo._connect() as conn:
+                conn.execute(
+                    "UPDATE embeddings_cache SET embedding = ? WHERE input_text = ?;",
+                    ("{broken-json", "alpha"),
+                )
+                conn.commit()
+
+            cached_after_corrupt = repo.get_cached_embeddings("hash", "hash-64", ["alpha", "beta"])
+            self.assertNotIn("alpha", cached_after_corrupt)
+            self.assertIn("beta", cached_after_corrupt)
+
+            with repo._connect() as conn:
+                conn.execute(
+                    "UPDATE embeddings_cache SET embedding = ? WHERE input_text = ?;",
+                    ('{"not":"a-list"}', "beta"),
+                )
+                conn.commit()
+            cached_after_non_list = repo.get_cached_embeddings("hash", "hash-64", ["beta"])
+            self.assertEqual(cached_after_non_list, {})
+
+            repo.upsert_cached_embeddings(
+                provider="hash",
+                model="hash-64",
+                embeddings_by_text={"gamma": [0.5, 0.6]},
+            )
+            with repo._connect() as conn:
+                conn.execute(
+                    "UPDATE embeddings_cache SET embedding = ? WHERE input_text = ?;",
+                    ('["x", "y"]', "gamma"),
+                )
+                conn.commit()
+            cached_after_non_float = repo.get_cached_embeddings("hash", "hash-64", ["gamma"])
+            self.assertEqual(cached_after_non_float, {})
+
+    def test_embeddings_cache_empty_inputs(self):
+        with TemporaryDirectory() as tmp_dir:
+            repo = SQLiteRepository(f"sqlite:///{tmp_dir}/v2.db")
+            self.assertEqual(repo.get_cached_embeddings("hash", "hash-64", []), {})
+            self.assertEqual(repo.upsert_cached_embeddings("hash", "hash-64", {}), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
