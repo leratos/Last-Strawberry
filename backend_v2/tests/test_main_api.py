@@ -482,6 +482,9 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("http_status", payload)
         self.assertIn("audit_events", payload)
         self.assertIn("error_categories", payload)
+        self.assertIn("windowed_rates", payload)
+        self.assertIn("60s", payload["windowed_rates"])
+        self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
 
     def test_retrieval_metrics_collect_http_status_and_audit_events(self):
         unauthorized = self.client.post("/v2/worlds", json={"name": "NoAuth", "description": ""})
@@ -559,6 +562,11 @@ class TestMainApi(unittest.TestCase):
         self.assertGreaterEqual(categories.get("provider", 0), 1)
         self.assertGreaterEqual(categories.get("persistence", 0), 1)
         self.assertGreaterEqual(categories.get("server", 0), 1)
+
+        rates_60s = payload["windowed_rates"]["60s"]
+        self.assertGreater(rates_60s["requests_per_minute"], 0.0)
+        self.assertGreater(rates_60s["errors_5xx_per_minute"], 0.0)
+        self.assertGreater(rates_60s["rate_limit_429_per_minute"], 0.0)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,17 @@ from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.retrieval import RetrievalStats
 
 
+class _Clock:
+    def __init__(self, start: float = 0.0):
+        self.value = start
+
+    def __call__(self) -> float:
+        return self.value
+
+    def advance(self, seconds: float) -> None:
+        self.value += seconds
+
+
 class TestRetrievalMetricsCollector(unittest.TestCase):
     def test_record_and_snapshot(self):
         collector = RetrievalMetricsCollector(
@@ -73,6 +84,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["audit_events"]["auth_failed"], 2)
         self.assertEqual(snapshot["error_categories"]["provider"], 2)
         self.assertEqual(snapshot["error_categories"]["auth"], 1)
+        self.assertIn("60s", snapshot["windowed_rates"])
+        self.assertIn("requests_per_minute", snapshot["windowed_rates"]["60s"])
 
     def test_reset(self):
         collector = RetrievalMetricsCollector()
@@ -96,6 +109,45 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["http_status"]["total"], 0)
         self.assertEqual(snapshot["audit_events"], {})
         self.assertEqual(snapshot["error_categories"], {})
+        self.assertEqual(snapshot["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
+
+    def test_windowed_rates_use_time_window(self):
+        clock = _Clock(start=100.0)
+        collector = RetrievalMetricsCollector(rate_windows_seconds=(60,), clock=clock)
+
+        collector.record_http_status(200)
+        collector.record_http_status(500)
+        collector.record_http_status(429)
+        collector.record_audit_event("auth_failed")
+
+        snapshot = collector.snapshot()
+        rates = snapshot["windowed_rates"]["60s"]
+        self.assertEqual(rates["requests_per_minute"], 3.0)
+        self.assertEqual(rates["errors_5xx_per_minute"], 1.0)
+        self.assertEqual(rates["rate_limit_429_per_minute"], 1.0)
+        self.assertEqual(rates["auth_failed_per_minute"], 1.0)
+
+        clock.advance(61.0)
+        snapshot = collector.snapshot()
+        rates = snapshot["windowed_rates"]["60s"]
+        self.assertEqual(rates["requests_per_minute"], 0.0)
+        self.assertEqual(rates["errors_5xx_per_minute"], 0.0)
+        self.assertEqual(rates["rate_limit_429_per_minute"], 0.0)
+        self.assertEqual(rates["auth_failed_per_minute"], 0.0)
+
+    def test_windowed_rates_skip_events_outside_smaller_window(self):
+        clock = _Clock(start=0.0)
+        collector = RetrievalMetricsCollector(rate_windows_seconds=(60, 300), clock=clock)
+
+        collector.record_http_status(200)
+        clock.advance(200.0)
+
+        snapshot = collector.snapshot()
+        self.assertEqual(snapshot["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
+        self.assertGreater(snapshot["windowed_rates"]["300s"]["requests_per_minute"], 0.0)
+
+    def test_rate_per_minute_guard_on_non_positive_window(self):
+        self.assertEqual(RetrievalMetricsCollector._rate_per_minute(5, 0), 0.0)
 
 
 if __name__ == "__main__":
