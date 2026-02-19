@@ -50,6 +50,7 @@ venv/
 env/
 .env/
 venv-*
+.venv-v2/
 .python-version
 
 # 3. IDE- und Editor-Konfigurationen
