@@ -75,7 +75,8 @@ Stand: 19 February 2026
 - Completed: Phase 3 prep (`hybrid` retriever strategy abstraction + retrieval telemetry logging).
 - Completed: Phase 3 vector enrichment (`embeddings` provider interface + semantic scoring path).
 - Completed: external embeddings adapter hardening (`openrouter` adapter, resilience baseline).
-- In progress: embeddings caching and production tuning (latency/cost optimization).
+- Completed: embeddings caching baseline (SQLite cache for repeated query/item embeddings).
+- In progress: metrics hardening and production tuning (latency/cost optimization).
 
 ## Success metrics
 - Narrative contradiction rate per 100 turns.

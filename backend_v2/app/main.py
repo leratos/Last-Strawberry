@@ -1,5 +1,6 @@
 import logging
 from functools import lru_cache
+from time import perf_counter
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 
@@ -22,6 +23,7 @@ from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
+from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.orchestrator import GameOrchestrator
 from backend_v2.app.services.retrieval import (
     HybridMemoryRetriever,
@@ -83,6 +85,11 @@ def get_memory_retriever() -> MemoryRetriever:
     )
 
 
+@lru_cache
+def get_retrieval_metrics_collector() -> RetrievalMetricsCollector:
+    return RetrievalMetricsCollector()
+
+
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
     world = repository.get_world(world_id)
     if world is None:
@@ -120,9 +127,11 @@ async def run_turn(
     repository = get_repository()
     memory_policy = get_memory_policy()
     memory_retriever = get_memory_retriever()
+    metrics_collector = get_retrieval_metrics_collector()
     try:
         _assert_world_access(repository, request.world_id, current_user.user_id)
         recent_events = repository.list_recent_turn_events(request.world_id, limit=3)
+        retrieval_started_at = perf_counter()
         retrieval_result = memory_retriever.retrieve(
             repository=repository,
             world_id=request.world_id,
@@ -130,9 +139,11 @@ async def run_turn(
             limit=settings.memory_context_limit,
             min_importance=settings.memory_min_importance,
         )
+        retrieval_latency_ms = (perf_counter() - retrieval_started_at) * 1000
+        metrics_collector.record(retrieval_result.stats, retrieval_latency_ms)
         memory_matches = retrieval_result.items
         logger.info(
-            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s cache_hits=%s cache_misses=%s returned=%s fallback=%s",
+            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s cache_hits=%s cache_misses=%s returned=%s fallback=%s latency_ms=%.2f",
             request.world_id,
             current_user.user_id,
             retrieval_result.stats.strategy,
@@ -143,6 +154,7 @@ async def run_turn(
             retrieval_result.stats.cache_misses,
             retrieval_result.stats.returned,
             retrieval_result.stats.fallback_used,
+            retrieval_latency_ms,
         )
         memory_context = [f"{item['memory_type']}: {item['content']}" for item in memory_matches]
 
@@ -239,6 +251,13 @@ async def list_world_memory(
     except PersistenceError as exc:
         raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
     return [MemoryItemResponse.model_validate(item) for item in memory_items]
+
+
+@app.get("/v2/metrics/retrieval")
+async def get_retrieval_metrics(current_user: AuthUser = Depends(get_current_user)) -> dict:
+    _ = current_user
+    collector = get_retrieval_metrics_collector()
+    return collector.snapshot()
 
 
 @app.get("/")

@@ -9,6 +9,7 @@ from backend_v2.app.main import app
 from backend_v2.app.models import TurnResponse
 from backend_v2.app.persistence import PersistenceError
 from backend_v2.app.providers.base import ProviderError
+from backend_v2.app.services.metrics import RetrievalMetricsCollector
 
 
 class _SuccessOrchestrator:
@@ -160,9 +161,13 @@ class _FailingRepo:
 class TestMainApi(unittest.TestCase):
     def setUp(self):
         self.repo = _MemoryRepo()
+        self.metrics = RetrievalMetricsCollector()
         self.repo_patcher = patch("backend_v2.app.main.get_repository", return_value=self.repo)
+        self.metrics_patcher = patch("backend_v2.app.main.get_retrieval_metrics_collector", return_value=self.metrics)
         self.repo_patcher.start()
+        self.metrics_patcher.start()
         self.addCleanup(self.repo_patcher.stop)
+        self.addCleanup(self.metrics_patcher.stop)
         self.client = TestClient(app)
 
     def _auth_headers(self, user_id=11, username="tester"):
@@ -348,6 +353,30 @@ class TestMainApi(unittest.TestCase):
         memory_items = response.json()
         self.assertGreaterEqual(len(memory_items), 1)
         self.assertEqual(memory_items[0]["world_id"], 1)
+
+    def test_retrieval_metrics_requires_auth(self):
+        response = self.client.get("/v2/metrics/retrieval")
+        self.assertEqual(response.status_code, 401)
+
+    def test_retrieval_metrics_endpoint(self):
+        headers = self._auth_headers(user_id=1)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Metrik-Welt", "description": ""},
+        )
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()):
+            self.client.post(
+                "/v2/game/turn",
+                headers=headers,
+                json={"world_id": 1, "player_id": 7, "player_command": "Ich teste die Metriken."},
+            )
+
+        response = self.client.get("/v2/metrics/retrieval", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertGreaterEqual(payload["totals"]["requests"], 1)
+        self.assertIn("latency_ms", payload["histograms"])
 
 
 if __name__ == "__main__":
