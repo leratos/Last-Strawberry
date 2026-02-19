@@ -478,6 +478,58 @@ class TestMainApi(unittest.TestCase):
         payload = response.json()
         self.assertGreaterEqual(payload["totals"]["requests"], 1)
         self.assertIn("latency_ms", payload["histograms"])
+        self.assertIn("http_status", payload)
+        self.assertIn("audit_events", payload)
+
+    def test_retrieval_metrics_collect_http_status_and_audit_events(self):
+        unauthorized = self.client.post("/v2/worlds", json={"name": "NoAuth", "description": ""})
+        self.assertEqual(unauthorized.status_code, 401)
+
+        owner_headers = self._auth_headers(user_id=11)
+        create_response = self.client.post(
+            "/v2/worlds",
+            headers=owner_headers,
+            json={"name": "Audit-Welt", "description": ""},
+        )
+        world_id = int(create_response.json()["id"])
+
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()), patch(
+            "backend_v2.app.main.get_turn_rate_limiter",
+            return_value=_BlockedRateLimiter(retry_after_seconds=5),
+        ):
+            rate_limited = self.client.post(
+                "/v2/game/turn",
+                headers=owner_headers,
+                json={"world_id": world_id, "player_id": 7, "player_command": "Ich warte."},
+            )
+        self.assertEqual(rate_limited.status_code, 429)
+
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_UnexpectedErrorOrchestrator()):
+            server_error = self.client.post(
+                "/v2/game/turn",
+                headers=owner_headers,
+                json={"world_id": world_id, "player_id": 7, "player_command": "Ich teste Fehler."},
+            )
+        self.assertEqual(server_error.status_code, 500)
+
+        other_headers = self._auth_headers(user_id=22)
+        forbidden = self.client.get(f"/v2/worlds/{world_id}", headers=other_headers)
+        self.assertEqual(forbidden.status_code, 403)
+
+        response = self.client.get("/v2/metrics/retrieval", headers=owner_headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        by_status = payload["http_status"]["by_status"]
+        self.assertGreaterEqual(by_status.get("401", 0), 1)
+        self.assertGreaterEqual(by_status.get("429", 0), 1)
+        self.assertGreaterEqual(by_status.get("500", 0), 1)
+
+        audit = payload["audit_events"]
+        self.assertGreaterEqual(audit.get("auth_failed", 0), 1)
+        self.assertGreaterEqual(audit.get("auth_login_success", 0), 2)
+        self.assertGreaterEqual(audit.get("auth_forbidden", 0), 1)
+        self.assertGreaterEqual(audit.get("rate_limit_exceeded", 0), 1)
 
 
 if __name__ == "__main__":

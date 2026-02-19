@@ -51,6 +51,24 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["histograms"]["returned_items"]["le_3"], 1)
         self.assertEqual(snapshot["histograms"]["returned_items"]["le_0"], 1)
 
+        collector.record_http_status(200)
+        collector.record_http_status(302)
+        collector.record_http_status(429)
+        collector.record_http_status(500)
+        collector.record_http_status(102)
+        collector.record_audit_event("auth_failed")
+        collector.record_audit_event("auth_failed")
+
+        snapshot = collector.snapshot()
+        self.assertEqual(snapshot["http_status"]["total"], 5)
+        self.assertEqual(snapshot["http_status"]["by_class"]["2xx"], 1)
+        self.assertEqual(snapshot["http_status"]["by_class"]["3xx"], 1)
+        self.assertEqual(snapshot["http_status"]["by_class"]["4xx"], 1)
+        self.assertEqual(snapshot["http_status"]["by_class"]["5xx"], 1)
+        self.assertEqual(snapshot["http_status"]["by_class"]["other"], 1)
+        self.assertEqual(snapshot["http_status"]["by_status"]["429"], 1)
+        self.assertEqual(snapshot["audit_events"]["auth_failed"], 2)
+
     def test_reset(self):
         collector = RetrievalMetricsCollector()
         collector.record(
@@ -70,6 +88,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         snapshot = collector.snapshot()
         self.assertEqual(snapshot["totals"]["requests"], 0)
         self.assertEqual(snapshot["strategy_counts"], {})
+        self.assertEqual(snapshot["http_status"]["total"], 0)
+        self.assertEqual(snapshot["audit_events"], {})
 
 
 if __name__ == "__main__":

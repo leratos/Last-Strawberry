@@ -63,6 +63,15 @@ async def request_id_middleware(request: Request, call_next):
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
     finally:
+        if isinstance(status_code, int):
+            collector = get_retrieval_metrics_collector()
+            collector.record_http_status(status_code)
+            request_path = str(request.url.path)
+            if status_code == 401 and request_path.startswith("/v2/") and request_path != "/v2/auth/login":
+                collector.record_audit_event("auth_failed")
+            elif status_code == 403:
+                collector.record_audit_event("auth_forbidden")
+
         logger.info(
             "request_id=%s method=%s path=%s status=%s latency_ms=%.2f",
             sanitize_for_log(request_id, max_length=64),
@@ -144,6 +153,7 @@ def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: i
 @app.post("/v2/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest, settings: Settings = Depends(get_settings)) -> LoginResponse:
     token = create_access_token(user_id=request.user_id, username=request.username, settings=settings)
+    get_retrieval_metrics_collector().record_audit_event("auth_login_success")
     return LoginResponse(access_token=token, expires_in_seconds=settings.jwt_expire_minutes * 60)
 
 
@@ -177,6 +187,7 @@ async def run_turn(
         limit_check = rate_limiter.check(f"user:{current_user.user_id}")
         if not limit_check.allowed:
             retry_after = limit_check.retry_after_seconds or 1
+            metrics_collector.record_audit_event("rate_limit_exceeded")
             logger.warning(
                 "request_id=%s rate_limit_exceeded user_id=%s retry_after_s=%s",
                 get_request_id(),
