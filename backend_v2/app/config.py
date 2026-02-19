@@ -124,6 +124,8 @@ class Settings:
     jwt_secret: str = "change-me-in-production-please-use-32-plus-chars"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 120
+    memory_context_limit: int = 5
+    memory_min_importance: float = 0.6
     environment: str = "development"
 
     @classmethod
@@ -147,6 +149,8 @@ class Settings:
             or "change-me-in-production-please-use-32-plus-chars",
             jwt_algorithm=_read_env("LS_JWT_ALGORITHM", "HS256") or "HS256",
             jwt_expire_minutes=int(_read_env("LS_JWT_EXPIRE_MINUTES", "120") or "120"),
+            memory_context_limit=int(_read_env("LS_MEMORY_CONTEXT_LIMIT", "5") or "5"),
+            memory_min_importance=float(_read_env("LS_MEMORY_MIN_IMPORTANCE", "0.6") or "0.6"),
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )
 

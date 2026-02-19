@@ -45,6 +45,7 @@ class GameOrchestrator:
         )
 
     def _build_analysis_prompts(self, request: TurnRequest) -> tuple[str, str]:
+        memory_block = "\n".join(request.memory_context[:5]) if request.memory_context else "No memory context."
         system_prompt = (
             "You are a strict game command extractor. "
             "Return only a JSON array. No markdown, no explanation."
@@ -52,6 +53,7 @@ class GameOrchestrator:
         user_prompt = (
             f"Player: {request.player_name}\n"
             f"NPC context: {request.npc_context}\n"
+            f"Memory context:\n{memory_block}\n"
             f"Player command: {request.player_command}\n\n"
             "Allowed commands: NPC_CREATE, NPC_UPDATE, PLAYER_MOVE, NPC_MOVE, "
             "PLAYER_STATE_UPDATE, NPC_STATE_UPDATE, ROLL_CHECK.\n"
@@ -65,6 +67,7 @@ class GameOrchestrator:
         extracted_commands: list[dict[str, Any]],
     ) -> tuple[str, str]:
         history_block = "\n".join(request.recent_events[-3:]) if request.recent_events else "No recent events."
+        memory_block = "\n".join(request.memory_context[:5]) if request.memory_context else "No memory context."
         system_prompt = (
             "You are a creative game master for a text RPG. "
             "Write immersive German narrative text. Do not emit system tags."
@@ -73,6 +76,7 @@ class GameOrchestrator:
             f"World: {request.world_name}\n"
             f"Player: {request.player_name}\n"
             f"Recent events:\n{history_block}\n\n"
+            f"Relevant memory:\n{memory_block}\n\n"
             f"Current command: {request.player_command}\n"
             f"Extracted commands: {json.dumps(extracted_commands, ensure_ascii=False)}\n\n"
             "Write the next scene and end with an actionable question for the player."

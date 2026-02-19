@@ -36,6 +36,8 @@ class _MemoryRepo:
     def __init__(self):
         self.worlds = {}
         self.turns = []
+        self.memory_items = []
+        self._memory_id = 1
         self._world_id = 1
         self._turn_id = 1
 
@@ -79,6 +81,38 @@ class _MemoryRepo:
         result = [turn for turn in self.turns if turn["world_id"] == world_id]
         return list(reversed(result))[:limit]
 
+    def list_recent_turn_events(self, world_id, limit=3):
+        result = [turn for turn in self.turns if turn["world_id"] == world_id]
+        result = result[-limit:]
+        return [f"Player action: {turn['player_command']} | Outcome: {turn['narrative']}" for turn in result]
+
+    def save_memory_items(self, world_id, items, source_turn_id=None):
+        written = 0
+        now = datetime.now(UTC).isoformat()
+        for item in items:
+            stored = {
+                "id": self._memory_id,
+                "world_id": world_id,
+                "memory_type": item["memory_type"],
+                "content": item["content"],
+                "importance": float(item["importance"]),
+                "source_turn_id": source_turn_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+            self.memory_items.append(stored)
+            self._memory_id += 1
+            written += 1
+        return written
+
+    def list_memory_items(self, world_id, limit=20, min_importance=0.0):
+        items = [item for item in self.memory_items if item["world_id"] == world_id and item["importance"] >= min_importance]
+        items.sort(key=lambda item: item["importance"], reverse=True)
+        return items[:limit]
+
+    def search_memory_items(self, world_id, query, limit=5, min_importance=0.5):
+        return self.list_memory_items(world_id=world_id, limit=limit, min_importance=min_importance)
+
 
 class _FailingRepo:
     def get_world(self, world_id):
@@ -92,6 +126,12 @@ class _FailingRepo:
 
     def save_turn(self, request, response):
         raise PersistenceError("db write failed")
+
+    def list_recent_turn_events(self, world_id, limit=3):
+        return []
+
+    def search_memory_items(self, world_id, query, limit=5, min_importance=0.5):
+        return []
 
 
 class TestMainApi(unittest.TestCase):
@@ -195,6 +235,7 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(body["models"]["analysis"], "model-a")
         self.assertEqual(len(body["extracted_commands"]), 1)
         self.assertEqual(len(self.repo.turns), 1)
+        self.assertGreaterEqual(len(self.repo.memory_items), 1)
 
     def test_game_turn_forbidden_for_other_owner(self):
         owner_headers = self._auth_headers(user_id=11)
@@ -264,6 +305,26 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(len(turns), 1)
         self.assertEqual(turns[0]["world_id"], 1)
         self.assertEqual(turns[0]["player_id"], 7)
+
+    def test_list_world_memory(self):
+        headers = self._auth_headers(user_id=1)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Testwelt", "description": ""},
+        )
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()):
+            self.client.post(
+                "/v2/game/turn",
+                headers=headers,
+                json={"world_id": 1, "player_id": 7, "player_command": "Ich untersuche die Szene."},
+            )
+
+        response = self.client.get("/v2/worlds/1/memory?limit=10&min_importance=0.6", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        memory_items = response.json()
+        self.assertGreaterEqual(len(memory_items), 1)
+        self.assertEqual(memory_items[0]["world_id"], 1)
 
 
 if __name__ == "__main__":

@@ -100,12 +100,15 @@ class TestOrchestratorHelpers(unittest.TestCase):
             player_command="Ich klopfe an die Tuer.",
             player_name="Leratos",
             npc_context="Wache steht vor der Tuer.",
+            memory_context=["npc_profile: NPC introduced: Elara"],
         )
         system_prompt, user_prompt = self.orchestrator._build_analysis_prompts(request)
 
         self.assertIn("strict game command extractor", system_prompt)
         self.assertIn("Player: Leratos", user_prompt)
         self.assertIn("NPC context: Wache steht vor der Tuer.", user_prompt)
+        self.assertIn("Memory context:", user_prompt)
+        self.assertIn("npc_profile: NPC introduced: Elara", user_prompt)
         self.assertIn("Player command: Ich klopfe an die Tuer.", user_prompt)
 
     def test_build_narrative_prompts_uses_last_three_events(self):
@@ -116,6 +119,7 @@ class TestOrchestratorHelpers(unittest.TestCase):
             world_name="Arkanum",
             player_name="Leratos",
             recent_events=["E1", "E2", "E3", "E4"],
+            memory_context=["story_beat: The gate is unstable."],
         )
         _, user_prompt = self.orchestrator._build_narrative_prompts(
             request,
@@ -128,12 +132,15 @@ class TestOrchestratorHelpers(unittest.TestCase):
         self.assertIn("E2", user_prompt)
         self.assertIn("E3", user_prompt)
         self.assertIn("E4", user_prompt)
+        self.assertIn("Relevant memory:", user_prompt)
+        self.assertIn("story_beat: The gate is unstable.", user_prompt)
         self.assertIn('"command": "PLAYER_MOVE"', user_prompt)
 
     def test_build_narrative_prompts_without_history_uses_fallback(self):
         request = TurnRequest(world_id=3, player_id=1, player_command="Ich warte.")
         _, user_prompt = self.orchestrator._build_narrative_prompts(request, extracted_commands=[])
         self.assertIn("No recent events.", user_prompt)
+        self.assertIn("No memory context.", user_prompt)
 
 
 if __name__ == "__main__":

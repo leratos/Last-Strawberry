@@ -94,6 +94,20 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.jwt_algorithm, "HS256")
         self.assertEqual(settings.jwt_expire_minutes, 15)
 
+    def test_memory_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_MEMORY_CONTEXT_LIMIT": "7",
+                "LS_MEMORY_MIN_IMPORTANCE": "0.75",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.memory_context_limit, 7)
+        self.assertEqual(settings.memory_min_importance, 0.75)
+
 
 if __name__ == "__main__":
     unittest.main()

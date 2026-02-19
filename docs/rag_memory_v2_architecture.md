@@ -69,6 +69,10 @@ Stand: 19 February 2026
 3. Phase 3: vector index + hybrid retrieval + observability.
 4. Phase 4: optimization (cost/latency), canary rollout.
 
+## Current status
+- Completed: Phase 2a.
+- In progress: Phase 2b foundation (`memory_items` schema, lexical retrieval, prompt memory context, write policy).
+
 ## Success metrics
 - Narrative contradiction rate per 100 turns.
 - Memory hit-rate in prompts.
