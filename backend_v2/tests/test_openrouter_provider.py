@@ -1,6 +1,10 @@
 import unittest
+from unittest.mock import patch
+
+import httpx
 
 from backend_v2.app.config import Settings
+from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
 
 
@@ -29,6 +33,142 @@ class TestOpenRouterProvider(unittest.TestCase):
         headers = provider._build_headers()
         self.assertIn("Authorization", headers)
         self.assertIn("HTTP-Referer", headers)
+
+    def test_build_headers_without_key_raises(self):
+        settings = Settings(openrouter_api_key=None)
+        provider = OpenRouterProvider(settings)
+        with self.assertRaises(ProviderError):
+            provider._build_headers()
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, response=None, exception=None):
+        self._response = response
+        self._exception = exception
+
+    async def post(self, url, headers, json):
+        if self._exception:
+            raise self._exception
+        return self._response
+
+
+class _FakeAsyncClientContext:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return _FakeClient(response=self._response)
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestOpenRouterProviderAsync(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_success_with_injected_client(self):
+        settings = Settings(openrouter_api_key="k")
+        response = _FakeResponse({"choices": [{"message": {"content": "  Hallo Welt  "}}]})
+        provider = OpenRouterProvider(settings, client=_FakeClient(response=response))
+
+        result = await provider.generate(
+            system_prompt="sys",
+            user_prompt="user",
+            model="m",
+            temperature=0.2,
+            max_tokens=200,
+        )
+        self.assertEqual(result, "Hallo Welt")
+
+    async def test_generate_timeout_maps_to_provider_error(self):
+        settings = Settings(openrouter_api_key="k")
+        provider = OpenRouterProvider(
+            settings,
+            client=_FakeClient(exception=httpx.TimeoutException("timeout")),
+        )
+
+        with self.assertRaises(ProviderError) as ctx:
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        self.assertIn("timed out", str(ctx.exception))
+
+    async def test_generate_http_error_maps_status_and_body(self):
+        settings = Settings(openrouter_api_key="k")
+        request = httpx.Request("POST", "https://example.test")
+        response = httpx.Response(429, request=request, text="rate-limited")
+        http_error = httpx.HTTPStatusError("bad status", request=request, response=response)
+        provider = OpenRouterProvider(settings, client=_FakeClient(exception=http_error))
+
+        with self.assertRaises(ProviderError) as ctx:
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        self.assertIn("429", str(ctx.exception))
+        self.assertIn("rate-limited", str(ctx.exception))
+
+    async def test_generate_invalid_payload_raises_provider_error(self):
+        settings = Settings(openrouter_api_key="k")
+        provider = OpenRouterProvider(settings, client=_FakeClient(response=_FakeResponse({"foo": "bar"})))
+
+        with self.assertRaises(ProviderError) as ctx:
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        self.assertIn("Invalid OpenRouter response format", str(ctx.exception))
+
+    async def test_generate_unknown_exception_maps_to_provider_error(self):
+        settings = Settings(openrouter_api_key="k")
+        provider = OpenRouterProvider(settings, client=_FakeClient(exception=RuntimeError("broken")))
+
+        with self.assertRaises(ProviderError) as ctx:
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        self.assertIn("request failed", str(ctx.exception))
+
+    async def test_generate_success_with_internal_async_client_context(self):
+        settings = Settings(openrouter_api_key="k")
+        response = _FakeResponse({"choices": [{"message": {"content": "Antwort"}}]})
+        provider = OpenRouterProvider(settings, client=None)
+
+        with patch(
+            "backend_v2.app.providers.openrouter.httpx.AsyncClient",
+            return_value=_FakeAsyncClientContext(response=response),
+        ):
+            result = await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        self.assertEqual(result, "Antwort")
 
 
 if __name__ == "__main__":
