@@ -9,6 +9,7 @@ from backend_v2.app.models import (
     HealthResponse,
     LoginRequest,
     LoginResponse,
+    MemoryItemResponse,
     TurnRecordResponse,
     TurnRequest,
     TurnResponse,
@@ -18,6 +19,7 @@ from backend_v2.app.models import (
 from backend_v2.app.persistence import PersistenceError, SQLiteRepository
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
+from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.orchestrator import GameOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,12 @@ def get_orchestrator() -> GameOrchestrator:
 def get_repository() -> SQLiteRepository:
     settings = get_settings()
     return SQLiteRepository(database_url=settings.database_url, auto_init=settings.database_auto_init)
+
+
+@lru_cache
+def get_memory_policy() -> MemoryWritePolicy:
+    settings = get_settings()
+    return MemoryWritePolicy(min_importance=settings.memory_min_importance)
 
 
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
@@ -75,12 +83,35 @@ async def run_turn(
     request: TurnRequest,
     current_user: AuthUser = Depends(get_current_user),
 ) -> TurnResponse:
+    settings = get_settings()
     orchestrator = get_orchestrator()
     repository = get_repository()
+    memory_policy = get_memory_policy()
     try:
         _assert_world_access(repository, request.world_id, current_user.user_id)
-        response = await orchestrator.run_turn(request)
-        repository.save_turn(request, response)
+        recent_events = repository.list_recent_turn_events(request.world_id, limit=3)
+        memory_matches = repository.search_memory_items(
+            world_id=request.world_id,
+            query=request.player_command,
+            limit=settings.memory_context_limit,
+            min_importance=settings.memory_min_importance,
+        )
+        memory_context = [f"{item['memory_type']}: {item['content']}" for item in memory_matches]
+
+        enriched_request = request.model_copy(
+            update={
+                "recent_events": recent_events or request.recent_events,
+                "memory_context": memory_context,
+            }
+        )
+        response = await orchestrator.run_turn(enriched_request)
+        saved_turn = repository.save_turn(enriched_request, response)
+        memory_items = memory_policy.build_items(enriched_request, response)
+        repository.save_memory_items(
+            world_id=request.world_id,
+            items=memory_items,
+            source_turn_id=int(saved_turn["id"]),
+        )
         return response
     except HTTPException:
         raise
@@ -140,6 +171,26 @@ async def list_world_turns(
     except PersistenceError as exc:
         raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
     return [TurnRecordResponse.model_validate(turn) for turn in turns]
+
+
+@app.get("/v2/worlds/{world_id}/memory", response_model=list[MemoryItemResponse])
+async def list_world_memory(
+    world_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    min_importance: float = Query(default=0.0, ge=0.0, le=1.0),
+    current_user: AuthUser = Depends(get_current_user),
+) -> list[MemoryItemResponse]:
+    repository = get_repository()
+    try:
+        _assert_world_access(repository, world_id, current_user.user_id)
+        memory_items = repository.list_memory_items(
+            world_id=world_id,
+            limit=limit,
+            min_importance=min_importance,
+        )
+    except PersistenceError as exc:
+        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+    return [MemoryItemResponse.model_validate(item) for item in memory_items]
 
 
 @app.get("/")

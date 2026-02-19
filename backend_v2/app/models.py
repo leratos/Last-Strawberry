@@ -12,6 +12,7 @@ class TurnRequest(BaseModel):
     player_name: str = Field(default="player")
     npc_context: str = Field(default="No NPCs currently present.")
     recent_events: list[str] = Field(default_factory=list)
+    memory_context: list[str] = Field(default_factory=list)
 
 
 class LoginRequest(BaseModel):
@@ -63,3 +64,14 @@ class TurnRecordResponse(BaseModel):
     analysis_model: str
     narrative_model: str
     created_at: datetime
+
+
+class MemoryItemResponse(BaseModel):
+    id: int
+    world_id: int
+    memory_type: str
+    content: str
+    importance: float
+    source_turn_id: int | None
+    created_at: datetime
+    updated_at: datetime

@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -80,8 +81,34 @@ class SQLiteRepository:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS memory_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    world_id INTEGER NOT NULL,
+                    memory_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    importance REAL NOT NULL,
+                    source_turn_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_turns_world_created_at
                 ON turns(world_id, created_at DESC);
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_memory_world_importance_updated
+                ON memory_items(world_id, importance DESC, updated_at DESC);
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_dedupe
+                ON memory_items(world_id, memory_type, content);
                 """
             )
             conn.commit()
@@ -225,3 +252,154 @@ class SQLiteRepository:
                 }
             )
         return results
+
+    def list_recent_turn_events(self, world_id: int, limit: int = 3) -> list[str]:
+        safe_limit = max(1, min(limit, 20))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_command, narrative
+                FROM turns
+                WHERE world_id = ?
+                ORDER BY id DESC
+                LIMIT ?;
+                """,
+                (world_id, safe_limit),
+            ).fetchall()
+
+        events: list[str] = []
+        for row in reversed(rows):
+            command = str(row["player_command"]).strip()
+            narrative = str(row["narrative"]).strip()
+            events.append(f"Player action: {command} | Outcome: {narrative}")
+        return events
+
+    def save_memory_items(self, world_id: int, items: list[dict], source_turn_id: int | None = None) -> int:
+        if not items:
+            return 0
+
+        now = datetime.now(UTC).isoformat()
+        written = 0
+
+        with self._connect() as conn:
+            for item in items:
+                memory_type = str(item.get("memory_type", "")).strip()
+                content = str(item.get("content", "")).strip()
+                if not memory_type or not content:
+                    continue
+                importance = float(item.get("importance", 0.0))
+                importance = max(0.0, min(1.0, importance))
+                local_source_turn_id = item.get("source_turn_id", source_turn_id)
+
+                conn.execute(
+                    """
+                    INSERT INTO memory_items(
+                        world_id,
+                        memory_type,
+                        content,
+                        importance,
+                        source_turn_id,
+                        created_at,
+                        updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(world_id, memory_type, content)
+                    DO UPDATE SET
+                        importance = CASE
+                            WHEN excluded.importance > memory_items.importance
+                            THEN excluded.importance
+                            ELSE memory_items.importance
+                        END,
+                        source_turn_id = COALESCE(excluded.source_turn_id, memory_items.source_turn_id),
+                        updated_at = excluded.updated_at;
+                    """,
+                    (
+                        world_id,
+                        memory_type,
+                        content,
+                        importance,
+                        local_source_turn_id,
+                        now,
+                        now,
+                    ),
+                )
+                written += 1
+            conn.commit()
+
+        return written
+
+    def list_memory_items(
+        self,
+        world_id: int,
+        limit: int = 20,
+        min_importance: float = 0.0,
+    ) -> list[dict]:
+        safe_limit = max(1, min(limit, 100))
+        safe_min_importance = max(0.0, min(1.0, min_importance))
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    world_id,
+                    memory_type,
+                    content,
+                    importance,
+                    source_turn_id,
+                    created_at,
+                    updated_at
+                FROM memory_items
+                WHERE world_id = ? AND importance >= ?
+                ORDER BY importance DESC, updated_at DESC, id DESC
+                LIMIT ?;
+                """,
+                (world_id, safe_min_importance, safe_limit),
+            ).fetchall()
+
+        return [
+            {
+                "id": int(row["id"]),
+                "world_id": int(row["world_id"]),
+                "memory_type": str(row["memory_type"]),
+                "content": str(row["content"]),
+                "importance": float(row["importance"]),
+                "source_turn_id": int(row["source_turn_id"]) if row["source_turn_id"] is not None else None,
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
+    def search_memory_items(
+        self,
+        world_id: int,
+        query: str,
+        limit: int = 5,
+        min_importance: float = 0.5,
+    ) -> list[dict]:
+        safe_limit = max(1, min(limit, 20))
+        candidates = self.list_memory_items(
+            world_id=world_id,
+            limit=200,
+            min_importance=min_importance,
+        )
+        if not candidates:
+            return []
+
+        query_terms = {term for term in re.split(r"\W+", query.lower()) if term}
+        if not query_terms:
+            return candidates[:safe_limit]
+
+        ranked: list[tuple[float, dict]] = []
+        for item in candidates:
+            content_terms = {term for term in re.split(r"\W+", item["content"].lower()) if term}
+            overlap = len(query_terms.intersection(content_terms))
+            score = overlap * 3.0 + float(item["importance"])
+            if overlap > 0:
+                ranked.append((score, item))
+
+        if not ranked:
+            return candidates[:safe_limit]
+
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        return [item for _, item in ranked[:safe_limit]]
