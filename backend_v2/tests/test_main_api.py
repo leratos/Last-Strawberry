@@ -133,6 +133,9 @@ class _FailingRepo:
     def search_memory_items(self, world_id, query, limit=5, min_importance=0.5):
         return []
 
+    def list_memory_items(self, world_id, limit=20, min_importance=0.0):
+        return []
+
 
 class TestMainApi(unittest.TestCase):
     def setUp(self):

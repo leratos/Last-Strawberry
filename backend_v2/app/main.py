@@ -21,6 +21,11 @@ from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.orchestrator import GameOrchestrator
+from backend_v2.app.services.retrieval import (
+    HybridMemoryRetriever,
+    LexicalMemoryRetriever,
+    MemoryRetriever,
+)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -49,6 +54,14 @@ def get_repository() -> SQLiteRepository:
 def get_memory_policy() -> MemoryWritePolicy:
     settings = get_settings()
     return MemoryWritePolicy(min_importance=settings.memory_min_importance)
+
+
+@lru_cache
+def get_memory_retriever() -> MemoryRetriever:
+    settings = get_settings()
+    if settings.memory_retrieval_strategy == "lexical":
+        return LexicalMemoryRetriever()
+    return HybridMemoryRetriever()
 
 
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
@@ -87,14 +100,27 @@ async def run_turn(
     orchestrator = get_orchestrator()
     repository = get_repository()
     memory_policy = get_memory_policy()
+    memory_retriever = get_memory_retriever()
     try:
         _assert_world_access(repository, request.world_id, current_user.user_id)
         recent_events = repository.list_recent_turn_events(request.world_id, limit=3)
-        memory_matches = repository.search_memory_items(
+        retrieval_result = memory_retriever.retrieve(
+            repository=repository,
             world_id=request.world_id,
             query=request.player_command,
             limit=settings.memory_context_limit,
             min_importance=settings.memory_min_importance,
+        )
+        memory_matches = retrieval_result.items
+        logger.info(
+            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s returned=%s fallback=%s",
+            request.world_id,
+            current_user.user_id,
+            retrieval_result.stats.strategy,
+            retrieval_result.stats.candidates_scanned,
+            retrieval_result.stats.lexical_hits,
+            retrieval_result.stats.returned,
+            retrieval_result.stats.fallback_used,
         )
         memory_context = [f"{item['memory_type']}: {item['content']}" for item in memory_matches]
 
