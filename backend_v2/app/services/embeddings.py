@@ -10,6 +10,10 @@ class EmbeddingsProvider(Protocol):
         ...
 
 
+class EmbeddingsProviderError(RuntimeError):
+    pass
+
+
 class NoopEmbeddingsProvider:
     provider_name = "none"
 
