@@ -71,7 +71,8 @@ Stand: 19 February 2026
 
 ## Current status
 - Completed: Phase 2a.
-- In progress: Phase 2b foundation (`memory_items` schema, lexical retrieval, prompt memory context, write policy).
+- Completed: Phase 2b foundation (`memory_items` schema, lexical retrieval, prompt memory context, write policy).
+- In progress: Phase 3 prep (`hybrid` retriever strategy abstraction + retrieval telemetry logging).
 
 ## Success metrics
 - Narrative contradiction rate per 100 turns.

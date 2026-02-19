@@ -16,6 +16,12 @@ def _read_bool_env(key: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_choice_env(key: str, default: str, allowed: set[str]) -> str:
+    raw = _read_env(key, default)
+    value = (raw or default).strip().lower()
+    return value if value in allowed else default
+
+
 def _read_openrouter_api_key() -> str | None:
     # 1) Explicit env vars have highest priority.
     explicit = _read_env("LS_OPENROUTER_API_KEY") or _read_env("OPENROUTER_API_KEY")
@@ -126,6 +132,7 @@ class Settings:
     jwt_expire_minutes: int = 120
     memory_context_limit: int = 5
     memory_min_importance: float = 0.6
+    memory_retrieval_strategy: str = "hybrid"
     environment: str = "development"
 
     @classmethod
@@ -151,6 +158,11 @@ class Settings:
             jwt_expire_minutes=int(_read_env("LS_JWT_EXPIRE_MINUTES", "120") or "120"),
             memory_context_limit=int(_read_env("LS_MEMORY_CONTEXT_LIMIT", "5") or "5"),
             memory_min_importance=float(_read_env("LS_MEMORY_MIN_IMPORTANCE", "0.6") or "0.6"),
+            memory_retrieval_strategy=_read_choice_env(
+                "LS_MEMORY_RETRIEVAL_STRATEGY",
+                "hybrid",
+                {"hybrid", "lexical"},
+            ),
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )
 

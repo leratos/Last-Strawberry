@@ -100,6 +100,7 @@ class TestConfig(unittest.TestCase):
             {
                 "LS_MEMORY_CONTEXT_LIMIT": "7",
                 "LS_MEMORY_MIN_IMPORTANCE": "0.75",
+                "LS_MEMORY_RETRIEVAL_STRATEGY": "lexical",
             },
             clear=False,
         ):
@@ -107,6 +108,17 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(settings.memory_context_limit, 7)
         self.assertEqual(settings.memory_min_importance, 0.75)
+        self.assertEqual(settings.memory_retrieval_strategy, "lexical")
+
+    def test_invalid_memory_retrieval_strategy_falls_back_to_default(self):
+        with patch.dict(
+            os.environ,
+            {"LS_MEMORY_RETRIEVAL_STRATEGY": "unknown"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.memory_retrieval_strategy, "hybrid")
 
 
 if __name__ == "__main__":
