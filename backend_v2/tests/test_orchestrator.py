@@ -2,6 +2,7 @@ import unittest
 
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest
+from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.services.orchestrator import GameOrchestrator
 
 
@@ -63,6 +64,62 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
         result = await orchestrator.run_turn(request)
         self.assertEqual(result.extracted_commands[0]["command"], "PLAYER_MOVE")
         self.assertEqual(result.extracted_commands[0]["location_name"], "Tempel")
+
+    async def test_run_turn_uses_fallback_models(self):
+        class FallbackProvider:
+            name = "fake"
+
+            def __init__(self):
+                self.calls: list[str] = []
+
+            async def generate(self, **kwargs):
+                model = kwargs["model"]
+                self.calls.append(model)
+                if model in {"analysis-primary", "narrative-primary"}:
+                    raise ProviderError(f"{model} unavailable")
+                if model == "analysis-fallback":
+                    return '[{"command":"PLAYER_MOVE","location_name":"Bruecke"}]'
+                if model == "narrative-fallback":
+                    return "Du erreichst die Bruecke. Was tust du als naechstes?"
+                raise ProviderError("unexpected model")
+
+        settings = Settings(
+            openrouter_api_key="test-key",
+            analysis_model="analysis-primary",
+            analysis_fallback_models=("analysis-fallback",),
+            narrative_model="narrative-primary",
+            narrative_fallback_models=("narrative-fallback",),
+        )
+        provider = FallbackProvider()
+        orchestrator = GameOrchestrator(provider=provider, settings=settings)
+
+        request = TurnRequest(world_id=1, player_id=1, player_command="Ich gehe zur Bruecke.")
+        result = await orchestrator.run_turn(request)
+
+        self.assertEqual(provider.calls, ["analysis-primary", "analysis-fallback", "narrative-primary", "narrative-fallback"])
+        self.assertEqual(result.models["analysis"], "analysis-fallback")
+        self.assertEqual(result.models["narrative"], "narrative-fallback")
+
+    async def test_run_turn_raises_if_all_analysis_models_fail(self):
+        class AlwaysFailProvider:
+            name = "fake"
+
+            async def generate(self, **kwargs):
+                raise ProviderError("provider down")
+
+        settings = Settings(
+            openrouter_api_key="test-key",
+            analysis_model="analysis-primary",
+            analysis_fallback_models=("analysis-backup",),
+            narrative_model="narrative-primary",
+        )
+        orchestrator = GameOrchestrator(provider=AlwaysFailProvider(), settings=settings)
+        request = TurnRequest(world_id=1, player_id=1, player_command="Test.")
+
+        with self.assertRaises(ProviderError) as ctx:
+            await orchestrator.run_turn(request)
+
+        self.assertIn("All analysis models failed", str(ctx.exception))
 
 
 class TestOrchestratorHelpers(unittest.TestCase):
@@ -141,6 +198,13 @@ class TestOrchestratorHelpers(unittest.TestCase):
         _, user_prompt = self.orchestrator._build_narrative_prompts(request, extracted_commands=[])
         self.assertIn("No recent events.", user_prompt)
         self.assertIn("No memory context.", user_prompt)
+
+    def test_iter_candidate_models_deduplicates_and_trims(self):
+        candidates = self.orchestrator._iter_candidate_models(
+            " model-a ",
+            ("model-a", "model-b", "", " model-b ", "model-c"),
+        )
+        self.assertEqual(candidates, ("model-a", "model-b", "model-c"))
 
 
 if __name__ == "__main__":

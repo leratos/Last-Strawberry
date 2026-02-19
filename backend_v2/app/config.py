@@ -22,6 +22,19 @@ def _read_choice_env(key: str, default: str, allowed: set[str]) -> str:
     return value if value in allowed else default
 
 
+def _read_csv_env(key: str) -> tuple[str, ...]:
+    raw = _read_env(key)
+    if not raw:
+        return ()
+    values: list[str] = []
+    for item in raw.split(","):
+        candidate = item.strip()
+        if not candidate or candidate in values:
+            continue
+        values.append(candidate)
+    return tuple(values)
+
+
 def _read_openrouter_api_key() -> str | None:
     # 1) Explicit env vars have highest priority.
     explicit = _read_env("LS_OPENROUTER_API_KEY") or _read_env("OPENROUTER_API_KEY")
@@ -120,6 +133,8 @@ class Settings:
     openrouter_site_name: str = "last-strawberry-v2"
     analysis_model: str = "meta-llama/llama-3.3-70b-instruct"
     narrative_model: str = "meta-llama/llama-3.3-70b-instruct"
+    analysis_fallback_models: tuple[str, ...] = ()
+    narrative_fallback_models: tuple[str, ...] = ()
     analysis_temperature: float = 0.1
     narrative_temperature: float = 0.7
     analysis_max_tokens: int = 700
@@ -155,6 +170,8 @@ class Settings:
             openrouter_site_name=_read_env("LS_OPENROUTER_SITE_NAME", "last-strawberry-v2") or "last-strawberry-v2",
             analysis_model=_read_env("LS_ANALYSIS_MODEL", "meta-llama/llama-3.3-70b-instruct") or "meta-llama/llama-3.3-70b-instruct",
             narrative_model=_read_env("LS_NARRATIVE_MODEL", "meta-llama/llama-3.3-70b-instruct") or "meta-llama/llama-3.3-70b-instruct",
+            analysis_fallback_models=_read_csv_env("LS_ANALYSIS_FALLBACK_MODELS"),
+            narrative_fallback_models=_read_csv_env("LS_NARRATIVE_FALLBACK_MODELS"),
             analysis_temperature=float(_read_env("LS_ANALYSIS_TEMPERATURE", "0.1") or "0.1"),
             narrative_temperature=float(_read_env("LS_NARRATIVE_TEMPERATURE", "0.7") or "0.7"),
             analysis_max_tokens=int(_read_env("LS_ANALYSIS_MAX_TOKENS", "700") or "700"),

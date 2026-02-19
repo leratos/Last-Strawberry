@@ -172,6 +172,20 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.metrics_api_key, "metrics-secret")
         self.assertEqual(settings.metrics_api_key_header, "X-Obs-Key")
 
+    def test_fallback_models_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_ANALYSIS_FALLBACK_MODELS": "model-a, model-b, model-a,  ,model-c",
+                "LS_NARRATIVE_FALLBACK_MODELS": "narrative-fast",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.analysis_fallback_models, ("model-a", "model-b", "model-c"))
+        self.assertEqual(settings.narrative_fallback_models, ("narrative-fast",))
+
 
 if __name__ == "__main__":
     unittest.main()

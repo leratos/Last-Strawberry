@@ -5,7 +5,7 @@ from typing import Any
 
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest, TurnResponse
-from backend_v2.app.providers.base import LLMProvider
+from backend_v2.app.providers.base import LLMProvider, ProviderError
 
 
 class GameOrchestrator:
@@ -15,22 +15,26 @@ class GameOrchestrator:
 
     async def run_turn(self, request: TurnRequest) -> TurnResponse:
         analysis_system, analysis_user = self._build_analysis_prompts(request)
-        analysis_text = await self.provider.generate(
+        analysis_text, analysis_model = await self._generate_with_fallback(
             system_prompt=analysis_system,
             user_prompt=analysis_user,
-            model=self.settings.analysis_model,
+            primary_model=self.settings.analysis_model,
+            fallback_models=self.settings.analysis_fallback_models,
             temperature=self.settings.analysis_temperature,
             max_tokens=self.settings.analysis_max_tokens,
+            stage_name="analysis",
         )
         extracted_commands = self._extract_commands(analysis_text)
 
         narrative_system, narrative_user = self._build_narrative_prompts(request, extracted_commands)
-        narrative_text = await self.provider.generate(
+        narrative_text, narrative_model = await self._generate_with_fallback(
             system_prompt=narrative_system,
             user_prompt=narrative_user,
-            model=self.settings.narrative_model,
+            primary_model=self.settings.narrative_model,
+            fallback_models=self.settings.narrative_fallback_models,
             temperature=self.settings.narrative_temperature,
             max_tokens=self.settings.narrative_max_tokens,
+            stage_name="narrative",
         )
 
         return TurnResponse(
@@ -38,11 +42,48 @@ class GameOrchestrator:
             extracted_commands=extracted_commands,
             provider=self.provider.name,
             models={
-                "analysis": self.settings.analysis_model,
-                "narrative": self.settings.narrative_model,
+                "analysis": analysis_model,
+                "narrative": narrative_model,
             },
             created_at=datetime.now(UTC),
         )
+
+    async def _generate_with_fallback(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        primary_model: str,
+        fallback_models: tuple[str, ...],
+        temperature: float,
+        max_tokens: int,
+        stage_name: str,
+    ) -> tuple[str, str]:
+        errors: list[str] = []
+        for model in self._iter_candidate_models(primary_model, fallback_models):
+            try:
+                text = await self.provider.generate(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return text, model
+            except ProviderError as exc:
+                errors.append(f"{model}: {exc}")
+
+        details = " | ".join(errors) if errors else "No model candidates configured."
+        raise ProviderError(f"All {stage_name} models failed. {details}")
+
+    def _iter_candidate_models(self, primary_model: str, fallback_models: tuple[str, ...]) -> tuple[str, ...]:
+        candidates: list[str] = []
+        for model in (primary_model, *fallback_models):
+            clean = model.strip()
+            if not clean or clean in candidates:
+                continue
+            candidates.append(clean)
+        return tuple(candidates)
 
     def _build_analysis_prompts(self, request: TurnRequest) -> tuple[str, str]:
         memory_block = "\n".join(request.memory_context[:5]) if request.memory_context else "No memory context."
