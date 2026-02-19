@@ -19,6 +19,18 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             },
             "audit_events": {"auth_failed": 1},
             "error_categories": {"provider": 1},
+            "model_routing": {
+                "routes": [
+                    {
+                        "stage": "analysis",
+                        "requested_model": "model-a",
+                        "used_model": "model-b",
+                        "fallback": True,
+                        "count": 1,
+                    }
+                ],
+                "attempt_errors": [{"stage": "analysis", "model": "model-a", "count": 1}],
+            },
             "windowed_rates": {
                 "60s": {
                     "requests_per_minute": 4.0,
@@ -34,6 +46,11 @@ class TestMetricsPrometheusExport(unittest.TestCase):
         self.assertIn('ls_backend_v2_retrieval_strategy_total{strategy="hybrid"} 2', payload)
         self.assertIn('ls_backend_v2_http_status_total{status="429"} 1', payload)
         self.assertIn('ls_backend_v2_error_category_total{category="provider"} 1', payload)
+        self.assertIn(
+            'ls_backend_v2_model_route_total{stage="analysis",requested_model="model-a",used_model="model-b",fallback="true"} 1',
+            payload,
+        )
+        self.assertIn('ls_backend_v2_model_attempt_error_total{stage="analysis",model="model-a"} 1', payload)
         self.assertIn('ls_backend_v2_requests_per_minute{window="60s"} 4.0', payload)
 
     def test_histogram_conversion_uses_cumulative_buckets(self):
@@ -44,6 +61,7 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             "http_status": {},
             "audit_events": {},
             "error_categories": {},
+            "model_routing": {},
             "windowed_rates": {},
         }
 
@@ -61,6 +79,7 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             "http_status": {},
             "audit_events": {'a"b\\c': 1},
             "error_categories": {},
+            "model_routing": {},
             "windowed_rates": {},
         }
 
@@ -79,6 +98,10 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             "http_status": {"total": 1},
             "audit_events": {},
             "error_categories": {},
+            "model_routing": {
+                "routes": ["invalid"],
+                "attempt_errors": [{"stage": "analysis", "count": "invalid"}],
+            },
             "windowed_rates": {"60s": {"requests_per_minute": "invalid"}, "broken": "invalid"},
         }
 

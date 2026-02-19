@@ -132,6 +132,50 @@ def snapshot_to_prometheus(snapshot: Mapping[str, object], namespace: str = "ls_
             if isinstance(raw, (int, float)):
                 _append_counter(lines, metric_name, raw, labels={"category": category})
 
+    model_routing = snapshot.get("model_routing", {})
+    if isinstance(model_routing, Mapping):
+        routes = model_routing.get("routes")
+        if isinstance(routes, list):
+            metric_name = f"{ns}_model_route_total"
+            _add_header(lines, metric_name, "counter", "Model routing outcomes by stage.")
+            for route in routes:
+                if not isinstance(route, Mapping):
+                    continue
+                count = route.get("count")
+                if not isinstance(count, (int, float)):
+                    continue
+                _append_counter(
+                    lines,
+                    metric_name,
+                    count,
+                    labels={
+                        "stage": route.get("stage", "unknown"),
+                        "requested_model": route.get("requested_model", "unknown"),
+                        "used_model": route.get("used_model", "unknown"),
+                        "fallback": str(bool(route.get("fallback", False))).lower(),
+                    },
+                )
+
+        attempt_errors = model_routing.get("attempt_errors")
+        if isinstance(attempt_errors, list):
+            metric_name = f"{ns}_model_attempt_error_total"
+            _add_header(lines, metric_name, "counter", "Model attempt errors by stage and model.")
+            for entry in attempt_errors:
+                if not isinstance(entry, Mapping):
+                    continue
+                count = entry.get("count")
+                if not isinstance(count, (int, float)):
+                    continue
+                _append_counter(
+                    lines,
+                    metric_name,
+                    count,
+                    labels={
+                        "stage": entry.get("stage", "unknown"),
+                        "model": entry.get("model", "unknown"),
+                    },
+                )
+
     windowed_rates = snapshot.get("windowed_rates", {})
     if isinstance(windowed_rates, Mapping):
         for window, rates in windowed_rates.items():

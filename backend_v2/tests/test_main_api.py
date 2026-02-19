@@ -512,6 +512,7 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("http_status", payload)
         self.assertIn("audit_events", payload)
         self.assertIn("error_categories", payload)
+        self.assertIn("model_routing", payload)
         self.assertIn("windowed_rates", payload)
         self.assertIn("60s", payload["windowed_rates"])
         self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)

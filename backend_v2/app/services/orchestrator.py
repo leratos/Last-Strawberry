@@ -6,12 +6,19 @@ from typing import Any
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest, TurnResponse
 from backend_v2.app.providers.base import LLMProvider, ProviderError
+from backend_v2.app.services.metrics import RetrievalMetricsCollector
 
 
 class GameOrchestrator:
-    def __init__(self, provider: LLMProvider, settings: Settings):
+    def __init__(
+        self,
+        provider: LLMProvider,
+        settings: Settings,
+        metrics_collector: RetrievalMetricsCollector | None = None,
+    ):
         self.provider = provider
         self.settings = settings
+        self.metrics_collector = metrics_collector
 
     async def run_turn(self, request: TurnRequest) -> TurnResponse:
         analysis_system, analysis_user = self._build_analysis_prompts(request)
@@ -69,8 +76,16 @@ class GameOrchestrator:
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
+                if self.metrics_collector is not None:
+                    self.metrics_collector.record_model_route(
+                        stage=stage_name,
+                        requested_model=primary_model,
+                        used_model=model,
+                    )
                 return text, model
             except ProviderError as exc:
+                if self.metrics_collector is not None:
+                    self.metrics_collector.record_model_attempt_error(stage=stage_name, model=model)
                 errors.append(f"{model}: {exc}")
 
         details = " | ".join(errors) if errors else "No model candidates configured."

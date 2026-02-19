@@ -3,6 +3,7 @@ import unittest
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest
 from backend_v2.app.providers.base import ProviderError
+from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.orchestrator import GameOrchestrator
 
 
@@ -99,6 +100,56 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.calls, ["analysis-primary", "analysis-fallback", "narrative-primary", "narrative-fallback"])
         self.assertEqual(result.models["analysis"], "analysis-fallback")
         self.assertEqual(result.models["narrative"], "narrative-fallback")
+
+    async def test_run_turn_records_model_routing_metrics(self):
+        class FallbackProvider:
+            name = "fake"
+
+            def __init__(self):
+                self.calls: list[str] = []
+
+            async def generate(self, **kwargs):
+                model = kwargs["model"]
+                self.calls.append(model)
+                if model == "analysis-primary":
+                    raise ProviderError("analysis primary unavailable")
+                if model == "analysis-fallback":
+                    return '[{"command":"PLAYER_MOVE","location_name":"Bruecke"}]'
+                if model == "narrative-primary":
+                    return "Du erreichst die Bruecke. Was tust du als naechstes?"
+                raise ProviderError("unexpected model")
+
+        collector = RetrievalMetricsCollector()
+        settings = Settings(
+            openrouter_api_key="test-key",
+            analysis_model="analysis-primary",
+            analysis_fallback_models=("analysis-fallback",),
+            narrative_model="narrative-primary",
+        )
+        provider = FallbackProvider()
+        orchestrator = GameOrchestrator(provider=provider, settings=settings, metrics_collector=collector)
+
+        request = TurnRequest(world_id=1, player_id=1, player_command="Ich gehe zur Bruecke.")
+        await orchestrator.run_turn(request)
+
+        routing = collector.snapshot()["model_routing"]
+        routes = routing["routes"]
+        attempt_errors = routing["attempt_errors"]
+
+        self.assertEqual(len(routes), 2)
+        self.assertEqual(len(attempt_errors), 1)
+
+        analysis_route = next(route for route in routes if route["stage"] == "analysis")
+        narrative_route = next(route for route in routes if route["stage"] == "narrative")
+
+        self.assertTrue(analysis_route["fallback"])
+        self.assertEqual(analysis_route["requested_model"], "analysis-primary")
+        self.assertEqual(analysis_route["used_model"], "analysis-fallback")
+        self.assertFalse(narrative_route["fallback"])
+        self.assertEqual(narrative_route["used_model"], "narrative-primary")
+
+        self.assertEqual(attempt_errors[0]["stage"], "analysis")
+        self.assertEqual(attempt_errors[0]["model"], "analysis-primary")
 
     async def test_run_turn_raises_if_all_analysis_models_fail(self):
         class AlwaysFailProvider:

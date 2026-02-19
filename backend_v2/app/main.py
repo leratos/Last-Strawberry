@@ -105,7 +105,11 @@ async def request_id_middleware(request: Request, call_next):
 def get_orchestrator() -> GameOrchestrator:
     settings = get_settings()
     provider = OpenRouterProvider(settings)
-    return GameOrchestrator(provider=provider, settings=settings)
+    return GameOrchestrator(
+        provider=provider,
+        settings=settings,
+        metrics_collector=get_retrieval_metrics_collector(),
+    )
 
 
 @lru_cache
