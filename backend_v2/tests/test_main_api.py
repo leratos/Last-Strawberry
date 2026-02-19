@@ -37,6 +37,7 @@ class _MemoryRepo:
         self.worlds = {}
         self.turns = []
         self.memory_items = []
+        self.embedding_cache = {}
         self._memory_id = 1
         self._world_id = 1
         self._turn_id = 1
@@ -113,6 +114,19 @@ class _MemoryRepo:
     def search_memory_items(self, world_id, query, limit=5, min_importance=0.5):
         return self.list_memory_items(world_id=world_id, limit=limit, min_importance=min_importance)
 
+    def get_cached_embeddings(self, provider, model, texts):
+        result = {}
+        for text in texts:
+            key = (provider, model, text)
+            if key in self.embedding_cache:
+                result[text] = self.embedding_cache[key]
+        return result
+
+    def upsert_cached_embeddings(self, provider, model, embeddings_by_text):
+        for text, vector in embeddings_by_text.items():
+            self.embedding_cache[(provider, model, text)] = vector
+        return len(embeddings_by_text)
+
 
 class _FailingRepo:
     def get_world(self, world_id):
@@ -135,6 +149,12 @@ class _FailingRepo:
 
     def list_memory_items(self, world_id, limit=20, min_importance=0.0):
         return []
+
+    def get_cached_embeddings(self, provider, model, texts):
+        return {}
+
+    def upsert_cached_embeddings(self, provider, model, embeddings_by_text):
+        return len(embeddings_by_text)
 
 
 class TestMainApi(unittest.TestCase):

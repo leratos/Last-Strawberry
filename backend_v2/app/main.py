@@ -132,13 +132,15 @@ async def run_turn(
         )
         memory_matches = retrieval_result.items
         logger.info(
-            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s returned=%s fallback=%s",
+            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s cache_hits=%s cache_misses=%s returned=%s fallback=%s",
             request.world_id,
             current_user.user_id,
             retrieval_result.stats.strategy,
             retrieval_result.stats.candidates_scanned,
             retrieval_result.stats.lexical_hits,
             retrieval_result.stats.semantic_hits,
+            retrieval_result.stats.cache_hits,
+            retrieval_result.stats.cache_misses,
             retrieval_result.stats.returned,
             retrieval_result.stats.fallback_used,
         )

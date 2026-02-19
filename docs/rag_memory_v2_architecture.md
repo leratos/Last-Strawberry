@@ -74,7 +74,8 @@ Stand: 19 February 2026
 - Completed: Phase 2b foundation (`memory_items` schema, lexical retrieval, prompt memory context, write policy).
 - Completed: Phase 3 prep (`hybrid` retriever strategy abstraction + retrieval telemetry logging).
 - Completed: Phase 3 vector enrichment (`embeddings` provider interface + semantic scoring path).
-- In progress: external embeddings adapter hardening (`openrouter` adapter, resilience, production tuning).
+- Completed: external embeddings adapter hardening (`openrouter` adapter, resilience baseline).
+- In progress: embeddings caching and production tuning (latency/cost optimization).
 
 ## Success metrics
 - Narrative contradiction rate per 100 turns.

@@ -5,6 +5,7 @@ from typing import Protocol
 
 class EmbeddingsProvider(Protocol):
     provider_name: str
+    model_name: str
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         ...
@@ -19,6 +20,7 @@ class NoopEmbeddingsProvider:
 
     def __init__(self, dimensions: int = 64):
         self.dimensions = max(8, dimensions)
+        self.model_name = f"noop-{self.dimensions}"
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [[0.0 for _ in range(self.dimensions)] for _ in texts]
@@ -29,6 +31,7 @@ class HashEmbeddingsProvider:
 
     def __init__(self, dimensions: int = 64):
         self.dimensions = max(16, dimensions)
+        self.model_name = f"hash-{self.dimensions}"
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [self._embed_single(text) for text in texts]
