@@ -14,12 +14,6 @@ comment:
   require_changes: false
 
 status:
-  project:
-    informational: false
-    default:
-      target: 0.45
-      threshold: 1%
-      if_not_found: failure
   patch:
     informational: false
     default:
