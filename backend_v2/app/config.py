@@ -139,6 +139,9 @@ class Settings:
     embeddings_timeout_seconds: int = 20
     retrieval_vector_weight: float = 1.2
     retrieval_semantic_min_similarity: float = 0.2
+    turn_rate_limit_enabled: bool = True
+    turn_rate_limit_requests: int = 20
+    turn_rate_limit_window_seconds: int = 60
     environment: str = "development"
 
     @classmethod
@@ -182,6 +185,9 @@ class Settings:
             retrieval_semantic_min_similarity=float(
                 _read_env("LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY", "0.2") or "0.2"
             ),
+            turn_rate_limit_enabled=_read_bool_env("LS_TURN_RATE_LIMIT_ENABLED", True),
+            turn_rate_limit_requests=max(1, int(_read_env("LS_TURN_RATE_LIMIT_REQUESTS", "20") or "20")),
+            turn_rate_limit_window_seconds=max(1, int(_read_env("LS_TURN_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")),
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )
 

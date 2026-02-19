@@ -1,4 +1,5 @@
 import logging
+import re
 from contextvars import ContextVar
 from functools import lru_cache
 from time import perf_counter
@@ -27,6 +28,7 @@ from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbedding
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.orchestrator import GameOrchestrator
+from backend_v2.app.services.rate_limit import SlidingWindowRateLimiter
 from backend_v2.app.services.retrieval import (
     HybridMemoryRetriever,
     LexicalMemoryRetriever,
@@ -49,6 +51,12 @@ def get_request_id() -> str:
     return _request_id_ctx.get()
 
 
+def _sanitize_log_value(value: object, *, max_length: int = 120) -> str:
+    text = str(value)
+    cleaned = re.sub(r"[\r\n\t]+", " ", text).strip()
+    return cleaned[:max_length]
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
@@ -64,8 +72,8 @@ async def request_id_middleware(request: Request, call_next):
         logger.info(
             "request_id=%s method=%s path=%s status=%s latency_ms=%.2f",
             request_id,
-            request.method,
-            request.url.path,
+            _sanitize_log_value(request.method, max_length=16),
+            _sanitize_log_value(request.url.path, max_length=256),
             status_code,
             (perf_counter() - started_at) * 1000,
         )
@@ -121,6 +129,16 @@ def get_retrieval_metrics_collector() -> RetrievalMetricsCollector:
     return RetrievalMetricsCollector()
 
 
+@lru_cache
+def get_turn_rate_limiter() -> SlidingWindowRateLimiter:
+    settings = get_settings()
+    return SlidingWindowRateLimiter(
+        limit=settings.turn_rate_limit_requests,
+        window_seconds=settings.turn_rate_limit_window_seconds,
+        enabled=settings.turn_rate_limit_enabled,
+    )
+
+
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
     world = repository.get_world(world_id)
     if world is None:
@@ -159,8 +177,23 @@ async def run_turn(
     memory_policy = get_memory_policy()
     memory_retriever = get_memory_retriever()
     metrics_collector = get_retrieval_metrics_collector()
+    rate_limiter = get_turn_rate_limiter()
     try:
         _assert_world_access(repository, request.world_id, current_user.user_id)
+        limit_check = rate_limiter.check(f"user:{current_user.user_id}")
+        if not limit_check.allowed:
+            retry_after = limit_check.retry_after_seconds or 1
+            logger.warning(
+                "request_id=%s rate_limit_exceeded user_id=%s retry_after_s=%s",
+                get_request_id(),
+                current_user.user_id,
+                retry_after,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded.",
+                headers={"Retry-After": str(retry_after)},
+            )
         recent_events = repository.list_recent_turn_events(request.world_id, limit=3)
         retrieval_started_at = perf_counter()
         retrieval_result = memory_retriever.retrieve(
@@ -178,7 +211,7 @@ async def run_turn(
             get_request_id(),
             request.world_id,
             current_user.user_id,
-            retrieval_result.stats.strategy,
+            _sanitize_log_value(retrieval_result.stats.strategy),
             retrieval_result.stats.candidates_scanned,
             retrieval_result.stats.lexical_hits,
             retrieval_result.stats.semantic_hits,
@@ -211,7 +244,7 @@ async def run_turn(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except PersistenceError as exc:
         logger.exception("request_id=%s Persistence error while saving turn.", get_request_id())
-        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Persistence error.") from exc
     except Exception as exc:
         logger.exception("request_id=%s Unexpected v2 turn processing error.", get_request_id())
         raise HTTPException(status_code=500, detail="Internal v2 error.") from exc
