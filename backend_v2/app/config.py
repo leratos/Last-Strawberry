@@ -135,6 +135,8 @@ class Settings:
     memory_retrieval_strategy: str = "hybrid"
     embeddings_provider: str = "hash"
     embeddings_dimensions: int = 64
+    embeddings_model: str = "openai/text-embedding-3-small"
+    embeddings_timeout_seconds: int = 20
     retrieval_vector_weight: float = 1.2
     retrieval_semantic_min_similarity: float = 0.2
     environment: str = "development"
@@ -170,9 +172,12 @@ class Settings:
             embeddings_provider=_read_choice_env(
                 "LS_EMBEDDINGS_PROVIDER",
                 "hash",
-                {"hash", "none"},
+                {"hash", "none", "openrouter"},
             ),
             embeddings_dimensions=int(_read_env("LS_EMBEDDINGS_DIMENSIONS", "64") or "64"),
+            embeddings_model=_read_env("LS_EMBEDDINGS_MODEL", "openai/text-embedding-3-small")
+            or "openai/text-embedding-3-small",
+            embeddings_timeout_seconds=int(_read_env("LS_EMBEDDINGS_TIMEOUT_SECONDS", "20") or "20"),
             retrieval_vector_weight=float(_read_env("LS_RETRIEVAL_VECTOR_WEIGHT", "1.2") or "1.2"),
             retrieval_semantic_min_similarity=float(
                 _read_env("LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY", "0.2") or "0.2"

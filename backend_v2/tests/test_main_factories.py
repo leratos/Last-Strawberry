@@ -3,7 +3,8 @@ from unittest.mock import patch
 
 from backend_v2.app import main as main_module
 from backend_v2.app.config import Settings
-from backend_v2.app.services.embeddings import NoopEmbeddingsProvider
+from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
+from backend_v2.app.services.embeddings import HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.retrieval import LexicalMemoryRetriever
 
 
@@ -27,6 +28,31 @@ class TestMainFactories(unittest.TestCase):
 
         self.assertIsInstance(embeddings_provider, NoopEmbeddingsProvider)
         self.assertIsInstance(retriever, LexicalMemoryRetriever)
+
+    def test_factory_supports_openrouter_embeddings_provider(self):
+        settings = Settings(
+            openrouter_api_key="test-key",
+            embeddings_provider="openrouter",
+            embeddings_model="openai/text-embedding-3-small",
+            embeddings_timeout_seconds=15,
+        )
+        with patch("backend_v2.app.main.get_settings", return_value=settings):
+            main_module.get_embeddings_provider.cache_clear()
+            embeddings_provider = main_module.get_embeddings_provider()
+
+        self.assertIsInstance(embeddings_provider, OpenRouterEmbeddingsProvider)
+
+    def test_factory_falls_back_to_hash_when_openrouter_key_missing(self):
+        settings = Settings(
+            openrouter_api_key=None,
+            embeddings_provider="openrouter",
+            embeddings_dimensions=32,
+        )
+        with patch("backend_v2.app.main.get_settings", return_value=settings):
+            main_module.get_embeddings_provider.cache_clear()
+            embeddings_provider = main_module.get_embeddings_provider()
+
+        self.assertIsInstance(embeddings_provider, HashEmbeddingsProvider)
 
 
 if __name__ == "__main__":

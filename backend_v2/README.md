@@ -35,7 +35,8 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Use a JWT secret with at least 32 characters in production.
 - Runtime strategy is RAG/Memory, not online retraining.
 - Memory retrieval behavior is configurable (`LS_MEMORY_CONTEXT_LIMIT`, `LS_MEMORY_MIN_IMPORTANCE`, `LS_MEMORY_RETRIEVAL_STRATEGY`).
-- Hybrid strategy can use pluggable embeddings (`LS_EMBEDDINGS_PROVIDER`, `LS_EMBEDDINGS_DIMENSIONS`).
+- Hybrid strategy can use pluggable embeddings (`LS_EMBEDDINGS_PROVIDER`, `LS_EMBEDDINGS_DIMENSIONS`, `LS_EMBEDDINGS_MODEL`, `LS_EMBEDDINGS_TIMEOUT_SECONDS`).
+- `LS_EMBEDDINGS_PROVIDER=openrouter` uses OpenRouter's embeddings endpoint with key-based auth.
 - Hybrid scoring weights are configurable (`LS_RETRIEVAL_VECTOR_WEIGHT`, `LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY`).
 - Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `returned`, `fallback`).
 - API key lookup order:

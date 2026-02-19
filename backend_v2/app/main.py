@@ -17,6 +17,7 @@ from backend_v2.app.models import (
     WorldResponse,
 )
 from backend_v2.app.persistence import PersistenceError, SQLiteRepository
+from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
@@ -62,6 +63,11 @@ def get_embeddings_provider() -> EmbeddingsProvider:
     settings = get_settings()
     if settings.embeddings_provider == "none":
         return NoopEmbeddingsProvider(dimensions=settings.embeddings_dimensions)
+    if settings.embeddings_provider == "openrouter":
+        if not settings.openrouter_api_key:
+            logger.warning("LS_EMBEDDINGS_PROVIDER=openrouter but no API key configured. Falling back to hash embeddings.")
+            return HashEmbeddingsProvider(dimensions=settings.embeddings_dimensions)
+        return OpenRouterEmbeddingsProvider(settings=settings)
     return HashEmbeddingsProvider(dimensions=settings.embeddings_dimensions)
 
 
