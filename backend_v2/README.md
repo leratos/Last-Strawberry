@@ -26,6 +26,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - `GET /v2/worlds/{world_id}`
 - `GET /v2/worlds/{world_id}/turns`
 - `GET /v2/worlds/{world_id}/memory`
+- `GET /v2/metrics/retrieval`
 
 ## Notes
 - `LS_ANALYSIS_MODEL` and `LS_NARRATIVE_MODEL` are fully configurable.
@@ -40,6 +41,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Hybrid scoring weights are configurable (`LS_RETRIEVAL_VECTOR_WEIGHT`, `LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY`).
 - Retrieval embeddings are cached in SQLite (`embeddings_cache`) to reduce repeated embedding calls.
 - Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `cache_hits`, `cache_misses`, `returned`, `fallback`).
+- Retrieval metrics endpoint exposes counters and histograms for latency and returned items.
 - API key lookup order:
   1. `LS_OPENROUTER_API_KEY`
   2. `OPENROUTER_API_KEY`
