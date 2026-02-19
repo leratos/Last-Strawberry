@@ -1,8 +1,10 @@
 import logging
+from contextvars import ContextVar
 from functools import lru_cache
 from time import perf_counter
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 
 from backend_v2.app.auth import AuthUser, create_access_token, get_current_user
 from backend_v2.app.config import Settings, get_settings
@@ -33,12 +35,41 @@ from backend_v2.app.services.retrieval import (
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+REQUEST_ID_HEADER = "X-Request-ID"
+_request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
     version="2.0.0-alpha",
     description="OpenRouter-first restart backend for game orchestration.",
 )
+
+
+def get_request_id() -> str:
+    return _request_id_ctx.get()
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
+    token = _request_id_ctx.set(request_id)
+    started_at = perf_counter()
+    status_code: str | int = "error"
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+    finally:
+        logger.info(
+            "request_id=%s method=%s path=%s status=%s latency_ms=%.2f",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            (perf_counter() - started_at) * 1000,
+        )
+        _request_id_ctx.reset(token)
 
 
 @lru_cache
@@ -143,7 +174,8 @@ async def run_turn(
         metrics_collector.record(retrieval_result.stats, retrieval_latency_ms)
         memory_matches = retrieval_result.items
         logger.info(
-            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s cache_hits=%s cache_misses=%s returned=%s fallback=%s latency_ms=%.2f",
+            "request_id=%s retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s cache_hits=%s cache_misses=%s returned=%s fallback=%s latency_ms=%.2f",
+            get_request_id(),
             request.world_id,
             current_user.user_id,
             retrieval_result.stats.strategy,
@@ -178,10 +210,10 @@ async def run_turn(
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except PersistenceError as exc:
-        logger.exception("Persistence error while saving turn.")
+        logger.exception("request_id=%s Persistence error while saving turn.", get_request_id())
         raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
     except Exception as exc:
-        logger.exception("Unexpected v2 turn processing error.")
+        logger.exception("request_id=%s Unexpected v2 turn processing error.", get_request_id())
         raise HTTPException(status_code=500, detail="Internal v2 error.") from exc
 
 
