@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import re
 import unittest
 from unittest.mock import patch
 
@@ -203,6 +204,18 @@ class TestMainApi(unittest.TestCase):
             response = self.client.get("/v2/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+
+    def test_request_id_header_is_echoed_when_provided(self):
+        response = self.client.get("/v2/health", headers={"X-Request-ID": "req-123"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("x-request-id"), "req-123")
+
+    def test_request_id_header_generated_when_missing(self):
+        response = self.client.get("/v2/health")
+        self.assertEqual(response.status_code, 200)
+        request_id = response.headers.get("x-request-id")
+        self.assertIsNotNone(request_id)
+        self.assertRegex(request_id, re.compile(r"^[0-9a-f]{32}$"))
 
     def test_login_returns_token(self):
         response = self.client.post("/v2/auth/login", json={"user_id": 1, "username": "alice"})
