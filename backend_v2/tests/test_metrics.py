@@ -58,6 +58,9 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         collector.record_http_status(102)
         collector.record_audit_event("auth_failed")
         collector.record_audit_event("auth_failed")
+        collector.record_error_category("provider")
+        collector.record_error_category("provider")
+        collector.record_error_category("auth")
 
         snapshot = collector.snapshot()
         self.assertEqual(snapshot["http_status"]["total"], 5)
@@ -68,6 +71,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["http_status"]["by_class"]["other"], 1)
         self.assertEqual(snapshot["http_status"]["by_status"]["429"], 1)
         self.assertEqual(snapshot["audit_events"]["auth_failed"], 2)
+        self.assertEqual(snapshot["error_categories"]["provider"], 2)
+        self.assertEqual(snapshot["error_categories"]["auth"], 1)
 
     def test_reset(self):
         collector = RetrievalMetricsCollector()
@@ -90,6 +95,7 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["strategy_counts"], {})
         self.assertEqual(snapshot["http_status"]["total"], 0)
         self.assertEqual(snapshot["audit_events"], {})
+        self.assertEqual(snapshot["error_categories"], {})
 
 
 if __name__ == "__main__":

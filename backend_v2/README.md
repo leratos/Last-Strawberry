@@ -41,7 +41,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Hybrid scoring weights are configurable (`LS_RETRIEVAL_VECTOR_WEIGHT`, `LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY`).
 - Retrieval embeddings are cached in SQLite (`embeddings_cache`) to reduce repeated embedding calls.
 - Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `cache_hits`, `cache_misses`, `returned`, `fallback`).
-- Retrieval metrics endpoint exposes retrieval counters/histograms plus API status buckets (`2xx/4xx/5xx`, `429`) and audit event counters (auth/rate-limit).
+- Retrieval metrics endpoint exposes retrieval counters/histograms plus API status buckets (`2xx/4xx/5xx`, `429`), audit event counters (auth/rate-limit), and error categories (`auth`, `rate_limit`, `provider`, `persistence`, `server`).
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
 - Provider and persistence error details are sanitized to avoid leaking secrets or internal details.

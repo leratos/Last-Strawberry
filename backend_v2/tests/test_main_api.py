@@ -339,6 +339,7 @@ class TestMainApi(unittest.TestCase):
             response = self.client.post("/v2/game/turn", headers=headers, json=payload)
         self.assertEqual(response.status_code, 502)
         self.assertIn("upstream provider", response.json()["detail"])
+        self.assertIsNone(response.headers.get("x-ls-error-category"))
 
     def test_game_turn_provider_error_redacts_sensitive_fields(self):
         headers = self._auth_headers(user_id=11)
@@ -480,6 +481,7 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("latency_ms", payload["histograms"])
         self.assertIn("http_status", payload)
         self.assertIn("audit_events", payload)
+        self.assertIn("error_categories", payload)
 
     def test_retrieval_metrics_collect_http_status_and_audit_events(self):
         unauthorized = self.client.post("/v2/worlds", json={"name": "NoAuth", "description": ""})
@@ -504,6 +506,25 @@ class TestMainApi(unittest.TestCase):
             )
         self.assertEqual(rate_limited.status_code, 429)
 
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_ProviderErrorOrchestrator()):
+            provider_error = self.client.post(
+                "/v2/game/turn",
+                headers=owner_headers,
+                json={"world_id": world_id, "player_id": 7, "player_command": "Ich teste Provider."},
+            )
+        self.assertEqual(provider_error.status_code, 502)
+
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()), patch(
+            "backend_v2.app.main.get_repository",
+            return_value=_FailingRepo(),
+        ):
+            persistence_error = self.client.post(
+                "/v2/game/turn",
+                headers=owner_headers,
+                json={"world_id": world_id, "player_id": 7, "player_command": "Ich teste Persistenz."},
+            )
+        self.assertEqual(persistence_error.status_code, 500)
+
         with patch("backend_v2.app.main.get_orchestrator", return_value=_UnexpectedErrorOrchestrator()):
             server_error = self.client.post(
                 "/v2/game/turn",
@@ -523,6 +544,7 @@ class TestMainApi(unittest.TestCase):
         by_status = payload["http_status"]["by_status"]
         self.assertGreaterEqual(by_status.get("401", 0), 1)
         self.assertGreaterEqual(by_status.get("429", 0), 1)
+        self.assertGreaterEqual(by_status.get("502", 0), 1)
         self.assertGreaterEqual(by_status.get("500", 0), 1)
 
         audit = payload["audit_events"]
@@ -530,6 +552,13 @@ class TestMainApi(unittest.TestCase):
         self.assertGreaterEqual(audit.get("auth_login_success", 0), 2)
         self.assertGreaterEqual(audit.get("auth_forbidden", 0), 1)
         self.assertGreaterEqual(audit.get("rate_limit_exceeded", 0), 1)
+
+        categories = payload["error_categories"]
+        self.assertGreaterEqual(categories.get("auth", 0), 1)
+        self.assertGreaterEqual(categories.get("rate_limit", 0), 1)
+        self.assertGreaterEqual(categories.get("provider", 0), 1)
+        self.assertGreaterEqual(categories.get("persistence", 0), 1)
+        self.assertGreaterEqual(categories.get("server", 0), 1)
 
 
 if __name__ == "__main__":

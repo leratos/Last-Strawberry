@@ -31,6 +31,7 @@ class RetrievalMetricsCollector:
             self.http_by_class = {"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0, "other": 0}
             self.http_by_status: dict[str, int] = {}
             self.audit_events: dict[str, int] = {}
+            self.error_categories: dict[str, int] = {}
 
     @staticmethod
     def _init_hist(buckets: tuple[float | int, ...]) -> dict[str, int]:
@@ -84,6 +85,10 @@ class RetrievalMetricsCollector:
         with self._lock:
             self.audit_events[event_name] = self.audit_events.get(event_name, 0) + 1
 
+    def record_error_category(self, category: str) -> None:
+        with self._lock:
+            self.error_categories[category] = self.error_categories.get(category, 0) + 1
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -108,4 +113,5 @@ class RetrievalMetricsCollector:
                     "by_status": dict(self.http_by_status),
                 },
                 "audit_events": dict(self.audit_events),
+                "error_categories": dict(self.error_categories),
             }
