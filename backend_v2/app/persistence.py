@@ -122,6 +122,14 @@ class SQLiteRepository:
             "created_at": str(row["created_at"]),
         }
 
+    def is_world_owner(self, world_id: int, owner_id: int) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM worlds WHERE id = ? AND owner_id = ?;",
+                (world_id, owner_id),
+            ).fetchone()
+        return row is not None
+
     def save_turn(self, request: TurnRequest, response: TurnResponse) -> dict:
         created_at = response.created_at.isoformat()
         extracted_commands_json = json.dumps(response.extracted_commands, ensure_ascii=False)

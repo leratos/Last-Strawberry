@@ -20,6 +20,8 @@ class TestSQLiteRepository(unittest.TestCase):
             self.assertIsNotNone(loaded)
             self.assertEqual(loaded["owner_id"], 10)
             self.assertEqual(loaded["name"], "Aschehain")
+            self.assertTrue(repo.is_world_owner(created["id"], 10))
+            self.assertFalse(repo.is_world_owner(created["id"], 999))
 
     def test_save_turn_and_list_turns(self):
         with TemporaryDirectory() as tmp_dir:

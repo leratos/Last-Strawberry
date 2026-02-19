@@ -14,6 +14,17 @@ class TurnRequest(BaseModel):
     recent_events: list[str] = Field(default_factory=list)
 
 
+class LoginRequest(BaseModel):
+    user_id: int = Field(gt=0)
+    username: str = Field(min_length=1, max_length=64)
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int
+
+
 class TurnResponse(BaseModel):
     narrative: str
     extracted_commands: list[dict[str, Any]]
@@ -29,7 +40,6 @@ class HealthResponse(BaseModel):
 
 
 class WorldCreateRequest(BaseModel):
-    owner_id: int = Field(gt=0)
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=500)
 
