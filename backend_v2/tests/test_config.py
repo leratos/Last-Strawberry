@@ -78,6 +78,36 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.database_url, "sqlite:///tmp/test.db")
         self.assertFalse(settings.database_auto_init)
 
+    def test_jwt_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_JWT_SECRET": "secret-123",
+                "LS_JWT_ALGORITHM": "HS256",
+                "LS_JWT_EXPIRE_MINUTES": "15",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.jwt_secret, "secret-123")
+        self.assertEqual(settings.jwt_algorithm, "HS256")
+        self.assertEqual(settings.jwt_expire_minutes, 15)
+
+    def test_memory_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_MEMORY_CONTEXT_LIMIT": "7",
+                "LS_MEMORY_MIN_IMPORTANCE": "0.75",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.memory_context_limit, 7)
+        self.assertEqual(settings.memory_min_importance, 0.75)
+
 
 if __name__ == "__main__":
     unittest.main()

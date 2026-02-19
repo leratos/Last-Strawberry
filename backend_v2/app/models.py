@@ -12,6 +12,18 @@ class TurnRequest(BaseModel):
     player_name: str = Field(default="player")
     npc_context: str = Field(default="No NPCs currently present.")
     recent_events: list[str] = Field(default_factory=list)
+    memory_context: list[str] = Field(default_factory=list)
+
+
+class LoginRequest(BaseModel):
+    user_id: int = Field(gt=0)
+    username: str = Field(min_length=1, max_length=64)
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int
 
 
 class TurnResponse(BaseModel):
@@ -29,7 +41,6 @@ class HealthResponse(BaseModel):
 
 
 class WorldCreateRequest(BaseModel):
-    owner_id: int = Field(gt=0)
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=500)
 
@@ -53,3 +64,14 @@ class TurnRecordResponse(BaseModel):
     analysis_model: str
     narrative_model: str
     created_at: datetime
+
+
+class MemoryItemResponse(BaseModel):
+    id: int
+    world_id: int
+    memory_type: str
+    content: str
+    importance: float
+    source_turn_id: int | None
+    created_at: datetime
+    updated_at: datetime

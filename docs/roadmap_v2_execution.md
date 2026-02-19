@@ -1,17 +1,18 @@
 # Last-Strawberry V2 Roadmap (OpenRouter + Codecov)
 
-Stand: 18. Februar 2026
+Stand: 19. Februar 2026
 
 ## Zielbild
 - V2 als OpenRouter-first Plattform stabil ausrollen.
-- Legacy-Inferenzpfad (Google Cloud) schrittweise ablösen.
-- Qualität durch CI + Coverage-Gates erzwingen.
+- Legacy-Inferenzpfad (Google Cloud) schrittweise abloesen.
+- Qualitaet durch CI + Coverage-Gates erzwingen.
+- RAG/Memory statt regelmaessigem Modell-Retraining im Runtime-Pfad.
 
 ## Leit-KPIs
 - API-Fehlerrate (`5xx`): < 1.0% (Beta), < 0.3% (Prod)
 - p95 Turn-Latenz: < 6s (Beta), < 4s (Prod-Ziel)
 - Kosten pro Turn: transparent messen, monatliche Budgetgrenze definieren
-- Testabdeckung backend_v2: stufenweise erhöhen (siehe Codecov-Gates)
+- Testabdeckung backend_v2: stufenweise erhoehen (siehe Codecov-Gates)
 
 ---
 
@@ -20,17 +21,17 @@ Zeitraum: 19.02.2026 - 25.02.2026
 
 ### Deliverables
 - Architekturentscheidungen finalisieren (Provider-Abstraktion, Datenmodell, Auth-Strategie).
-- Scope-Freeze für V2-MVP.
+- Scope-Freeze fuer V2-MVP.
 - Codecov im Projekt aktiv einbinden (Repository verbinden, erste Baseline-Pipeline).
 
 ### Meilenstein M0 (25.02.2026)
-- `docs/restart_v2_openrouter.md` als verbindliche Grundlage bestätigt.
-- CI läuft für `backend_v2` mit Test-Job grün.
+- `docs/restart_v2_openrouter.md` als verbindliche Grundlage bestaetigt.
+- CI laeuft fuer `backend_v2` mit Test-Job gruen.
 - Erste Coverage an Codecov gemeldet (nur Reporting, noch keine harten Gates).
 
 ---
 
-## Phase 1: Fundament und Qualitätsgates
+## Phase 1: Fundament und Qualitaetsgates
 Zeitraum: 26.02.2026 - 10.03.2026
 
 ### Deliverables
@@ -55,9 +56,10 @@ Zeitraum: 26.02.2026 - 10.03.2026
 Zeitraum: 11.03.2026 - 31.03.2026
 
 ### Deliverables
-- Persistenz für Welten/Spieler/Events (zuerst SQLite oder direkt Postgres).
-- Auth (JWT, stateless) + Ownership-Prüfungen.
-- `/v2/game/turn` mit stabiler Analyse/Narrative-Kette und Modellkonfiguration.
+- Persistenz fuer Welten/Spieler/Events (zuerst SQLite oder direkt Postgres).
+- Auth (JWT, stateless) + Ownership-Pruefungen.
+- RAG/Memory statt regelmaessigem Retraining (`docs/rag_memory_v2_architecture.md`).
+- `/v2/game/turn` mit stabiler Analyse/Narrative-Kette und modellgetriebener Memory-Einbindung.
 - Basis-Observability (strukturierte Logs + Korrelations-ID).
 
 ### Codecov-Gates (ab M2)
@@ -67,29 +69,31 @@ Zeitraum: 11.03.2026 - 31.03.2026
 
 ### Meilenstein M2 (31.03.2026)
 - End-to-End spielbar auf V2 (Auth -> World -> Turn -> Persistenz).
-- Keine Legacy-Abhängigkeit im primären V2-Flow.
+- Persistenter Memory-Ansatz definiert und in Runtime-Plan verankert (kein Training im Online-Pfad).
+- Keine Legacy-Abhaengigkeit im primaeren V2-Flow.
 
 ---
 
-## Phase 3: Migration und Härten
+## Phase 3: Migration und Haerten
 Zeitraum: 01.04.2026 - 21.04.2026
 
 ### Deliverables
 - Frontend schrittweise auf `/v2`-Endpoints umstellen (oder kompatible Adapterroute bereitstellen).
-- Fallback-/Routing-Strategie für OpenRouter-Modelle:
+- Fallback-/Routing-Strategie fuer OpenRouter-Modelle:
   - Analyse: stabil/deterministisch
-  - Narrative: quality-first + fallback (schneller/günstiger)
-- Last-/Fehlertests für parallele Turns.
+  - Narrative: quality-first + fallback (schneller/guenstiger)
+- Last-/Fehlertests fuer parallele Turns.
 - Security-Hardening (Secrets, Logging-Sanitization, Rate-Limits).
+- Hybrid Retrieval fuer Memory (lexical + vector).
 
 ### Codecov-Gates (ab M3)
 - Projekt-Coverage: >= 62%
 - Patch-Coverage: >= 80%
-- Diff-Coverage für sicherheitskritische Dateien verpflichtend.
+- Diff-Coverage fuer sicherheitskritische Dateien verpflichtend.
 
 ### Meilenstein M3 (21.04.2026)
 - V2 Beta-Ready.
-- Migration von Testnutzern auf V2 möglich.
+- Migration von Testnutzern auf V2 moeglich.
 
 ---
 
@@ -107,28 +111,30 @@ Zeitraum: 22.04.2026 - 13.05.2026
 - Patch-Coverage: >= 85%
 
 ### Meilenstein M4 (13.05.2026)
-- Vollständiger Cutover auf OpenRouter-basierte V2-Plattform.
-- Legacy-Inferenzpfad außer Betrieb.
+- Vollstaendiger Cutover auf OpenRouter-basierte V2-Plattform.
+- Legacy-Inferenzpfad ausser Betrieb.
 
 ---
 
 ## Codecov Setup-Checklist (konkret)
 1. Repo unter `https://app.codecov.io/gh/leratos/...` verbinden.
-2. GitHub Action ergänzen:
-   - Tests ausführen
+2. GitHub Action ergaenzen:
+   - Tests ausfuehren
    - `coverage.xml` erzeugen
    - Upload zu Codecov
-3. `codecov.yml` hinzufügen:
+3. `codecov.yml` hinzufuegen:
    - Statuschecks (`project`, `patch`)
-   - Pfadfokus zunächst `backend_v2/**`
+   - Pfadfokus zunaechst `backend_v2/**`
 4. Branch Protection:
    - Codecov-Checks als Required Status Checks.
-5. Monatliches Gate-Raising nur bei stabiler grüner CI.
+5. Monatliches Gate-Raising nur bei stabiler gruener CI.
 
-## Risiken und Gegenmaßnahmen
+## Risiken und Gegenmassnahmen
 - Risiko: Modellverhalten instabil bei Providerwechsel.
-  - Gegenmaßnahme: Golden test cases + fallback chain.
+  - Gegenmassnahme: Golden test cases + fallback chain.
 - Risiko: Coverage steigt nur formal, nicht in kritischen Flows.
-  - Gegenmaßnahme: Modul-spezifische Mindesttests für Orchestrator/Provider/Auth.
+  - Gegenmassnahme: Modul-spezifische Mindesttests fuer Orchestrator/Provider/Auth.
 - Risiko: Migration blockiert Frontend.
-  - Gegenmaßnahme: Übergangsadapter und schrittweises Routing.
+  - Gegenmassnahme: Uebergangsadapter und schrittweises Routing.
+- Risiko: Memory Drift oder Halluzinations-Verstaerkung.
+  - Gegenmassnahme: Quellengebundene Memory-Writes + regelbasierte Validierung.
