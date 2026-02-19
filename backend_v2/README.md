@@ -43,6 +43,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `cache_hits`, `cache_misses`, `returned`, `fallback`).
 - Retrieval metrics endpoint exposes counters and histograms for latency and returned items.
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
+- Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
 - API key lookup order:
   1. `LS_OPENROUTER_API_KEY`
   2. `OPENROUTER_API_KEY`

@@ -142,6 +142,22 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(settings.embeddings_provider, "hash")
 
+    def test_turn_rate_limit_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_TURN_RATE_LIMIT_ENABLED": "true",
+                "LS_TURN_RATE_LIMIT_REQUESTS": "9",
+                "LS_TURN_RATE_LIMIT_WINDOW_SECONDS": "45",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertTrue(settings.turn_rate_limit_enabled)
+        self.assertEqual(settings.turn_rate_limit_requests, 9)
+        self.assertEqual(settings.turn_rate_limit_window_seconds, 45)
+
 
 if __name__ == "__main__":
     unittest.main()

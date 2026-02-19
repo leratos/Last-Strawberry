@@ -6,6 +6,7 @@ from backend_v2.app.config import Settings
 from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
 from backend_v2.app.services.embeddings import HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
+from backend_v2.app.services.rate_limit import SlidingWindowRateLimiter
 from backend_v2.app.services.retrieval import LexicalMemoryRetriever
 
 
@@ -14,6 +15,7 @@ class TestMainFactories(unittest.TestCase):
         main_module.get_embeddings_provider.cache_clear()
         main_module.get_memory_retriever.cache_clear()
         main_module.get_retrieval_metrics_collector.cache_clear()
+        main_module.get_turn_rate_limiter.cache_clear()
 
     def test_factories_support_none_embeddings_and_lexical_retriever(self):
         settings = Settings(
@@ -63,6 +65,20 @@ class TestMainFactories(unittest.TestCase):
         second = main_module.get_retrieval_metrics_collector()
 
         self.assertIsInstance(first, RetrievalMetricsCollector)
+        self.assertIs(first, second)
+
+    def test_factory_returns_cached_turn_rate_limiter(self):
+        settings = Settings(
+            turn_rate_limit_enabled=True,
+            turn_rate_limit_requests=9,
+            turn_rate_limit_window_seconds=45,
+        )
+        with patch("backend_v2.app.main.get_settings", return_value=settings):
+            main_module.get_turn_rate_limiter.cache_clear()
+            first = main_module.get_turn_rate_limiter()
+            second = main_module.get_turn_rate_limiter()
+
+        self.assertIsInstance(first, SlidingWindowRateLimiter)
         self.assertIs(first, second)
 
 

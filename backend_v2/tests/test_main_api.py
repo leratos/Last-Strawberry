@@ -11,6 +11,7 @@ from backend_v2.app.models import TurnResponse
 from backend_v2.app.persistence import PersistenceError
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
+from backend_v2.app.services.rate_limit import RateLimitDecision
 
 
 class _SuccessOrchestrator:
@@ -159,16 +160,34 @@ class _FailingRepo:
         return len(embeddings_by_text)
 
 
+class _NoopRateLimiter:
+    def check(self, key):
+        _ = key
+        return RateLimitDecision(allowed=True, retry_after_seconds=None, remaining=999)
+
+
+class _BlockedRateLimiter:
+    def __init__(self, retry_after_seconds=12):
+        self.retry_after_seconds = retry_after_seconds
+
+    def check(self, key):
+        _ = key
+        return RateLimitDecision(allowed=False, retry_after_seconds=self.retry_after_seconds, remaining=0)
+
+
 class TestMainApi(unittest.TestCase):
     def setUp(self):
         self.repo = _MemoryRepo()
         self.metrics = RetrievalMetricsCollector()
         self.repo_patcher = patch("backend_v2.app.main.get_repository", return_value=self.repo)
         self.metrics_patcher = patch("backend_v2.app.main.get_retrieval_metrics_collector", return_value=self.metrics)
+        self.rate_limit_patcher = patch("backend_v2.app.main.get_turn_rate_limiter", return_value=_NoopRateLimiter())
         self.repo_patcher.start()
         self.metrics_patcher.start()
+        self.rate_limit_patcher.start()
         self.addCleanup(self.repo_patcher.stop)
         self.addCleanup(self.metrics_patcher.stop)
+        self.addCleanup(self.rate_limit_patcher.stop)
         self.client = TestClient(app)
 
     def _auth_headers(self, user_id=11, username="tester"):
@@ -326,6 +345,24 @@ class TestMainApi(unittest.TestCase):
             response = self.client.post("/v2/game/turn", headers=headers, json=payload)
         self.assertEqual(response.status_code, 500)
         self.assertIn("Persistence error", response.json()["detail"])
+
+    def test_game_turn_rate_limited_returns_429_with_retry_after(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "Ich warte."}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()), patch(
+            "backend_v2.app.main.get_turn_rate_limiter",
+            return_value=_BlockedRateLimiter(retry_after_seconds=12),
+        ):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "Rate limit exceeded.")
+        self.assertEqual(response.headers.get("retry-after"), "12")
 
     def test_list_world_turns(self):
         headers = self._auth_headers(user_id=1)
