@@ -9,6 +9,13 @@ def _read_env(key: str, default: str | None = None) -> str | None:
     return value if value is not None else default
 
 
+def _read_bool_env(key: str, default: bool) -> bool:
+    raw = _read_env(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _read_openrouter_api_key() -> str | None:
     # 1) Explicit env vars have highest priority.
     explicit = _read_env("LS_OPENROUTER_API_KEY") or _read_env("OPENROUTER_API_KEY")
@@ -112,6 +119,11 @@ class Settings:
     analysis_max_tokens: int = 700
     narrative_max_tokens: int = 1200
     request_timeout_seconds: int = 45
+    database_url: str = "sqlite:///backend_v2/data/last_strawberry_v2.db"
+    database_auto_init: bool = True
+    jwt_secret: str = "change-me-in-production-please-use-32-plus-chars"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 120
     environment: str = "development"
 
     @classmethod
@@ -128,6 +140,13 @@ class Settings:
             analysis_max_tokens=int(_read_env("LS_ANALYSIS_MAX_TOKENS", "700") or "700"),
             narrative_max_tokens=int(_read_env("LS_NARRATIVE_MAX_TOKENS", "1200") or "1200"),
             request_timeout_seconds=int(_read_env("LS_REQUEST_TIMEOUT_SECONDS", "45") or "45"),
+            database_url=_read_env("LS_DATABASE_URL", "sqlite:///backend_v2/data/last_strawberry_v2.db")
+            or "sqlite:///backend_v2/data/last_strawberry_v2.db",
+            database_auto_init=_read_bool_env("LS_DATABASE_AUTO_INIT", True),
+            jwt_secret=_read_env("LS_JWT_SECRET", "change-me-in-production-please-use-32-plus-chars")
+            or "change-me-in-production-please-use-32-plus-chars",
+            jwt_algorithm=_read_env("LS_JWT_ALGORITHM", "HS256") or "HS256",
+            jwt_expire_minutes=int(_read_env("LS_JWT_EXPIRE_MINUTES", "120") or "120"),
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )
 

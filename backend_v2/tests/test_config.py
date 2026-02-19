@@ -64,6 +64,36 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(services, ["HomeGym_AI_Coach"])
 
+    def test_database_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_DATABASE_URL": "sqlite:///tmp/test.db",
+                "LS_DATABASE_AUTO_INIT": "false",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.database_url, "sqlite:///tmp/test.db")
+        self.assertFalse(settings.database_auto_init)
+
+    def test_jwt_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_JWT_SECRET": "secret-123",
+                "LS_JWT_ALGORITHM": "HS256",
+                "LS_JWT_EXPIRE_MINUTES": "15",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.jwt_secret, "secret-123")
+        self.assertEqual(settings.jwt_algorithm, "HS256")
+        self.assertEqual(settings.jwt_expire_minutes, 15)
+
 
 if __name__ == "__main__":
     unittest.main()
