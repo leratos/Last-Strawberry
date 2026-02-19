@@ -460,6 +460,10 @@ class TestMainApi(unittest.TestCase):
         response = self.client.get("/v2/metrics/retrieval")
         self.assertEqual(response.status_code, 401)
 
+    def test_prometheus_metrics_requires_auth(self):
+        response = self.client.get("/v2/metrics/prometheus")
+        self.assertEqual(response.status_code, 401)
+
     def test_retrieval_metrics_endpoint(self):
         headers = self._auth_headers(user_id=1)
         self.client.post(
@@ -485,6 +489,28 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("windowed_rates", payload)
         self.assertIn("60s", payload["windowed_rates"])
         self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
+
+    def test_prometheus_metrics_endpoint(self):
+        headers = self._auth_headers(user_id=1)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Prom-Welt", "description": ""},
+        )
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()):
+            self.client.post(
+                "/v2/game/turn",
+                headers=headers,
+                json={"world_id": 1, "player_id": 7, "player_command": "Ich teste Prometheus."},
+            )
+
+        response = self.client.get("/v2/metrics/prometheus", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers.get("content-type", ""))
+        payload = response.text
+        self.assertIn("ls_backend_v2_retrieval_requests_total", payload)
+        self.assertIn("ls_backend_v2_http_requests_total", payload)
+        self.assertIn('ls_backend_v2_requests_per_minute{window="60s"}', payload)
 
     def test_retrieval_metrics_collect_http_status_and_audit_events(self):
         unauthorized = self.client.post("/v2/worlds", json={"name": "NoAuth", "description": ""})
