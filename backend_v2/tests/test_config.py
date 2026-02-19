@@ -101,6 +101,10 @@ class TestConfig(unittest.TestCase):
                 "LS_MEMORY_CONTEXT_LIMIT": "7",
                 "LS_MEMORY_MIN_IMPORTANCE": "0.75",
                 "LS_MEMORY_RETRIEVAL_STRATEGY": "lexical",
+                "LS_EMBEDDINGS_PROVIDER": "none",
+                "LS_EMBEDDINGS_DIMENSIONS": "96",
+                "LS_RETRIEVAL_VECTOR_WEIGHT": "1.8",
+                "LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY": "0.35",
             },
             clear=False,
         ):
@@ -109,6 +113,10 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.memory_context_limit, 7)
         self.assertEqual(settings.memory_min_importance, 0.75)
         self.assertEqual(settings.memory_retrieval_strategy, "lexical")
+        self.assertEqual(settings.embeddings_provider, "none")
+        self.assertEqual(settings.embeddings_dimensions, 96)
+        self.assertEqual(settings.retrieval_vector_weight, 1.8)
+        self.assertEqual(settings.retrieval_semantic_min_similarity, 0.35)
 
     def test_invalid_memory_retrieval_strategy_falls_back_to_default(self):
         with patch.dict(
@@ -119,6 +127,16 @@ class TestConfig(unittest.TestCase):
             settings = Settings.from_env()
 
         self.assertEqual(settings.memory_retrieval_strategy, "hybrid")
+
+    def test_invalid_embeddings_provider_falls_back_to_hash(self):
+        with patch.dict(
+            os.environ,
+            {"LS_EMBEDDINGS_PROVIDER": "invalid"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.embeddings_provider, "hash")
 
 
 if __name__ == "__main__":

@@ -133,6 +133,10 @@ class Settings:
     memory_context_limit: int = 5
     memory_min_importance: float = 0.6
     memory_retrieval_strategy: str = "hybrid"
+    embeddings_provider: str = "hash"
+    embeddings_dimensions: int = 64
+    retrieval_vector_weight: float = 1.2
+    retrieval_semantic_min_similarity: float = 0.2
     environment: str = "development"
 
     @classmethod
@@ -162,6 +166,16 @@ class Settings:
                 "LS_MEMORY_RETRIEVAL_STRATEGY",
                 "hybrid",
                 {"hybrid", "lexical"},
+            ),
+            embeddings_provider=_read_choice_env(
+                "LS_EMBEDDINGS_PROVIDER",
+                "hash",
+                {"hash", "none"},
+            ),
+            embeddings_dimensions=int(_read_env("LS_EMBEDDINGS_DIMENSIONS", "64") or "64"),
+            retrieval_vector_weight=float(_read_env("LS_RETRIEVAL_VECTOR_WEIGHT", "1.2") or "1.2"),
+            retrieval_semantic_min_similarity=float(
+                _read_env("LS_RETRIEVAL_SEMANTIC_MIN_SIMILARITY", "0.2") or "0.2"
             ),
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )

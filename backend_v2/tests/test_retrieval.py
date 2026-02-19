@@ -33,6 +33,7 @@ class TestLexicalMemoryRetriever(unittest.TestCase):
         self.assertEqual(len(result.items), 2)
         self.assertEqual(result.stats.strategy, "lexical")
         self.assertEqual(result.stats.lexical_hits, 2)
+        self.assertEqual(result.stats.semantic_hits, 0)
         self.assertFalse(result.stats.fallback_used)
 
 
@@ -55,6 +56,7 @@ class TestHybridMemoryRetriever(unittest.TestCase):
         self.assertEqual(len(result.items), 2)
         self.assertEqual(result.stats.strategy, "hybrid")
         self.assertGreater(result.stats.lexical_hits, 0)
+        self.assertEqual(result.stats.semantic_hits, 0)
         self.assertFalse(result.stats.fallback_used)
 
     def test_hybrid_fallback_for_empty_query_terms_or_no_hits(self):
@@ -98,6 +100,41 @@ class TestHybridMemoryRetriever(unittest.TestCase):
         self.assertEqual(result.items, [])
         self.assertEqual(result.stats.candidates_scanned, 0)
         self.assertTrue(result.stats.fallback_used)
+
+    def test_hybrid_can_return_semantic_only_match(self):
+        class _StaticProvider:
+            provider_name = "static"
+
+            def embed_texts(self, texts):
+                # query + two candidates
+                return [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.9, 0.1, 0.0],
+                ]
+
+        repo = _FakeRepo()
+        repo.list_result = [
+            {"id": 1, "content": "first unrelated memory", "importance": 0.6},
+            {"id": 2, "content": "second unrelated memory", "importance": 0.7},
+        ]
+        retriever = HybridMemoryRetriever(
+            embeddings_provider=_StaticProvider(),
+            vector_weight=2.0,
+            semantic_min_similarity=0.2,
+        )
+        result = retriever.retrieve(
+            repository=repo,
+            world_id=1,
+            query="mysterious relic",
+            limit=1,
+            min_importance=0.5,
+        )
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0]["id"], 2)
+        self.assertEqual(result.stats.lexical_hits, 0)
+        self.assertEqual(result.stats.semantic_hits, 1)
+        self.assertFalse(result.stats.fallback_used)
 
 
 if __name__ == "__main__":
