@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pytest backend_v2/tests \
             --cov=backend_v2.app \
-            --cov-fail-under=65 \
+            --cov-fail-under=70 \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 

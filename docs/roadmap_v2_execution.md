@@ -47,6 +47,7 @@ Zeitraum: 26.02.2026 - 10.03.2026
 ### Meilenstein M1 (10.03.2026)
 - Reproduzierbarer Build + Tests lokal und in CI.
 - Verbindliche Coverage-Gates aktiv.
+- Verbindliche Abnahmekriterien in `docs/m1_definition_of_done.md`.
 
 ---
 
