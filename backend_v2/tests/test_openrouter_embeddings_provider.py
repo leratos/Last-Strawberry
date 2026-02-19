@@ -66,6 +66,27 @@ class TestOpenRouterEmbeddingsProvider(unittest.TestCase):
             provider.embed_texts(["alpha"])
         self.assertIn("HTTP error", str(context.exception))
 
+    def test_embed_texts_http_error_redacts_sensitive_fields(self):
+        settings = Settings(openrouter_api_key="test-key")
+        client = Mock()
+        request = httpx.Request("POST", "https://openrouter.ai/api/v1/embeddings")
+        response = httpx.Response(
+            status_code=401,
+            text='Authorization: Bearer hidden-token {"token":"abc123"}',
+            request=request,
+        )
+        client.post.return_value = response
+
+        provider = OpenRouterEmbeddingsProvider(settings=settings, client=client)
+        with self.assertRaises(EmbeddingsProviderError) as context:
+            provider.embed_texts(["alpha"])
+
+        message = str(context.exception)
+        self.assertIn("401", message)
+        self.assertNotIn("hidden-token", message)
+        self.assertNotIn("abc123", message)
+        self.assertIn("[REDACTED]", message)
+
     def test_embed_texts_raises_on_invalid_response_shape(self):
         settings = Settings(openrouter_api_key="test-key")
         client = Mock()
