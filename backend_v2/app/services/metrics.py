@@ -27,6 +27,10 @@ class RetrievalMetricsCollector:
             self.strategy_counts: dict[str, int] = {}
             self.latency_hist = self._init_hist(self.latency_buckets_ms)
             self.returned_hist = self._init_hist(self.returned_buckets)
+            self.http_total = 0
+            self.http_by_class = {"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0, "other": 0}
+            self.http_by_status: dict[str, int] = {}
+            self.audit_events: dict[str, int] = {}
 
     @staticmethod
     def _init_hist(buckets: tuple[float | int, ...]) -> dict[str, int]:
@@ -60,6 +64,26 @@ class RetrievalMetricsCollector:
             self._observe(latency_ms, self.latency_buckets_ms, self.latency_hist)
             self._observe(float(stats.returned), self.returned_buckets, self.returned_hist)
 
+    def record_http_status(self, status_code: int) -> None:
+        with self._lock:
+            self.http_total += 1
+            if 200 <= status_code <= 299:
+                self.http_by_class["2xx"] += 1
+            elif 300 <= status_code <= 399:
+                self.http_by_class["3xx"] += 1
+            elif 400 <= status_code <= 499:
+                self.http_by_class["4xx"] += 1
+            elif 500 <= status_code <= 599:
+                self.http_by_class["5xx"] += 1
+            else:
+                self.http_by_class["other"] += 1
+            key = str(status_code)
+            self.http_by_status[key] = self.http_by_status.get(key, 0) + 1
+
+    def record_audit_event(self, event_name: str) -> None:
+        with self._lock:
+            self.audit_events[event_name] = self.audit_events.get(event_name, 0) + 1
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -78,4 +102,10 @@ class RetrievalMetricsCollector:
                     "latency_ms": dict(self.latency_hist),
                     "returned_items": dict(self.returned_hist),
                 },
+                "http_status": {
+                    "total": self.http_total,
+                    "by_class": dict(self.http_by_class),
+                    "by_status": dict(self.http_by_status),
+                },
+                "audit_events": dict(self.audit_events),
             }
