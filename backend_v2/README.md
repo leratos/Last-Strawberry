@@ -44,6 +44,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Retrieval metrics endpoint exposes counters and histograms for latency and returned items.
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
+- Provider and persistence error details are sanitized to avoid leaking secrets or internal details.
 - API key lookup order:
   1. `LS_OPENROUTER_API_KEY`
   2. `OPENROUTER_API_KEY`

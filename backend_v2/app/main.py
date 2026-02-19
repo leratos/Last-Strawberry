@@ -1,5 +1,4 @@
 import logging
-import re
 from contextvars import ContextVar
 from functools import lru_cache
 from time import perf_counter
@@ -24,6 +23,7 @@ from backend_v2.app.persistence import PersistenceError, SQLiteRepository
 from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
+from backend_v2.app.security import redact_sensitive_text, sanitize_for_log
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
@@ -51,12 +51,6 @@ def get_request_id() -> str:
     return _request_id_ctx.get()
 
 
-def _sanitize_log_value(value: object, *, max_length: int = 120) -> str:
-    text = str(value)
-    cleaned = re.sub(r"[\r\n\t]+", " ", text).strip()
-    return cleaned[:max_length]
-
-
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
@@ -71,9 +65,9 @@ async def request_id_middleware(request: Request, call_next):
     finally:
         logger.info(
             "request_id=%s method=%s path=%s status=%s latency_ms=%.2f",
-            request_id,
-            _sanitize_log_value(request.method, max_length=16),
-            _sanitize_log_value(request.url.path, max_length=256),
+            sanitize_for_log(request_id, max_length=64),
+            sanitize_for_log(request.method, max_length=16),
+            sanitize_for_log(request.url.path, max_length=256),
             status_code,
             (perf_counter() - started_at) * 1000,
         )
@@ -211,7 +205,7 @@ async def run_turn(
             get_request_id(),
             request.world_id,
             current_user.user_id,
-            _sanitize_log_value(retrieval_result.stats.strategy),
+            sanitize_for_log(retrieval_result.stats.strategy),
             retrieval_result.stats.candidates_scanned,
             retrieval_result.stats.lexical_hits,
             retrieval_result.stats.semantic_hits,
@@ -241,7 +235,7 @@ async def run_turn(
     except HTTPException:
         raise
     except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=redact_sensitive_text(exc, max_length=280)) from exc
     except PersistenceError as exc:
         logger.exception("request_id=%s Persistence error while saving turn.", get_request_id())
         raise HTTPException(status_code=500, detail="Persistence error.") from exc
@@ -263,7 +257,7 @@ async def create_world(
             description=request.description,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Persistence error.") from exc
     return WorldResponse.model_validate(world)
 
 
@@ -277,7 +271,7 @@ async def get_world(
         _assert_world_access(repository, world_id, current_user.user_id)
         world = repository.get_world(world_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Persistence error.") from exc
     if world is None:
         raise HTTPException(status_code=404, detail="World not found.")
     return WorldResponse.model_validate(world)
@@ -294,7 +288,7 @@ async def list_world_turns(
         _assert_world_access(repository, world_id, current_user.user_id)
         turns = repository.list_turns(world_id=world_id, limit=limit)
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Persistence error.") from exc
     return [TurnRecordResponse.model_validate(turn) for turn in turns]
 
 
@@ -314,7 +308,7 @@ async def list_world_memory(
             min_importance=min_importance,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail=f"Persistence error: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Persistence error.") from exc
     return [MemoryItemResponse.model_validate(item) for item in memory_items]
 
 

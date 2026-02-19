@@ -30,6 +30,11 @@ class _ProviderErrorOrchestrator:
         raise ProviderError("upstream provider unavailable")
 
 
+class _LeakyProviderErrorOrchestrator:
+    async def run_turn(self, request):
+        raise ProviderError("Authorization: Bearer super-secret-token api_key=secret123")
+
+
 class _UnexpectedErrorOrchestrator:
     async def run_turn(self, request):
         raise RuntimeError("boom")
@@ -158,6 +163,18 @@ class _FailingRepo:
 
     def upsert_cached_embeddings(self, provider, model, embeddings_by_text):
         return len(embeddings_by_text)
+
+
+class _FailingCreateWorldRepo:
+    def create_world(self, *, owner_id, name, description=""):
+        _ = (owner_id, name, description)
+        raise PersistenceError("db unavailable token=abc123")
+
+
+class _FailingGetWorldRepo:
+    def get_world(self, world_id):
+        _ = world_id
+        raise PersistenceError("db unavailable password=hunter2")
 
 
 class _NoopRateLimiter:
@@ -323,6 +340,22 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertIn("upstream provider", response.json()["detail"])
 
+    def test_game_turn_provider_error_redacts_sensitive_fields(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "Ich warte."}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_LeakyProviderErrorOrchestrator()):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+        self.assertEqual(response.status_code, 502)
+        detail = response.json()["detail"]
+        self.assertIn("[REDACTED]", detail)
+        self.assertNotIn("super-secret-token", detail)
+        self.assertNotIn("secret123", detail)
+
     def test_game_turn_unexpected_error_maps_to_500(self):
         headers = self._auth_headers(user_id=11)
         self.client.post(
@@ -344,7 +377,25 @@ class TestMainApi(unittest.TestCase):
         ):
             response = self.client.post("/v2/game/turn", headers=headers, json=payload)
         self.assertEqual(response.status_code, 500)
-        self.assertIn("Persistence error", response.json()["detail"])
+        self.assertEqual(response.json()["detail"], "Persistence error.")
+
+    def test_create_world_persistence_error_is_sanitized(self):
+        headers = self._auth_headers(user_id=11)
+        with patch("backend_v2.app.main.get_repository", return_value=_FailingCreateWorldRepo()):
+            response = self.client.post(
+                "/v2/worlds",
+                headers=headers,
+                json={"name": "Schattenforst", "description": "Ein dunkler Wald."},
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Persistence error.")
+
+    def test_get_world_persistence_error_is_sanitized(self):
+        headers = self._auth_headers(user_id=11)
+        with patch("backend_v2.app.main.get_repository", return_value=_FailingGetWorldRepo()):
+            response = self.client.get("/v2/worlds/1", headers=headers)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Persistence error.")
 
     def test_game_turn_rate_limited_returns_429_with_retry_after(self):
         headers = self._auth_headers(user_id=11)

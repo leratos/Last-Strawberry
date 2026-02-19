@@ -124,6 +124,31 @@ class TestOpenRouterProviderAsync(unittest.IsolatedAsyncioTestCase):
         self.assertIn("429", str(ctx.exception))
         self.assertIn("rate-limited", str(ctx.exception))
 
+    async def test_generate_http_error_redacts_sensitive_fields(self):
+        settings = Settings(openrouter_api_key="k")
+        request = httpx.Request("POST", "https://example.test")
+        response = httpx.Response(
+            401,
+            request=request,
+            text='Authorization: Bearer super-secret-token api_key=secret123',
+        )
+        http_error = httpx.HTTPStatusError("bad status", request=request, response=response)
+        provider = OpenRouterProvider(settings, client=_FakeClient(exception=http_error))
+
+        with self.assertRaises(ProviderError) as ctx:
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.2,
+                max_tokens=200,
+            )
+        message = str(ctx.exception)
+        self.assertIn("401", message)
+        self.assertNotIn("super-secret-token", message)
+        self.assertNotIn("secret123", message)
+        self.assertIn("[REDACTED]", message)
+
     async def test_generate_invalid_payload_raises_provider_error(self):
         settings = Settings(openrouter_api_key="k")
         provider = OpenRouterProvider(settings, client=_FakeClient(response=_FakeResponse({"foo": "bar"})))

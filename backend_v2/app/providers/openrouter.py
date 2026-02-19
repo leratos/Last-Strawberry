@@ -2,6 +2,7 @@ import httpx
 
 from backend_v2.app.config import Settings
 from backend_v2.app.providers.base import LLMProvider, ProviderError
+from backend_v2.app.security import redact_sensitive_text
 
 
 class OpenRouterProvider(LLMProvider):
@@ -76,11 +77,11 @@ class OpenRouterProvider(LLMProvider):
         except httpx.HTTPError as exc:
             status = getattr(exc.response, "status_code", "unknown")
             body = getattr(exc.response, "text", "")
-            raise ProviderError(f"OpenRouter HTTP error {status}: {body}") from exc
+            raise ProviderError(f"OpenRouter HTTP error {status}: {redact_sensitive_text(body, max_length=240)}") from exc
         except Exception as exc:
-            raise ProviderError(f"OpenRouter request failed: {exc}") from exc
+            raise ProviderError(f"OpenRouter request failed: {redact_sensitive_text(exc, max_length=180)}") from exc
 
         try:
             return data["choices"][0]["message"]["content"].strip()
         except Exception as exc:
-            raise ProviderError(f"Invalid OpenRouter response format: {data}") from exc
+            raise ProviderError("Invalid OpenRouter response format.") from exc

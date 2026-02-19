@@ -1,6 +1,7 @@
 import httpx
 
 from backend_v2.app.config import Settings
+from backend_v2.app.security import redact_sensitive_text
 from backend_v2.app.services.embeddings import EmbeddingsProviderError
 
 
@@ -50,9 +51,10 @@ class OpenRouterEmbeddingsProvider:
         except httpx.HTTPError as exc:
             status = getattr(exc.response, "status_code", "unknown")
             body = getattr(exc.response, "text", "")
-            raise EmbeddingsProviderError(f"OpenRouter embeddings HTTP error {status}: {body}") from exc
+            safe_body = redact_sensitive_text(body, max_length=240)
+            raise EmbeddingsProviderError(f"OpenRouter embeddings HTTP error {status}: {safe_body}") from exc
         except Exception as exc:
-            raise EmbeddingsProviderError(f"OpenRouter embeddings request failed: {exc}") from exc
+            raise EmbeddingsProviderError(f"OpenRouter embeddings request failed: {redact_sensitive_text(exc, max_length=180)}") from exc
 
         try:
             rows = data["data"]
@@ -65,4 +67,4 @@ class OpenRouterEmbeddingsProvider:
         except EmbeddingsProviderError:
             raise
         except Exception as exc:
-            raise EmbeddingsProviderError(f"Invalid OpenRouter embeddings response format: {data}") from exc
+            raise EmbeddingsProviderError("Invalid OpenRouter embeddings response format.") from exc
