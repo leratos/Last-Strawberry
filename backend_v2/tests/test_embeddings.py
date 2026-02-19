@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from backend_v2.app.services.embeddings import HashEmbeddingsProvider, NoopEmbeddingsProvider
 
@@ -24,6 +25,12 @@ class TestHashEmbeddingsProvider(unittest.TestCase):
         provider = HashEmbeddingsProvider(dimensions=32)
         vector = provider.embed_texts(["!!!"])[0]
         self.assertTrue(all(value == 0.0 for value in vector))
+
+    def test_embed_single_handles_zero_norm_guard(self):
+        provider = HashEmbeddingsProvider(dimensions=32)
+        with patch("backend_v2.app.services.embeddings.math.sqrt", return_value=0.0):
+            vector = provider._embed_single("alpha beta")
+        self.assertEqual(len(vector), 32)
 
 
 if __name__ == "__main__":

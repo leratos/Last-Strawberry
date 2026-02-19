@@ -101,6 +101,38 @@ class TestHybridMemoryRetriever(unittest.TestCase):
         self.assertEqual(result.stats.candidates_scanned, 0)
         self.assertTrue(result.stats.fallback_used)
 
+    def test_cosine_similarity_guard_branches(self):
+        self.assertEqual(HybridMemoryRetriever._cosine_similarity([], []), 0.0)
+        self.assertEqual(HybridMemoryRetriever._cosine_similarity([1.0], [1.0, 2.0]), 0.0)
+        self.assertEqual(HybridMemoryRetriever._cosine_similarity([0.0, 0.0], [1.0, 0.0]), 0.0)
+
+    def test_hybrid_handles_embeddings_provider_exception(self):
+        class _BrokenProvider:
+            provider_name = "broken"
+
+            def embed_texts(self, texts):
+                raise RuntimeError("embedding boom")
+
+        repo = _FakeRepo()
+        repo.list_result = [
+            {"id": 1, "content": "Silent hallway", "importance": 0.6},
+            {"id": 2, "content": "Broken mirror", "importance": 0.7},
+        ]
+        retriever = HybridMemoryRetriever(
+            embeddings_provider=_BrokenProvider(),
+            semantic_min_similarity=0.2,
+        )
+        result = retriever.retrieve(
+            repository=repo,
+            world_id=1,
+            query="quaternion zebra",
+            limit=1,
+            min_importance=0.5,
+        )
+        self.assertEqual(len(result.items), 1)
+        self.assertTrue(result.stats.fallback_used)
+        self.assertEqual(result.stats.semantic_hits, 0)
+
     def test_hybrid_can_return_semantic_only_match(self):
         class _StaticProvider:
             provider_name = "static"
