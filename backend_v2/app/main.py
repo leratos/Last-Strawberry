@@ -19,6 +19,7 @@ from backend_v2.app.models import (
 from backend_v2.app.persistence import PersistenceError, SQLiteRepository
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
+from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.orchestrator import GameOrchestrator
 from backend_v2.app.services.retrieval import (
@@ -57,11 +58,23 @@ def get_memory_policy() -> MemoryWritePolicy:
 
 
 @lru_cache
+def get_embeddings_provider() -> EmbeddingsProvider:
+    settings = get_settings()
+    if settings.embeddings_provider == "none":
+        return NoopEmbeddingsProvider(dimensions=settings.embeddings_dimensions)
+    return HashEmbeddingsProvider(dimensions=settings.embeddings_dimensions)
+
+
+@lru_cache
 def get_memory_retriever() -> MemoryRetriever:
     settings = get_settings()
     if settings.memory_retrieval_strategy == "lexical":
         return LexicalMemoryRetriever()
-    return HybridMemoryRetriever()
+    return HybridMemoryRetriever(
+        embeddings_provider=get_embeddings_provider(),
+        vector_weight=settings.retrieval_vector_weight,
+        semantic_min_similarity=settings.retrieval_semantic_min_similarity,
+    )
 
 
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
@@ -113,12 +126,13 @@ async def run_turn(
         )
         memory_matches = retrieval_result.items
         logger.info(
-            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s returned=%s fallback=%s",
+            "retrieval world_id=%s user_id=%s strategy=%s scanned=%s lexical_hits=%s semantic_hits=%s returned=%s fallback=%s",
             request.world_id,
             current_user.user_id,
             retrieval_result.stats.strategy,
             retrieval_result.stats.candidates_scanned,
             retrieval_result.stats.lexical_hits,
+            retrieval_result.stats.semantic_hits,
             retrieval_result.stats.returned,
             retrieval_result.stats.fallback_used,
         )
