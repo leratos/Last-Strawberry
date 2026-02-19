@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 REQUEST_ID_HEADER = "X-Request-ID"
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+ERROR_CATEGORY_HEADER = "X-LS-Error-Category"
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
@@ -57,15 +58,30 @@ async def request_id_middleware(request: Request, call_next):
     token = _request_id_ctx.set(request_id)
     started_at = perf_counter()
     status_code: str | int = "error"
+    response = None
     try:
         response = await call_next(request)
         status_code = response.status_code
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
     finally:
-        if isinstance(status_code, int):
+        if isinstance(status_code, int) and response is not None:
             collector = get_retrieval_metrics_collector()
             collector.record_http_status(status_code)
+
+            response_category = response.headers.get(ERROR_CATEGORY_HEADER)
+            if response_category:
+                collector.record_error_category(response_category)
+                del response.headers[ERROR_CATEGORY_HEADER]
+            elif status_code in (401, 403):
+                collector.record_error_category("auth")
+            elif status_code == 429:
+                collector.record_error_category("rate_limit")
+            elif status_code == 502:
+                collector.record_error_category("provider")
+            elif 500 <= status_code <= 599:
+                collector.record_error_category("server")
+
             request_path = str(request.url.path)
             if status_code == 401 and request_path.startswith("/v2/") and request_path != "/v2/auth/login":
                 collector.record_audit_event("auth_failed")
@@ -197,7 +213,7 @@ async def run_turn(
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded.",
-                headers={"Retry-After": str(retry_after)},
+                headers={"Retry-After": str(retry_after), ERROR_CATEGORY_HEADER: "rate_limit"},
             )
         recent_events = repository.list_recent_turn_events(request.world_id, limit=3)
         retrieval_started_at = perf_counter()
@@ -246,13 +262,25 @@ async def run_turn(
     except HTTPException:
         raise
     except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=redact_sensitive_text(exc, max_length=280)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=redact_sensitive_text(exc, max_length=280),
+            headers={ERROR_CATEGORY_HEADER: "provider"},
+        ) from exc
     except PersistenceError as exc:
         logger.exception("request_id=%s Persistence error while saving turn.", get_request_id())
-        raise HTTPException(status_code=500, detail="Persistence error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
     except Exception as exc:
         logger.exception("request_id=%s Unexpected v2 turn processing error.", get_request_id())
-        raise HTTPException(status_code=500, detail="Internal v2 error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Internal v2 error.",
+            headers={ERROR_CATEGORY_HEADER: "server"},
+        ) from exc
 
 
 @app.post("/v2/worlds", response_model=WorldResponse, status_code=status.HTTP_201_CREATED)
@@ -268,7 +296,11 @@ async def create_world(
             description=request.description,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail="Persistence error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
     return WorldResponse.model_validate(world)
 
 
@@ -282,7 +314,11 @@ async def get_world(
         _assert_world_access(repository, world_id, current_user.user_id)
         world = repository.get_world(world_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail="Persistence error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
     if world is None:
         raise HTTPException(status_code=404, detail="World not found.")
     return WorldResponse.model_validate(world)
@@ -299,7 +335,11 @@ async def list_world_turns(
         _assert_world_access(repository, world_id, current_user.user_id)
         turns = repository.list_turns(world_id=world_id, limit=limit)
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail="Persistence error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
     return [TurnRecordResponse.model_validate(turn) for turn in turns]
 
 
@@ -319,7 +359,11 @@ async def list_world_memory(
             min_importance=min_importance,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=500, detail="Persistence error.") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
     return [MemoryItemResponse.model_validate(item) for item in memory_items]
 
 
