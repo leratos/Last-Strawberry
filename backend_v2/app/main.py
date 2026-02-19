@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
 
-from backend_v2.app.auth import AuthUser, create_access_token, get_current_user
+from backend_v2.app.auth import AuthUser, create_access_token, decode_access_token, get_current_user
 from backend_v2.app.config import Settings, get_settings
 from backend_v2.app.models import (
     HealthResponse,
@@ -377,8 +377,21 @@ async def get_retrieval_metrics(current_user: AuthUser = Depends(get_current_use
 
 
 @app.get("/v2/metrics/prometheus", response_class=PlainTextResponse)
-async def get_prometheus_metrics(current_user: AuthUser = Depends(get_current_user)) -> PlainTextResponse:
-    _ = current_user
+async def get_prometheus_metrics(
+    request: Request,
+) -> PlainTextResponse:
+    settings = get_settings()
+    if settings.metrics_api_key:
+        provided_key = request.headers.get(settings.metrics_api_key_header)
+        if provided_key != settings.metrics_api_key:
+            raise HTTPException(status_code=401, detail="Missing or invalid metrics API key.")
+    else:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing bearer token.")
+        token = auth_header.split(" ", 1)[1].strip()
+        decode_access_token(token, settings)
+
     collector = get_retrieval_metrics_collector()
     payload = snapshot_to_prometheus(collector.snapshot())
     return PlainTextResponse(content=payload, media_type="text/plain; version=0.0.4")

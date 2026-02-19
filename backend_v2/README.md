@@ -43,7 +43,10 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Retrieval embeddings are cached in SQLite (`embeddings_cache`) to reduce repeated embedding calls.
 - Turn processing logs retrieval telemetry (`strategy`, `scanned`, `lexical_hits`, `semantic_hits`, `cache_hits`, `cache_misses`, `returned`, `fallback`).
 - Retrieval metrics endpoint exposes retrieval counters/histograms plus API status buckets (`2xx/4xx/5xx`, `429`), audit event counters (auth/rate-limit), error categories (`auth`, `rate_limit`, `provider`, `persistence`, `server`), and windowed request/error rates (`60s`, `300s`).
-- Prometheus-compatible export is available at `GET /v2/metrics/prometheus` (auth required).
+- Prometheus-compatible export is available at `GET /v2/metrics/prometheus` (Bearer by default, optional API-key mode).
+- Optional metrics API key hardening for Prometheus endpoint: `LS_METRICS_API_KEY` and `LS_METRICS_API_KEY_HEADER`.
+- If `LS_METRICS_API_KEY` is set, `/v2/metrics/prometheus` requires that header and no Bearer token.
+- Monitoring runbook and scrape examples: `docs/monitoring_prometheus_v2.md`.
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
 - Provider and persistence error details are sanitized to avoid leaking secrets or internal details.

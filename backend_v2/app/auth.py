@@ -55,3 +55,17 @@ def get_current_user(
             detail="Missing bearer token.",
         )
     return decode_access_token(credentials.credentials, settings)
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    settings: Settings = Depends(get_settings),
+) -> AuthUser | None:
+    if credentials is None:
+        return None
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token.",
+        )
+    return decode_access_token(credentials.credentials, settings)
