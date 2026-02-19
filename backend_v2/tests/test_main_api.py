@@ -464,6 +464,32 @@ class TestMainApi(unittest.TestCase):
         response = self.client.get("/v2/metrics/prometheus")
         self.assertEqual(response.status_code, 401)
 
+    def test_prometheus_metrics_with_api_key_rejects_missing_header(self):
+        with patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(metrics_api_key="metrics-secret", metrics_api_key_header="X-Metrics-Key"),
+        ):
+            response = self.client.get("/v2/metrics/prometheus")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Missing or invalid metrics API key.")
+
+    def test_prometheus_metrics_with_api_key_allows_without_bearer(self):
+        with patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(metrics_api_key="metrics-secret", metrics_api_key_header="X-Metrics-Key"),
+        ):
+            response = self.client.get("/v2/metrics/prometheus", headers={"X-Metrics-Key": "metrics-secret"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ls_backend_v2_http_requests_total", response.text)
+
+    def test_prometheus_metrics_with_custom_api_key_header(self):
+        with patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(metrics_api_key="custom-secret", metrics_api_key_header="X-Obs-Key"),
+        ):
+            response = self.client.get("/v2/metrics/prometheus", headers={"X-Obs-Key": "custom-secret"})
+        self.assertEqual(response.status_code, 200)
+
     def test_retrieval_metrics_endpoint(self):
         headers = self._auth_headers(user_id=1)
         self.client.post(
