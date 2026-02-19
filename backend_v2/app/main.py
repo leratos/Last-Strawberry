@@ -5,6 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse
 
 from backend_v2.app.auth import AuthUser, create_access_token, get_current_user
 from backend_v2.app.config import Settings, get_settings
@@ -27,6 +28,7 @@ from backend_v2.app.security import redact_sensitive_text, sanitize_for_log
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
+from backend_v2.app.services.metrics_prometheus import snapshot_to_prometheus
 from backend_v2.app.services.orchestrator import GameOrchestrator
 from backend_v2.app.services.rate_limit import SlidingWindowRateLimiter
 from backend_v2.app.services.retrieval import (
@@ -372,6 +374,14 @@ async def get_retrieval_metrics(current_user: AuthUser = Depends(get_current_use
     _ = current_user
     collector = get_retrieval_metrics_collector()
     return collector.snapshot()
+
+
+@app.get("/v2/metrics/prometheus", response_class=PlainTextResponse)
+async def get_prometheus_metrics(current_user: AuthUser = Depends(get_current_user)) -> PlainTextResponse:
+    _ = current_user
+    collector = get_retrieval_metrics_collector()
+    payload = snapshot_to_prometheus(collector.snapshot())
+    return PlainTextResponse(content=payload, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/")
