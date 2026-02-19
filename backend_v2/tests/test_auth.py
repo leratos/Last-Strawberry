@@ -1,8 +1,9 @@
 import unittest
 
 from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
-from backend_v2.app.auth import create_access_token, decode_access_token
+from backend_v2.app.auth import create_access_token, decode_access_token, get_optional_user
 from backend_v2.app.config import Settings
 
 
@@ -18,6 +19,30 @@ class TestAuth(unittest.TestCase):
         settings = Settings(jwt_secret="unit-test-secret-which-is-long-enough-123")
         with self.assertRaises(HTTPException) as context:
             decode_access_token("invalid.token.value", settings)
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_get_optional_user_returns_none_without_credentials(self):
+        settings = Settings(jwt_secret="unit-test-secret-which-is-long-enough-123")
+        user = get_optional_user(credentials=None, settings=settings)
+        self.assertIsNone(user)
+
+    def test_get_optional_user_decodes_valid_bearer(self):
+        settings = Settings(jwt_secret="unit-test-secret-which-is-long-enough-123", jwt_expire_minutes=60)
+        token = create_access_token(user_id=42, username="alice", settings=settings)
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+        user = get_optional_user(credentials=credentials, settings=settings)
+        self.assertIsNotNone(user)
+        assert user is not None
+        self.assertEqual(user.user_id, 42)
+        self.assertEqual(user.username, "alice")
+
+    def test_get_optional_user_invalid_scheme_raises_http_401(self):
+        settings = Settings(jwt_secret="unit-test-secret-which-is-long-enough-123")
+        credentials = HTTPAuthorizationCredentials(scheme="Basic", credentials="token")
+
+        with self.assertRaises(HTTPException) as context:
+            get_optional_user(credentials=credentials, settings=settings)
         self.assertEqual(context.exception.status_code, 401)
 
 

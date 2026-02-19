@@ -142,6 +142,8 @@ class Settings:
     turn_rate_limit_enabled: bool = True
     turn_rate_limit_requests: int = 20
     turn_rate_limit_window_seconds: int = 60
+    metrics_api_key: str | None = None
+    metrics_api_key_header: str = "X-Metrics-Key"
     environment: str = "development"
 
     @classmethod
@@ -188,6 +190,8 @@ class Settings:
             turn_rate_limit_enabled=_read_bool_env("LS_TURN_RATE_LIMIT_ENABLED", True),
             turn_rate_limit_requests=max(1, int(_read_env("LS_TURN_RATE_LIMIT_REQUESTS", "20") or "20")),
             turn_rate_limit_window_seconds=max(1, int(_read_env("LS_TURN_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")),
+            metrics_api_key=_read_env("LS_METRICS_API_KEY"),
+            metrics_api_key_header=_read_env("LS_METRICS_API_KEY_HEADER", "X-Metrics-Key") or "X-Metrics-Key",
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",
         )
 

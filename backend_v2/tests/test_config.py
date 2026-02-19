@@ -158,6 +158,20 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.turn_rate_limit_requests, 9)
         self.assertEqual(settings.turn_rate_limit_window_seconds, 45)
 
+    def test_metrics_api_key_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_METRICS_API_KEY": "metrics-secret",
+                "LS_METRICS_API_KEY_HEADER": "X-Obs-Key",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.metrics_api_key, "metrics-secret")
+        self.assertEqual(settings.metrics_api_key_header, "X-Obs-Key")
+
 
 if __name__ == "__main__":
     unittest.main()
