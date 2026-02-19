@@ -31,6 +31,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 
 ## Notes
 - `LS_ANALYSIS_MODEL` and `LS_NARRATIVE_MODEL` are fully configurable.
+- Optional fallback chains are supported via `LS_ANALYSIS_FALLBACK_MODELS` and `LS_NARRATIVE_FALLBACK_MODELS` (comma-separated, used on provider errors).
 - OpenRouter headers (`HTTP-Referer`, `X-Title`) are included when configured.
 - Local persistence uses SQLite by default (`LS_DATABASE_URL`).
 - World and turn endpoints require Bearer auth (JWT).
