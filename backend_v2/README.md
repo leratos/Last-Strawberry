@@ -21,10 +21,14 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 ## Endpoints
 - `GET /v2/health`
 - `POST /v2/game/turn`
+- `POST /v2/worlds`
+- `GET /v2/worlds/{world_id}`
+- `GET /v2/worlds/{world_id}/turns`
 
 ## Notes
 - `LS_ANALYSIS_MODEL` and `LS_NARRATIVE_MODEL` are fully configurable.
 - OpenRouter headers (`HTTP-Referer`, `X-Title`) are included when configured.
+- Local persistence uses SQLite by default (`LS_DATABASE_URL`).
 - API key lookup order:
   1. `LS_OPENROUTER_API_KEY`
   2. `OPENROUTER_API_KEY`

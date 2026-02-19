@@ -64,6 +64,20 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(services, ["HomeGym_AI_Coach"])
 
+    def test_database_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_DATABASE_URL": "sqlite:///tmp/test.db",
+                "LS_DATABASE_AUTO_INIT": "false",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.database_url, "sqlite:///tmp/test.db")
+        self.assertFalse(settings.database_auto_init)
+
 
 if __name__ == "__main__":
     unittest.main()

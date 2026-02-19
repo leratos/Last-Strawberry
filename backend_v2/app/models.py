@@ -26,3 +26,30 @@ class HealthResponse(BaseModel):
     status: str
     provider: str
     configured_models: dict[str, str]
+
+
+class WorldCreateRequest(BaseModel):
+    owner_id: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+
+
+class WorldResponse(BaseModel):
+    id: int
+    owner_id: int
+    name: str
+    description: str
+    created_at: datetime
+
+
+class TurnRecordResponse(BaseModel):
+    id: int
+    world_id: int
+    player_id: int
+    player_command: str
+    narrative: str
+    extracted_commands: list[dict[str, Any]]
+    provider: str
+    analysis_model: str
+    narrative_model: str
+    created_at: datetime
