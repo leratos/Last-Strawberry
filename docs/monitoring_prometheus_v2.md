@@ -142,6 +142,26 @@ python backend_v2/scripts/smoke_slo.py \
   --require-ok
 ```
 
+### Monitoring-Stack Smoke (Backend + Prometheus)
+```bash
+python backend_v2/scripts/smoke_monitoring_stack.py \
+  --backend-url http://localhost:8002 \
+  --prometheus-url http://localhost:9090 \
+  --expected-job last_strawberry_backend_v2 \
+  --metrics-key dev-metrics-key
+```
+
+Optional inkl. Grafana Dashboard API-Pruefung:
+```bash
+python backend_v2/scripts/smoke_monitoring_stack.py \
+  --backend-url http://localhost:8002 \
+  --prometheus-url http://localhost:9090 \
+  --expected-job last_strawberry_backend_v2 \
+  --metrics-key dev-metrics-key \
+  --grafana-url http://localhost:3000 \
+  --grafana-api-token <token>
+```
+
 ## Monitoring-Events gezielt erzeugen (lokal)
 PowerShell-Helfer zum Erzeugen von Events fuer Dashboard/Alerts:
 - `auth_failed` (401)
