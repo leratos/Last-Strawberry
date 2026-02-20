@@ -370,6 +370,7 @@ async def run_turn(
             headers={ERROR_CATEGORY_HEADER: "provider"},
         ) from exc
     except TimeoutError as exc:
+        metrics_collector.record_audit_event("turn_timeout")
         logger.warning("request_id=%s Turn processing timeout.", get_request_id())
         raise HTTPException(
             status_code=504,

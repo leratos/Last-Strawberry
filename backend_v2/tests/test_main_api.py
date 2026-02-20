@@ -423,6 +423,7 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 504)
         self.assertEqual(response.json()["detail"], "Turn processing timeout.")
         self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("provider", 0), 1)
+        self.assertGreaterEqual(self.metrics.snapshot()["audit_events"].get("turn_timeout", 0), 1)
 
     def test_game_turn_provider_error_redacts_sensitive_fields(self):
         headers = self._auth_headers(user_id=11)
