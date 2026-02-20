@@ -74,6 +74,13 @@ rule_files:
 
 Datei nach `/etc/prometheus/rules/alert_rules_backend_v2.yml` kopieren und Prometheus neu laden.
 
+Konkrete Schritte (Linux):
+```bash
+sudo install -D -m 0644 docs/alert_rules_backend_v2.yml /etc/prometheus/rules/alert_rules_backend_v2.yml
+promtool check rules /etc/prometheus/rules/alert_rules_backend_v2.yml
+curl -X POST http://localhost:9090/-/reload
+```
+
 ## Betriebsregeln
 - `LS_METRICS_API_KEY` als Secret verwalten, nicht im Repo speichern.
 - Key rotieren (z. B. monatlich oder nach Incident).
@@ -119,3 +126,27 @@ Mit eigenen Schwellwerten:
 curl -s "http://localhost:8002/v2/metrics/slo?window=60s&max_5xx_percent=1.0&max_429_percent=5.0" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+### Smoke per Script (automatisiert)
+```bash
+python backend_v2/scripts/smoke_slo.py --base-url http://localhost:8002
+```
+
+Mit harten Grenzwerten und Exit-Code bei Breach:
+```bash
+python backend_v2/scripts/smoke_slo.py \
+  --base-url http://localhost:8002 \
+  --window 60s \
+  --max-5xx 1.0 \
+  --max-429 5.0 \
+  --require-ok
+```
+
+## Grafana Dashboard
+Import-Datei: `docs/grafana_dashboard_backend_v2.json`
+
+Import in Grafana:
+1. Dashboards -> New -> Import
+2. JSON-Datei hochladen
+3. Prometheus-Datasource auswaehlen
+4. Speichern
