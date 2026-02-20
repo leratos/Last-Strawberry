@@ -88,10 +88,6 @@ async def _maybe_reject_request_body(request: Request, max_body_bytes: int) -> R
             headers={ERROR_CATEGORY_HEADER: "security"},
         )
 
-    async def receive() -> dict:
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = receive  # type: ignore[attr-defined]
     return None
 
 
@@ -124,8 +120,6 @@ async def request_id_middleware(request: Request, call_next):
                 collector.record_error_category("auth")
             elif status_code == 429:
                 collector.record_error_category("rate_limit")
-            elif status_code == 413:
-                collector.record_error_category("security")
             elif status_code == 502:
                 collector.record_error_category("provider")
             elif 500 <= status_code <= 599:
