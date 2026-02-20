@@ -1,7 +1,7 @@
 codecov:
   require_ci_to_pass: true
 
-github_checks: false
+github_checks: true
 
 coverage:
   precision: 2
