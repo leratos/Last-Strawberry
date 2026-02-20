@@ -5,7 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from backend_v2.app.auth import AuthUser, create_access_token, decode_access_token, get_current_user
 from backend_v2.app.config import Settings, get_settings
@@ -24,7 +24,7 @@ from backend_v2.app.persistence import PersistenceError, SQLiteRepository
 from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
-from backend_v2.app.security import redact_sensitive_text, sanitize_for_log
+from backend_v2.app.security import parse_content_length_header, redact_sensitive_text, sanitize_for_log
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
@@ -42,6 +42,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 REQUEST_ID_HEADER = "X-Request-ID"
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 ERROR_CATEGORY_HEADER = "X-LS-Error-Category"
+BODY_LIMIT_METHODS = {"POST", "PUT", "PATCH"}
+SECURITY_RESPONSE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
@@ -54,6 +60,37 @@ def get_request_id() -> str:
     return _request_id_ctx.get()
 
 
+async def _maybe_reject_request_body(request: Request, max_body_bytes: int) -> Response | None:
+    if request.method.upper() not in BODY_LIMIT_METHODS:
+        return None
+
+    try:
+        declared_length = parse_content_length_header(request.headers.get("content-length"))
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid Content-Length header."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    if declared_length is not None and declared_length > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    body = await request.body()
+    if len(body) > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    return None
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
@@ -62,9 +99,13 @@ async def request_id_middleware(request: Request, call_next):
     status_code: str | int = "error"
     response = None
     try:
-        response = await call_next(request)
+        settings = get_settings()
+        rejected = await _maybe_reject_request_body(request, settings.max_request_body_bytes)
+        response = rejected if rejected is not None else await call_next(request)
         status_code = response.status_code
         response.headers[REQUEST_ID_HEADER] = request_id
+        for header_name, header_value in SECURITY_RESPONSE_HEADERS.items():
+            response.headers.setdefault(header_name, header_value)
         return response
     finally:
         if isinstance(status_code, int) and response is not None:
@@ -164,6 +205,16 @@ def get_turn_rate_limiter() -> SlidingWindowRateLimiter:
     )
 
 
+@lru_cache
+def get_login_rate_limiter() -> SlidingWindowRateLimiter:
+    settings = get_settings()
+    return SlidingWindowRateLimiter(
+        limit=settings.login_rate_limit_requests,
+        window_seconds=settings.login_rate_limit_window_seconds,
+        enabled=settings.login_rate_limit_enabled,
+    )
+
+
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
     world = repository.get_world(world_id)
     if world is None:
@@ -173,8 +224,20 @@ def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: i
 
 
 @app.post("/v2/auth/login", response_model=LoginResponse)
-async def login(request: LoginRequest, settings: Settings = Depends(get_settings)) -> LoginResponse:
-    token = create_access_token(user_id=request.user_id, username=request.username, settings=settings)
+async def login(payload: LoginRequest, request: Request, settings: Settings = Depends(get_settings)) -> LoginResponse:
+    login_limiter = get_login_rate_limiter()
+    client_host = request.client.host if request.client and request.client.host else "unknown"
+    decision = login_limiter.check(f"login_ip:{client_host}")
+    if not decision.allowed:
+        retry_after = decision.retry_after_seconds or 1
+        get_retrieval_metrics_collector().record_audit_event("auth_login_rate_limited")
+        raise HTTPException(
+            status_code=429,
+            detail="Login rate limit exceeded.",
+            headers={"Retry-After": str(retry_after), ERROR_CATEGORY_HEADER: "rate_limit"},
+        )
+
+    token = create_access_token(user_id=payload.user_id, username=payload.username, settings=settings)
     get_retrieval_metrics_collector().record_audit_event("auth_login_success")
     return LoginResponse(access_token=token, expires_in_seconds=settings.jwt_expire_minutes * 60)
 

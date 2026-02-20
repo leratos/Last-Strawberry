@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
@@ -7,12 +7,12 @@ from pydantic import BaseModel, Field
 class TurnRequest(BaseModel):
     world_id: int = Field(gt=0)
     player_id: int = Field(gt=0)
-    player_command: str = Field(min_length=1)
-    world_name: str = Field(default="default_world")
-    player_name: str = Field(default="player")
-    npc_context: str = Field(default="No NPCs currently present.")
-    recent_events: list[str] = Field(default_factory=list)
-    memory_context: list[str] = Field(default_factory=list)
+    player_command: str = Field(min_length=1, max_length=2000)
+    world_name: str = Field(default="default_world", max_length=120)
+    player_name: str = Field(default="player", max_length=64)
+    npc_context: str = Field(default="No NPCs currently present.", max_length=4000)
+    recent_events: list[Annotated[str, Field(max_length=600)]] = Field(default_factory=list, max_length=20)
+    memory_context: list[Annotated[str, Field(max_length=600)]] = Field(default_factory=list, max_length=20)
 
 
 class LoginRequest(BaseModel):

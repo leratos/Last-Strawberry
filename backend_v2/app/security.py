@@ -24,3 +24,15 @@ def redact_sensitive_text(text: object, *, max_length: int = 500) -> str:
     for pattern, replacement in _SECRET_PATTERNS:
         redacted = pattern.sub(replacement, redacted)
     return redacted
+
+
+def parse_content_length_header(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length header.") from exc
+    if parsed < 0:
+        raise ValueError("Invalid Content-Length header.")
+    return parsed

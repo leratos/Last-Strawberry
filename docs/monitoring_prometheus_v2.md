@@ -68,6 +68,8 @@ Falls deine Prometheus-Version `http_headers` nicht unterstuetzt:
 - Key rotieren (z. B. monatlich oder nach Incident).
 - Zugriffe auf `/v2/metrics/prometheus` nur aus Monitoring-Netzen erlauben.
 - `401`-Anstiege in `error_categories{category="auth"}` und `http_status{status="401"}` alarmieren.
+- `413`-Anstiege (`error_category_total{category="security"}` bzw. `http_status_total{status="413"}`) auf Request-Floods/Fehlkonfiguration pruefen.
+- `429` auf `/v2/auth/login` bzw. `audit_event_total{event="auth_login_rate_limited"}` beobachten (Brute-Force/Abuse-Indikator).
 
 ## Modell-Fallback Telemetrie
 Seit Phase 3 exportiert Prometheus auch Modellrouting-Metriken:

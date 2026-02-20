@@ -158,6 +158,22 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.turn_rate_limit_requests, 9)
         self.assertEqual(settings.turn_rate_limit_window_seconds, 45)
 
+    def test_login_rate_limit_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_LOGIN_RATE_LIMIT_ENABLED": "false",
+                "LS_LOGIN_RATE_LIMIT_REQUESTS": "33",
+                "LS_LOGIN_RATE_LIMIT_WINDOW_SECONDS": "120",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertFalse(settings.login_rate_limit_enabled)
+        self.assertEqual(settings.login_rate_limit_requests, 33)
+        self.assertEqual(settings.login_rate_limit_window_seconds, 120)
+
     def test_metrics_api_key_settings_from_env(self):
         with patch.dict(
             os.environ,
@@ -171,6 +187,26 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(settings.metrics_api_key, "metrics-secret")
         self.assertEqual(settings.metrics_api_key_header, "X-Obs-Key")
+
+    def test_max_request_body_bytes_from_env(self):
+        with patch.dict(
+            os.environ,
+            {"LS_MAX_REQUEST_BODY_BYTES": "65536"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.max_request_body_bytes, 65536)
+
+    def test_max_request_body_bytes_has_minimum_floor(self):
+        with patch.dict(
+            os.environ,
+            {"LS_MAX_REQUEST_BODY_BYTES": "64"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.max_request_body_bytes, 1024)
 
     def test_fallback_models_from_env(self):
         with patch.dict(

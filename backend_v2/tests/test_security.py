@@ -1,6 +1,6 @@
 import unittest
 
-from backend_v2.app.security import redact_sensitive_text, sanitize_for_log
+from backend_v2.app.security import parse_content_length_header, redact_sensitive_text, sanitize_for_log
 
 
 class TestSecurityHelpers(unittest.TestCase):
@@ -15,6 +15,18 @@ class TestSecurityHelpers(unittest.TestCase):
         self.assertNotIn("secret-token-123", redacted)
         self.assertNotIn("super-secret", redacted)
         self.assertIn("[REDACTED]", redacted)
+
+    def test_parse_content_length_header(self):
+        self.assertIsNone(parse_content_length_header(None))
+        self.assertIsNone(parse_content_length_header(""))
+        self.assertEqual(parse_content_length_header("0"), 0)
+        self.assertEqual(parse_content_length_header("42"), 42)
+
+    def test_parse_content_length_header_rejects_invalid_values(self):
+        with self.assertRaises(ValueError):
+            parse_content_length_header("-1")
+        with self.assertRaises(ValueError):
+            parse_content_length_header("abc")
 
 
 if __name__ == "__main__":

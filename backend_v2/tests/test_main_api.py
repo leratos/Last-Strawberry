@@ -246,6 +246,13 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("x-request-id"), "req-123")
 
+    def test_security_headers_are_set_on_success(self):
+        response = self.client.get("/v2/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("referrer-policy"), "no-referrer")
+
     def test_request_id_header_generated_when_missing(self):
         response = self.client.get("/v2/health")
         self.assertEqual(response.status_code, 200)
@@ -259,6 +266,48 @@ class TestMainApi(unittest.TestCase):
         body = response.json()
         self.assertIn("access_token", body)
         self.assertEqual(body["token_type"], "bearer")
+
+    def test_login_rejects_oversized_body_with_413(self):
+        oversized_username = "a" * 300
+        raw = f'{{"user_id":1,"username":"{oversized_username}"}}'
+        with patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(max_request_body_bytes=96),
+        ):
+            response = self.client.post(
+                "/v2/auth/login",
+                content=raw,
+                headers={"Content-Type": "application/json"},
+            )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["detail"], "Request body too large.")
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("referrer-policy"), "no-referrer")
+        self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("security", 0), 1)
+
+    def test_login_rate_limited_returns_429(self):
+        with patch(
+            "backend_v2.app.main.get_login_rate_limiter",
+            return_value=_BlockedRateLimiter(retry_after_seconds=7),
+        ):
+            response = self.client.post("/v2/auth/login", json={"user_id": 1, "username": "alice"})
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "Login rate limit exceeded.")
+        self.assertEqual(response.headers.get("retry-after"), "7")
+        self.assertGreaterEqual(self.metrics.snapshot()["audit_events"].get("auth_login_rate_limited", 0), 1)
+
+    def test_turn_request_rejects_player_command_too_long(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "x" * 2500}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+        self.assertEqual(response.status_code, 422)
 
     def test_protected_world_endpoint_requires_auth(self):
         response = self.client.post("/v2/worlds", json={"name": "Schattenforst", "description": "..."})
