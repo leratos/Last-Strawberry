@@ -108,6 +108,7 @@ Zeitraum: 01.04.2026 - 21.04.2026
 - Turn-Timeout-Guard fuer `/v2/game/turn` umgesetzt (`LS_TURN_TIMEOUT_SECONDS`, default `60`, `504` bei Ueberschreitung) inkl. API-/Config-Tests.
 - Retrieval-Monitoring erweitert: `windowed_rates` liefert jetzt auch prozentuale API-Fehlerraten (`errors_5xx_percent`, `rate_limit_429_percent`) fuer schnellere SLO-Bewertung.
 - Turn-Timeouts werden als dediziertes Audit-Event erfasst (`turn_timeout`) fuer frueheres Alerting vor groesseren 504-Wellen.
+- Betriebs-Monitoring erweitert um `/v2/metrics/slo` (window-basierte Pass/Fail-Auswertung mit konfigurierbaren 5xx/429-Schwellen im Request).
 
 ---
 

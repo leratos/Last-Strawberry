@@ -563,6 +563,10 @@ class TestMainApi(unittest.TestCase):
         response = self.client.get("/v2/metrics/retrieval")
         self.assertEqual(response.status_code, 401)
 
+    def test_slo_metrics_requires_auth(self):
+        response = self.client.get("/v2/metrics/slo")
+        self.assertEqual(response.status_code, 401)
+
     def test_prometheus_metrics_requires_auth(self):
         response = self.client.get("/v2/metrics/prometheus")
         self.assertEqual(response.status_code, 401)
@@ -621,6 +625,31 @@ class TestMainApi(unittest.TestCase):
         self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
         self.assertIn("errors_5xx_percent", payload["windowed_rates"]["60s"])
         self.assertIn("rate_limit_429_percent", payload["windowed_rates"]["60s"])
+
+    def test_slo_metrics_endpoint_detects_5xx_breach(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "SLO-Welt", "description": ""},
+        )
+
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_UnexpectedErrorOrchestrator()):
+            failed_turn = self.client.post(
+                "/v2/game/turn",
+                headers=headers,
+                json={"world_id": 1, "player_id": 7, "player_command": "Ich teste SLO."},
+            )
+        self.assertEqual(failed_turn.status_code, 500)
+
+        response = self.client.get(
+            "/v2/metrics/slo?window=60s&max_5xx_percent=0&max_429_percent=100",
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "breach")
+        self.assertIn("errors_5xx_percent", payload["breaches"])
 
     def test_prometheus_metrics_endpoint(self):
         headers = self._auth_headers(user_id=1)

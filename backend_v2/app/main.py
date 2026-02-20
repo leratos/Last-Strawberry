@@ -32,6 +32,7 @@ from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.metrics_prometheus import snapshot_to_prometheus
 from backend_v2.app.services.orchestrator import GameOrchestrator
 from backend_v2.app.services.rate_limit import SlidingWindowRateLimiter
+from backend_v2.app.services.slo import evaluate_slo
 from backend_v2.app.services.retrieval import (
     HybridMemoryRetriever,
     LexicalMemoryRetriever,
@@ -482,6 +483,24 @@ async def get_retrieval_metrics(current_user: AuthUser = Depends(get_current_use
     _ = current_user
     collector = get_retrieval_metrics_collector()
     return collector.snapshot()
+
+
+@app.get("/v2/metrics/slo")
+async def get_slo_metrics(
+    current_user: AuthUser = Depends(get_current_user),
+    window: str = Query(default="300s"),
+    max_5xx_percent: float = Query(default=1.0, ge=0.0, le=100.0),
+    max_429_percent: float = Query(default=5.0, ge=0.0, le=100.0),
+) -> dict[str, object]:
+    _ = current_user
+    collector = get_retrieval_metrics_collector()
+    snapshot = collector.snapshot()
+    return evaluate_slo(
+        snapshot=snapshot,
+        window=window,
+        max_5xx_percent=max_5xx_percent,
+        max_429_percent=max_429_percent,
+    )
 
 
 @app.get("/v2/metrics/prometheus", response_class=PlainTextResponse)
