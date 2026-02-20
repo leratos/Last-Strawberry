@@ -16,6 +16,7 @@ class TestMainFactories(unittest.TestCase):
         main_module.get_embeddings_provider.cache_clear()
         main_module.get_memory_retriever.cache_clear()
         main_module.get_retrieval_metrics_collector.cache_clear()
+        main_module.get_login_rate_limiter.cache_clear()
         main_module.get_turn_rate_limiter.cache_clear()
 
     def test_factory_wires_metrics_collector_into_orchestrator(self):
@@ -94,6 +95,20 @@ class TestMainFactories(unittest.TestCase):
             main_module.get_turn_rate_limiter.cache_clear()
             first = main_module.get_turn_rate_limiter()
             second = main_module.get_turn_rate_limiter()
+
+        self.assertIsInstance(first, SlidingWindowRateLimiter)
+        self.assertIs(first, second)
+
+    def test_factory_returns_cached_login_rate_limiter(self):
+        settings = Settings(
+            login_rate_limit_enabled=True,
+            login_rate_limit_requests=11,
+            login_rate_limit_window_seconds=50,
+        )
+        with patch("backend_v2.app.main.get_settings", return_value=settings):
+            main_module.get_login_rate_limiter.cache_clear()
+            first = main_module.get_login_rate_limiter()
+            second = main_module.get_login_rate_limiter()
 
         self.assertIsInstance(first, SlidingWindowRateLimiter)
         self.assertIs(first, second)

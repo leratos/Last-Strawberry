@@ -204,6 +204,16 @@ def get_turn_rate_limiter() -> SlidingWindowRateLimiter:
     )
 
 
+@lru_cache
+def get_login_rate_limiter() -> SlidingWindowRateLimiter:
+    settings = get_settings()
+    return SlidingWindowRateLimiter(
+        limit=settings.login_rate_limit_requests,
+        window_seconds=settings.login_rate_limit_window_seconds,
+        enabled=settings.login_rate_limit_enabled,
+    )
+
+
 def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: int) -> None:
     world = repository.get_world(world_id)
     if world is None:
@@ -213,8 +223,20 @@ def _assert_world_access(repository: SQLiteRepository, world_id: int, user_id: i
 
 
 @app.post("/v2/auth/login", response_model=LoginResponse)
-async def login(request: LoginRequest, settings: Settings = Depends(get_settings)) -> LoginResponse:
-    token = create_access_token(user_id=request.user_id, username=request.username, settings=settings)
+async def login(payload: LoginRequest, request: Request, settings: Settings = Depends(get_settings)) -> LoginResponse:
+    login_limiter = get_login_rate_limiter()
+    client_host = request.client.host if request.client and request.client.host else "unknown"
+    decision = login_limiter.check(f"login_ip:{client_host}")
+    if not decision.allowed:
+        retry_after = decision.retry_after_seconds or 1
+        get_retrieval_metrics_collector().record_audit_event("auth_login_rate_limited")
+        raise HTTPException(
+            status_code=429,
+            detail="Login rate limit exceeded.",
+            headers={"Retry-After": str(retry_after), ERROR_CATEGORY_HEADER: "rate_limit"},
+        )
+
+    token = create_access_token(user_id=payload.user_id, username=payload.username, settings=settings)
     get_retrieval_metrics_collector().record_audit_event("auth_login_success")
     return LoginResponse(access_token=token, expires_in_seconds=settings.jwt_expire_minutes * 60)
 

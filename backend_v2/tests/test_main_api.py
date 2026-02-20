@@ -276,6 +276,17 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Request body too large.")
         self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("security", 0), 1)
 
+    def test_login_rate_limited_returns_429(self):
+        with patch(
+            "backend_v2.app.main.get_login_rate_limiter",
+            return_value=_BlockedRateLimiter(retry_after_seconds=7),
+        ):
+            response = self.client.post("/v2/auth/login", json={"user_id": 1, "username": "alice"})
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "Login rate limit exceeded.")
+        self.assertEqual(response.headers.get("retry-after"), "7")
+        self.assertGreaterEqual(self.metrics.snapshot()["audit_events"].get("auth_login_rate_limited", 0), 1)
+
     def test_turn_request_rejects_player_command_too_long(self):
         headers = self._auth_headers(user_id=11)
         self.client.post(
