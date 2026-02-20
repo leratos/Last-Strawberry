@@ -58,6 +58,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Grafana Dashboard JSON: `docs/grafana_dashboard_backend_v2.json`.
 - SLO smoke-test helper: `backend_v2/scripts/smoke_slo.py`.
 - Monitoring event generator (Auth/Provider/Timeout/Fallback): `backend_v2/scripts/generate_monitoring_events.ps1`.
+- Monitoring stack smoke (Backend+Prometheus+optional Grafana API): `backend_v2/scripts/smoke_monitoring_stack.py`.
 - Parallel turn burst test helper: `backend_v2/scripts/run_parallel_turn_load.py` (guide: `docs/parallel_turn_load_tests_v2.md`).
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
