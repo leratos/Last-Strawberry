@@ -142,6 +142,22 @@ python backend_v2/scripts/smoke_slo.py \
   --require-ok
 ```
 
+## Monitoring-Events gezielt erzeugen (lokal)
+PowerShell-Helfer zum Erzeugen von Events fuer Dashboard/Alerts:
+- `auth_failed` (401)
+- `provider`-Fehler
+- `turn_timeout`
+- Modell-Fallback-Routen
+
+Script:
+```powershell
+powershell -ExecutionPolicy Bypass -File backend_v2/scripts/generate_monitoring_events.ps1 -BaseUrl http://localhost:8002
+```
+
+Hinweise:
+- Das Script sichert `backend_v2/.env`, aendert fuer einzelne Szenarien temporaer Werte und stellt am Ende den Originalzustand wieder her.
+- Fuer Konfigurationswechsel fordert das Script einen manuellen Backend-Restart an.
+
 ## Grafana Dashboard
 Import-Datei: `docs/grafana_dashboard_backend_v2.json`
 
