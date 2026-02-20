@@ -104,6 +104,7 @@ Zeitraum: 01.04.2026 - 21.04.2026
   - Request-Body-Limit in Middleware (`LS_MAX_REQUEST_BODY_BYTES`, `413` bei Ueberschreitung)
   - Striktere Eingabegrenzen fuer `TurnRequest` (z. B. `player_command` max. 2000 Zeichen)
   - Login-Rate-Limit fuer `/v2/auth/login` inkl. Audit-Event (`auth_login_rate_limited`)
+  - Zusaetzliches IP-basiertes Turn-Rate-Limit (`rate_limit_ip_exceeded`) fuer `/v2/game/turn`
 
 ---
 

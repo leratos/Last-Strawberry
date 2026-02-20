@@ -198,12 +198,15 @@ class TestMainApi(unittest.TestCase):
         self.metrics = RetrievalMetricsCollector()
         self.repo_patcher = patch("backend_v2.app.main.get_repository", return_value=self.repo)
         self.metrics_patcher = patch("backend_v2.app.main.get_retrieval_metrics_collector", return_value=self.metrics)
+        self.ip_rate_limit_patcher = patch("backend_v2.app.main.get_turn_ip_rate_limiter", return_value=_NoopRateLimiter())
         self.rate_limit_patcher = patch("backend_v2.app.main.get_turn_rate_limiter", return_value=_NoopRateLimiter())
         self.repo_patcher.start()
         self.metrics_patcher.start()
+        self.ip_rate_limit_patcher.start()
         self.rate_limit_patcher.start()
         self.addCleanup(self.repo_patcher.stop)
         self.addCleanup(self.metrics_patcher.stop)
+        self.addCleanup(self.ip_rate_limit_patcher.stop)
         self.addCleanup(self.rate_limit_patcher.stop)
         self.client = TestClient(app)
 
@@ -464,6 +467,25 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "Rate limit exceeded.")
         self.assertEqual(response.headers.get("retry-after"), "12")
+
+    def test_game_turn_ip_rate_limited_returns_429_with_retry_after(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "Ich warte."}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()), patch(
+            "backend_v2.app.main.get_turn_ip_rate_limiter",
+            return_value=_BlockedRateLimiter(retry_after_seconds=9),
+        ):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "IP rate limit exceeded.")
+        self.assertEqual(response.headers.get("retry-after"), "9")
+        self.assertGreaterEqual(self.metrics.snapshot()["audit_events"].get("rate_limit_ip_exceeded", 0), 1)
 
     def test_list_world_turns(self):
         headers = self._auth_headers(user_id=1)

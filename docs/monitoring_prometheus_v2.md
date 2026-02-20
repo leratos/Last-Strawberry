@@ -70,6 +70,7 @@ Falls deine Prometheus-Version `http_headers` nicht unterstuetzt:
 - `401`-Anstiege in `error_categories{category="auth"}` und `http_status{status="401"}` alarmieren.
 - `413`-Anstiege (`error_category_total{category="security"}` bzw. `http_status_total{status="413"}`) auf Request-Floods/Fehlkonfiguration pruefen.
 - `429` auf `/v2/auth/login` bzw. `audit_event_total{event="auth_login_rate_limited"}` beobachten (Brute-Force/Abuse-Indikator).
+- `429` auf `/v2/game/turn` mit `audit_event_total{event="rate_limit_ip_exceeded"}` als Signal fuer IP-basierten Abuse beobachten.
 
 ## Modell-Fallback Telemetrie
 Seit Phase 3 exportiert Prometheus auch Modellrouting-Metriken:
