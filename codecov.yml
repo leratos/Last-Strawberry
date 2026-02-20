@@ -13,6 +13,10 @@ comment:
   behavior: default
   require_changes: false
 
+ignore:
+  - "docs/**"
+  - "web_frontend/**"
+
 status:
   patch:
     informational: false

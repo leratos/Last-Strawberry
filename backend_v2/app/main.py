@@ -415,6 +415,23 @@ async def create_world(
     return WorldResponse.model_validate(world)
 
 
+@app.get("/v2/worlds", response_model=list[WorldResponse])
+async def list_worlds(
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: AuthUser = Depends(get_current_user),
+) -> list[WorldResponse]:
+    repository = get_repository()
+    try:
+        worlds = repository.list_worlds(owner_id=current_user.user_id, limit=limit)
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Persistence error.",
+            headers={ERROR_CATEGORY_HEADER: "persistence"},
+        ) from exc
+    return [WorldResponse.model_validate(world) for world in worlds]
+
+
 @app.get("/v2/worlds/{world_id}", response_model=WorldResponse)
 async def get_world(
     world_id: int,

@@ -169,6 +169,30 @@ class SQLiteRepository:
             "created_at": str(row["created_at"]),
         }
 
+    def list_worlds(self, owner_id: int, limit: int = 50) -> list[dict]:
+        safe_limit = max(1, min(limit, 200))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, owner_id, name, description, created_at
+                FROM worlds
+                WHERE owner_id = ?
+                ORDER BY id DESC
+                LIMIT ?;
+                """,
+                (owner_id, safe_limit),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "owner_id": int(row["owner_id"]),
+                "name": str(row["name"]),
+                "description": str(row["description"]),
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
+
     def is_world_owner(self, world_id: int, owner_id: int) -> bool:
         with self._connect() as conn:
             row = conn.execute(

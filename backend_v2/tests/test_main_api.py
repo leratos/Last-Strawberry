@@ -79,6 +79,11 @@ class _MemoryRepo:
     def get_world(self, world_id):
         return self.worlds.get(world_id)
 
+    def list_worlds(self, owner_id, limit=50):
+        items = [world for world in self.worlds.values() if int(world["owner_id"]) == int(owner_id)]
+        items.sort(key=lambda world: int(world["id"]), reverse=True)
+        return items[:limit]
+
     def is_world_owner(self, world_id, owner_id):
         world = self.worlds.get(world_id)
         return world is not None and int(world["owner_id"]) == int(owner_id)
@@ -341,6 +346,39 @@ class TestMainApi(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["owner_id"], 11)
         self.assertEqual(body["name"], "Schattenforst")
+
+    def test_list_worlds_returns_only_token_owner_worlds(self):
+        owner_headers = self._auth_headers(user_id=11)
+        other_headers = self._auth_headers(user_id=22)
+
+        self.client.post(
+            "/v2/worlds",
+            headers=owner_headers,
+            json={"name": "Owner Welt A", "description": ""},
+        )
+        self.client.post(
+            "/v2/worlds",
+            headers=other_headers,
+            json={"name": "Other Welt", "description": ""},
+        )
+        self.client.post(
+            "/v2/worlds",
+            headers=owner_headers,
+            json={"name": "Owner Welt B", "description": ""},
+        )
+
+        response = self.client.get("/v2/worlds?limit=10", headers=owner_headers)
+        self.assertEqual(response.status_code, 200)
+        worlds = response.json()
+        self.assertEqual(len(worlds), 2)
+        self.assertEqual(worlds[0]["name"], "Owner Welt B")
+        self.assertEqual(worlds[1]["name"], "Owner Welt A")
+        for world in worlds:
+            self.assertEqual(world["owner_id"], 11)
+
+    def test_list_worlds_requires_auth(self):
+        response = self.client.get("/v2/worlds")
+        self.assertEqual(response.status_code, 401)
 
     def test_get_world_not_found(self):
         headers = self._auth_headers(user_id=11)
