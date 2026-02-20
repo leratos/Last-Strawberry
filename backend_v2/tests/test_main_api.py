@@ -260,6 +260,34 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("access_token", body)
         self.assertEqual(body["token_type"], "bearer")
 
+    def test_login_rejects_oversized_body_with_413(self):
+        oversized_username = "a" * 300
+        raw = f'{{"user_id":1,"username":"{oversized_username}"}}'
+        with patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(max_request_body_bytes=96),
+        ):
+            response = self.client.post(
+                "/v2/auth/login",
+                content=raw,
+                headers={"Content-Type": "application/json"},
+            )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["detail"], "Request body too large.")
+        self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("security", 0), 1)
+
+    def test_turn_request_rejects_player_command_too_long(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "x" * 2500}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SuccessOrchestrator()):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+        self.assertEqual(response.status_code, 422)
+
     def test_protected_world_endpoint_requires_auth(self):
         response = self.client.post("/v2/worlds", json={"name": "Schattenforst", "description": "..."})
         self.assertEqual(response.status_code, 401)

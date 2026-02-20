@@ -5,7 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from backend_v2.app.auth import AuthUser, create_access_token, decode_access_token, get_current_user
 from backend_v2.app.config import Settings, get_settings
@@ -24,7 +24,7 @@ from backend_v2.app.persistence import PersistenceError, SQLiteRepository
 from backend_v2.app.providers.embeddings_openrouter import OpenRouterEmbeddingsProvider
 from backend_v2.app.providers.base import ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
-from backend_v2.app.security import redact_sensitive_text, sanitize_for_log
+from backend_v2.app.security import parse_content_length_header, redact_sensitive_text, sanitize_for_log
 from backend_v2.app.services.embeddings import EmbeddingsProvider, HashEmbeddingsProvider, NoopEmbeddingsProvider
 from backend_v2.app.services.memory import MemoryWritePolicy
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
@@ -42,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 REQUEST_ID_HEADER = "X-Request-ID"
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 ERROR_CATEGORY_HEADER = "X-LS-Error-Category"
+BODY_LIMIT_METHODS = {"POST", "PUT", "PATCH"}
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
@@ -54,6 +55,41 @@ def get_request_id() -> str:
     return _request_id_ctx.get()
 
 
+async def _maybe_reject_request_body(request: Request, max_body_bytes: int) -> Response | None:
+    if request.method.upper() not in BODY_LIMIT_METHODS:
+        return None
+
+    try:
+        declared_length = parse_content_length_header(request.headers.get("content-length"))
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid Content-Length header."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    if declared_length is not None and declared_length > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    body = await request.body()
+    if len(body) > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large."},
+            headers={ERROR_CATEGORY_HEADER: "security"},
+        )
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = receive  # type: ignore[attr-defined]
+    return None
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
@@ -62,7 +98,9 @@ async def request_id_middleware(request: Request, call_next):
     status_code: str | int = "error"
     response = None
     try:
-        response = await call_next(request)
+        settings = get_settings()
+        rejected = await _maybe_reject_request_body(request, settings.max_request_body_bytes)
+        response = rejected if rejected is not None else await call_next(request)
         status_code = response.status_code
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
@@ -79,6 +117,8 @@ async def request_id_middleware(request: Request, call_next):
                 collector.record_error_category("auth")
             elif status_code == 429:
                 collector.record_error_category("rate_limit")
+            elif status_code == 413:
+                collector.record_error_category("security")
             elif status_code == 502:
                 collector.record_error_category("provider")
             elif 500 <= status_code <= 599:

@@ -100,6 +100,9 @@ Zeitraum: 01.04.2026 - 21.04.2026
   - Burst mit aktivem Limiter (`200` + `429` gemischt, inkl. Metrik-Validierung)
   - Burst mit simuliertem Provider-Ausfall (`502`, inkl. Error-Metrik-Validierung)
 - Lokales Lasttest-CLI fuer manuelle Bursts hinzugefuegt (`backend_v2/scripts/run_parallel_turn_load.py`).
+- Security-Hardening erweitert:
+  - Request-Body-Limit in Middleware (`LS_MAX_REQUEST_BODY_BYTES`, `413` bei Ueberschreitung)
+  - Striktere Eingabegrenzen fuer `TurnRequest` (z. B. `player_command` max. 2000 Zeichen)
 
 ---
 

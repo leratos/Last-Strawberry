@@ -172,6 +172,26 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.metrics_api_key, "metrics-secret")
         self.assertEqual(settings.metrics_api_key_header, "X-Obs-Key")
 
+    def test_max_request_body_bytes_from_env(self):
+        with patch.dict(
+            os.environ,
+            {"LS_MAX_REQUEST_BODY_BYTES": "65536"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.max_request_body_bytes, 65536)
+
+    def test_max_request_body_bytes_has_minimum_floor(self):
+        with patch.dict(
+            os.environ,
+            {"LS_MAX_REQUEST_BODY_BYTES": "64"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.max_request_body_bytes, 1024)
+
     def test_fallback_models_from_env(self):
         with patch.dict(
             os.environ,
