@@ -246,6 +246,13 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("x-request-id"), "req-123")
 
+    def test_security_headers_are_set_on_success(self):
+        response = self.client.get("/v2/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("referrer-policy"), "no-referrer")
+
     def test_request_id_header_generated_when_missing(self):
         response = self.client.get("/v2/health")
         self.assertEqual(response.status_code, 200)
@@ -274,6 +281,9 @@ class TestMainApi(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.json()["detail"], "Request body too large.")
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("referrer-policy"), "no-referrer")
         self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("security", 0), 1)
 
     def test_login_rate_limited_returns_429(self):

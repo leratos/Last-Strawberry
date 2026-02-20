@@ -43,6 +43,11 @@ REQUEST_ID_HEADER = "X-Request-ID"
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 ERROR_CATEGORY_HEADER = "X-LS-Error-Category"
 BODY_LIMIT_METHODS = {"POST", "PUT", "PATCH"}
+SECURITY_RESPONSE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
@@ -103,6 +108,8 @@ async def request_id_middleware(request: Request, call_next):
         response = rejected if rejected is not None else await call_next(request)
         status_code = response.status_code
         response.headers[REQUEST_ID_HEADER] = request_id
+        for header_name, header_value in SECURITY_RESPONSE_HEADERS.items():
+            response.headers.setdefault(header_name, header_value)
         return response
     finally:
         if isinstance(status_code, int) and response is not None:
