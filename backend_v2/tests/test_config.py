@@ -244,6 +244,36 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(settings.max_request_body_bytes, 1024)
 
+    def test_slo_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_SLO_WINDOW": "60s",
+                "LS_SLO_MAX_5XX_PERCENT": "0.8",
+                "LS_SLO_MAX_429_PERCENT": "4.2",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.slo_window, "60s")
+        self.assertEqual(settings.slo_max_5xx_percent, 0.8)
+        self.assertEqual(settings.slo_max_429_percent, 4.2)
+
+    def test_slo_percent_settings_have_zero_floor(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_SLO_MAX_5XX_PERCENT": "-1",
+                "LS_SLO_MAX_429_PERCENT": "-2",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.slo_max_5xx_percent, 0.0)
+        self.assertEqual(settings.slo_max_429_percent, 0.0)
+
     def test_fallback_models_from_env(self):
         with patch.dict(
             os.environ,
