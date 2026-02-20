@@ -89,3 +89,18 @@ Empfohlene Alarme:
 - `rate_limit_429_percent`
 
 Damit kann ein schneller API-SLO-Check ohne PromQL erfolgen (z. B. `errors_5xx_percent < 1.0` fuer Beta-Ziel).
+
+## SLO-Status Endpoint
+`GET /v2/metrics/slo` liefert einen kompakten Pass/Fail-Status fuer ein Zeitfenster.
+
+Beispiel:
+```bash
+curl -s http://localhost:8002/v2/metrics/slo \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Mit eigenen Schwellwerten:
+```bash
+curl -s "http://localhost:8002/v2/metrics/slo?window=60s&max_5xx_percent=1.0&max_429_percent=5.0" \
+  -H "Authorization: Bearer $TOKEN"
+```
