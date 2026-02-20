@@ -619,6 +619,8 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("windowed_rates", payload)
         self.assertIn("60s", payload["windowed_rates"])
         self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
+        self.assertIn("errors_5xx_percent", payload["windowed_rates"]["60s"])
+        self.assertIn("rate_limit_429_percent", payload["windowed_rates"]["60s"])
 
     def test_prometheus_metrics_endpoint(self):
         headers = self._auth_headers(user_id=1)

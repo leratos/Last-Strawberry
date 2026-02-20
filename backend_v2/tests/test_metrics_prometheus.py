@@ -35,7 +35,9 @@ class TestMetricsPrometheusExport(unittest.TestCase):
                 "60s": {
                     "requests_per_minute": 4.0,
                     "errors_5xx_per_minute": 1.0,
+                    "errors_5xx_percent": 25.0,
                     "rate_limit_429_per_minute": 1.0,
+                    "rate_limit_429_percent": 25.0,
                     "auth_failed_per_minute": 1.0,
                 }
             },
@@ -52,6 +54,8 @@ class TestMetricsPrometheusExport(unittest.TestCase):
         )
         self.assertIn('ls_backend_v2_model_attempt_error_total{stage="analysis",model="model-a"} 1', payload)
         self.assertIn('ls_backend_v2_requests_per_minute{window="60s"} 4.0', payload)
+        self.assertIn('ls_backend_v2_errors_5xx_percent{window="60s"} 25.0', payload)
+        self.assertIn('ls_backend_v2_rate_limit_429_percent{window="60s"} 25.0', payload)
 
     def test_histogram_conversion_uses_cumulative_buckets(self):
         snapshot = {
