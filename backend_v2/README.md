@@ -55,6 +55,8 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - If `LS_METRICS_API_KEY` is set, `/v2/metrics/prometheus` requires that header and no Bearer token.
 - Monitoring runbook and scrape examples: `docs/monitoring_prometheus_v2.md`.
 - Starter Alert-Regeln fuer Prometheus: `docs/alert_rules_backend_v2.yml`.
+- Grafana Dashboard JSON: `docs/grafana_dashboard_backend_v2.json`.
+- SLO smoke-test helper: `backend_v2/scripts/smoke_slo.py`.
 - Parallel turn burst test helper: `backend_v2/scripts/run_parallel_turn_load.py` (guide: `docs/parallel_turn_load_tests_v2.md`).
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
