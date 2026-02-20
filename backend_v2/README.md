@@ -23,6 +23,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - `GET /v2/health`
 - `POST /v2/game/turn`
 - `POST /v2/worlds`
+- `GET /v2/worlds`
 - `GET /v2/worlds/{world_id}`
 - `GET /v2/worlds/{world_id}/turns`
 - `GET /v2/worlds/{world_id}/memory`

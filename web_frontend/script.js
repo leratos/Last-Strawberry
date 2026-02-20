@@ -1,989 +1,580 @@
 // web_frontend/script.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    // --- Konstanten und Konfiguration ---
-    const API_BASE_URL = window.LastStrawberryConfig?.API_BASE_URL || 'http://localhost:8001';
-    const ATTRIBUTES = ["Stärke", "Geschicklichkeit", "Konstitution", "Intelligenz", "Weisheit", "Charisma", "Wahrnehmung"];
+document.addEventListener("DOMContentLoaded", () => {
+    const API_BASE_URL = window.LastStrawberryConfig?.API_BASE_URL || "http://127.0.0.1:8002";
+    const TOKEN_STORAGE_KEY = window.LastStrawberryConfig?.TOKEN_STORAGE_KEY || "lastStrawberryV2Token";
+    const ATTRIBUTES = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma", "Perception"];
     const POINT_BUY_BUDGET = 75;
     const MIN_SCORE = 8;
     const MAX_SCORE = 15;
 
-    // --- DOM-Elemente holen ---
     const screens = {
-        login: document.getElementById('login-screen'),
-        worldSelection: document.getElementById('world-selection-screen'),
-        createWorld: document.getElementById('create-world-screen'),
-        game: document.getElementById('game-screen'),
+        login: document.getElementById("login-screen"),
+        worldSelection: document.getElementById("world-selection-screen"),
+        createWorld: document.getElementById("create-world-screen"),
+        game: document.getElementById("game-screen"),
     };
-    
-    // Navigation
-    const navbar = document.getElementById('navbar');
-    const navWorldName = document.getElementById('nav-world-name');
-    const profileBtn = document.getElementById('profile-btn');
-    const adminLink = document.getElementById('admin-link');
-    const logoutBtn = document.getElementById('logout-btn');
-    
-    // Login elements
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    const loginButton = document.getElementById('login-button');
-    const loginError = document.getElementById('login-error');
-    
-    // World selection elements
-    const worldListContainer = document.getElementById('world-list');
-    const showCreateWorldBtn = document.getElementById('show-create-world-btn');
-    const createWorldButton = document.getElementById('create-world-button');
-    const cancelCreateBtn = document.getElementById('cancel-create-btn');
-    
-    // Game elements
-    const gameTitle = document.getElementById('game-title');
-    const chatContainer = document.getElementById('chat-container');
-    const gameInputArea = document.getElementById('game-input-area');
-    const commandInput = document.getElementById('command-input');
-    const sendButton = document.getElementById('send-button');
-    const correctLastBtn = document.getElementById('correct-last-btn');
 
-    // Modal elements
-    const profileModal = document.getElementById('profile-modal');
-    const closeProfileModal = document.getElementById('close-profile-modal');
-    const profileAvatar = document.getElementById('profile-avatar');
-    const profileUsername = document.getElementById('profile-username');
-    const profileRoles = document.getElementById('profile-roles');
-    const changePasswordBtn = document.getElementById('change-password-btn');
-    
-    const passwordModal = document.getElementById('password-modal');
-    const closePasswordModal = document.getElementById('close-password-modal');
-    const currentPasswordInput = document.getElementById('current-password');
-    const newPasswordInput = document.getElementById('new-password');
-    const confirmPasswordInput = document.getElementById('confirm-password');
-    const cancelPasswordBtn = document.getElementById('cancel-password-btn');
-    const savePasswordBtn = document.getElementById('save-password-btn');
-    const passwordError = document.getElementById('password-error');
-    const passwordSuccess = document.getElementById('password-success');
-    
-    const storyExportModal = document.getElementById('story-export-modal');
-    const storyExportBtn = document.getElementById('story-export-btn');
-    const closeStoryExportModal = document.getElementById('close-story-export-modal');
-    const exportFormatSelect = document.getElementById('export-format');
-    const exportWorldSelect = document.getElementById('export-world');
-    const cancelExportBtn = document.getElementById('cancel-export-btn');
-    const startExportBtn = document.getElementById('start-export-btn');
-    
-    const correctionModal = document.getElementById('correction-modal');
-    const closeCorrectionModal = document.getElementById('close-correction-modal');
-    const narrativeTextarea = document.getElementById('narrative-textarea');
-    const jsonTextarea = document.getElementById('json-textarea');
-    const cancelCorrectionBtn = document.getElementById('cancel-correction-btn');
-    const saveCorrectionBtn = document.getElementById('save-correction-btn');
+    const navbar = document.getElementById("navbar");
+    const navWorldName = document.getElementById("nav-world-name");
+    const profileBtn = document.getElementById("profile-btn");
+    const storyExportBtn = document.getElementById("story-export-btn");
+    const adminLink = document.getElementById("admin-link");
+    const logoutBtn = document.getElementById("logout-btn");
 
-    // --- Anwendungs-Zustand ---
+    const usernameInput = document.getElementById("username");
+    const passwordInput = document.getElementById("password");
+    const loginButton = document.getElementById("login-button");
+    const loginError = document.getElementById("login-error");
+
+    const worldListContainer = document.getElementById("world-list");
+    const showCreateWorldBtn = document.getElementById("show-create-world-btn");
+    const createWorldButton = document.getElementById("create-world-button");
+    const cancelCreateBtn = document.getElementById("cancel-create-btn");
+    const createError = document.getElementById("create-error");
+
+    const gameTitle = document.getElementById("game-title");
+    const chatContainer = document.getElementById("chat-container");
+    const gameInputArea = document.getElementById("game-input-area");
+    const commandInput = document.getElementById("command-input");
+    const sendButton = document.getElementById("send-button");
+    const correctLastBtn = document.getElementById("correct-last-btn");
+
+    const attributeAllocator = document.getElementById("attribute-allocator");
+    const attributesContainer = document.getElementById("attributes-container");
+    const pointsDisplay = document.getElementById("points-display");
+
     let authToken = null;
     let currentUser = null;
-    let activeWorld = { world_id: null, player_id: null };
+    let activeWorld = { worldId: null, playerId: null, worldName: "" };
     let attributePoints = {};
-    let lastAIResponse = null; // Speichert die letzte AI-Antwort für Korrekturen
-    let lastServerActivity = 0; // Zeitstempel der letzten Server-Aktivität für Warmup-Logik
 
-    // --- Utility Funktionen ---
-    
-    // HTML-Escaping Funktion für XSS-Schutz
-    function escapeHTML(str) {
-        if (typeof str !== 'string') return str;
-        return str
+    function escapeHtml(value) {
+        return String(value)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
     }
-    
-    function showScreen(screenName) {
-        Object.values(screens).forEach(screen => screen.classList.remove('active'));
-        if (screens[screenName]) {
-            screens[screenName].classList.add('active');
-        }
-        
-        // Show/hide navbar based on screen
-        if (screenName === 'login') {
-            navbar.classList.add('hidden');
-        } else {
-            navbar.classList.remove('hidden');
-            // Show admin link only for admins
-            if (currentUser && currentUser.roles && currentUser.roles.includes('admin')) {
-                adminLink.classList.remove('hidden');
-            } else {
-                adminLink.classList.add('hidden');
+
+    function decodeJwtPayload(token) {
+        try {
+            const parts = token.split(".");
+            if (parts.length !== 3) {
+                return null;
             }
+            const payloadPart = parts[1];
+            const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+            const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+            const json = atob(padded);
+            return JSON.parse(json);
+        } catch (error) {
+            console.error("Failed to decode JWT payload:", error);
+            return null;
         }
-        
-        // Show/hide game input area based on screen and game state
-        if (screenName === 'game' && activeWorld.world_id && activeWorld.player_id) {
-            gameInputArea.classList.add('active');
-        } else {
-            gameInputArea.classList.remove('active');
+    }
+
+    function stableUserIdFromUsername(username) {
+        let hash = 2166136261;
+        for (let i = 0; i < username.length; i += 1) {
+            hash ^= username.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
         }
-        
-        // Update feather icons after DOM changes
-        setTimeout(() => feather.replace(), 100);
+        const positive = Math.abs(hash | 0);
+        return (positive % 2000000000) + 1;
     }
 
-    function showModal(modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        setTimeout(() => feather.replace(), 100);
-    }
-
-    function hideModal(modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-
-    function showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg transform transition-all duration-300 translate-x-full`;
-        
-        if (type === 'success') {
-            notification.className += ' bg-green-600 text-white';
-        } else if (type === 'error') {
-            notification.className += ' bg-red-600 text-white';
-        } else {
-            notification.className += ' bg-blue-600 text-white';
+    function resolveLoginUserId(username, passwordValue) {
+        const numericCandidate = Number.parseInt(passwordValue, 10);
+        if (Number.isInteger(numericCandidate) && numericCandidate > 0) {
+            return numericCandidate;
         }
-        
-        notification.innerHTML = `
-            <div class="flex items-center space-x-2">
-                <i data-feather="${type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info'}" class="w-5 h-5"></i>
-                <span>${message}</span>
-            </div>
-        `;
-        
-        document.body.appendChild(notification);
-        feather.replace();
-        
-        // Animate in
-        setTimeout(() => {
-            notification.classList.remove('translate-x-full');
-        }, 100);
-        
-        // Remove after 5 seconds
-        setTimeout(() => {
-            notification.classList.add('translate-x-full');
-            setTimeout(() => {
-                document.body.removeChild(notification);
-            }, 300);
-        }, 5000);
+        return stableUserIdFromUsername(username);
     }
 
-    async function apiRequest(endpoint, method = 'GET', body = null) {
-        const headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
+    function parseCurrentUserFromToken(token) {
+        const payload = decodeJwtPayload(token);
+        if (!payload || payload.sub === undefined) {
+            return null;
+        }
+        const userId = Number.parseInt(String(payload.sub), 10);
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return null;
+        }
+        return {
+            user_id: userId,
+            username: String(payload.username || "player"),
+            roles: ["player"],
         };
-        
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    function showScreen(screenName) {
+        Object.values(screens).forEach((screen) => screen.classList.remove("active"));
+        if (screens[screenName]) {
+            screens[screenName].classList.add("active");
         }
-        
-        console.log('🚀 API Request:', {
-            url: `${API_BASE_URL}${endpoint}`,
-            method,
-            hasAuth: !!authToken,
-            bodyLength: body ? JSON.stringify(body).length : 0
-        });
-        
-        try {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : null,
-                credentials: 'include',  // Include cookies for CORS
-                mode: 'cors'            // Explicit CORS mode
-            });
-            
-            console.log('📡 Response status:', response.status, response.statusText);
-            
-            if (!response.ok) {
-                let errorMessage = `HTTP ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.detail || errorData.message || errorMessage;
-                } catch (parseError) {
-                    const textError = await response.text();
-                    errorMessage = textError || errorMessage;
-                }
-                throw new Error(errorMessage);
-            }
-            
-            const data = await response.json();
-            console.log('✅ API Success:', endpoint);
-            return data;
-            
-        } catch (error) {
-            console.error('❌ API Error:', {
-                endpoint,
-                method,
-                error: error.message,
-                type: error.name
-            });
-            
-            // Spezielle Behandlung für häufige Netzwerk-Fehler
-            if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                throw new Error('Verbindung zum Server fehlgeschlagen. Prüfen Sie, ob der Backend-Server läuft.');
-            } else if (error.name === 'AbortError') {
-                throw new Error('Anfrage wurde abgebrochen (Timeout).');
-            } else if (error.message.includes('CORS')) {
-                throw new Error('CORS-Fehler: Server-Konfiguration überprüfen.');
-            }
-            
-            throw error;
+
+        if (screenName === "login") {
+            navbar.classList.add("hidden");
+            gameInputArea.classList.remove("active");
+            return;
+        }
+
+        navbar.classList.remove("hidden");
+        if (screenName === "game" && activeWorld.worldId) {
+            gameInputArea.classList.add("active");
+        } else {
+            gameInputArea.classList.remove("active");
         }
     }
 
-    function displayMessage(htmlContent, type = 'story') {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'mb-4 p-4 rounded-lg';
-
-        // Sichere Verarbeitung: HTML-Escape ZUERST, dann Markdown-Parsing
-        let processedContent = escapeHTML(htmlContent);
-        processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-        processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
-
-        if (type === 'story') {
-            messageDiv.className += ' story-text text-gray-300 bg-gray-800 bg-opacity-50';
-            messageDiv.innerHTML = processedContent.split('\n').map(p => `<p>${p}</p>`).join('');
-        } else if (type === 'player') {
-            messageDiv.className += ' player-input-text text-blue-400 font-semibold bg-blue-900 bg-opacity-30';
-            messageDiv.innerHTML = `<div class="flex items-center space-x-2">
-                <i data-feather="user" class="w-4 h-4"></i>
-                <span>${escapeHTML(htmlContent)}</span>
-            </div>`;
-        } else if (type === 'event') {
-            messageDiv.className += ' text-yellow-400 bg-yellow-900 bg-opacity-30';
-            messageDiv.innerHTML = `<div class="flex items-center space-x-2">
-                <i data-feather="star" class="w-4 h-4"></i>
-                <span>${processedContent}</span>
-            </div>`;
+    function setLoading(button, loading, loadingLabel) {
+        if (!button) {
+            return;
         }
-        
-        chatContainer.appendChild(messageDiv);
-        feather.replace();
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
+        if (loading) {
+            button.disabled = true;
+            button.dataset.originalHtml = button.innerHTML;
+            button.innerHTML = `<span class="flex items-center justify-center space-x-2"><i data-feather="loader" class="w-5 h-5 animate-spin"></i><span>${escapeHtml(loadingLabel)}</span></span>`;
+            feather.replace();
+            return;
+        }
 
-    // --- Authentication ---
-
-    async function handleLogin() {
-        loginError.textContent = '';
-        loginButton.disabled = true;
-        
-        const originalText = loginButton.innerHTML;
-        loginButton.innerHTML = '<i data-feather="loader" class="w-5 h-5 animate-spin"></i>';
-        feather.replace();
-
-        console.log('🚀 Starting login process...');
-        console.log('🔧 Using API_BASE_URL:', API_BASE_URL);
-
-        try {
-            const formData = new FormData();
-            formData.append('username', usernameInput.value);
-            formData.append('password', passwordInput.value);
-
-            console.log('📡 Making login request to:', `${API_BASE_URL}/token`);
-            console.log('🌐 User agent:', navigator.userAgent);
-
-            const response = await fetch(`${API_BASE_URL}/token`, { 
-                method: 'POST', 
-                body: formData,
-                mode: 'cors',
-                credentials: 'same-origin'
-            });
-            
-            console.log('📨 Response received:', {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok,
-                headers: Object.fromEntries(response.headers.entries())
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Anmeldung fehlgeschlagen.');
-            }
-            const data = await response.json();
-            console.log('✅ Login successful:', data);
-            
-            authToken = data.access_token;
-            localStorage.setItem('lastStrawberryToken', authToken);
-            
-            // Get user profile
-            await loadUserProfile();
-            
-            await loadWorlds();
-            showScreen('worldSelection');
-            showNotification('Erfolgreich angemeldet!', 'success');
-        } catch (error) {
-            console.error('❌ Login failed:', error);
-            console.error('❌ Error details:', {
-                message: error.message,
-                stack: error.stack,
-                name: error.name
-            });
-            
-            loginError.textContent = `Fehler: ${error.message}`;
-            showNotification(`Anmeldung fehlgeschlagen: ${error.message}`, 'error');
-        } finally {
-            loginButton.disabled = false;
-            loginButton.innerHTML = originalText;
+        button.disabled = false;
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+            delete button.dataset.originalHtml;
             feather.replace();
         }
     }
 
-    async function loadUserProfile() {
+    function showNotification(message, type = "info") {
+        const toast = document.createElement("div");
+        toast.className = "fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white";
+
+        if (type === "success") {
+            toast.classList.add("bg-green-600");
+        } else if (type === "error") {
+            toast.classList.add("bg-red-600");
+        } else {
+            toast.classList.add("bg-blue-600");
+        }
+
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 3500);
+    }
+
+    async function apiRequest(path, options = {}) {
+        const method = options.method || "GET";
+        const body = options.body ?? null;
+        const timeoutMs = window.LastStrawberryConfig?.REQUEST_TIMEOUT_MS || 30000;
+
+        const headers = {
+            Accept: "application/json",
+        };
+        if (body !== null) {
+            headers["Content-Type"] = "application/json";
+        }
+        if (authToken) {
+            headers.Authorization = `Bearer ${authToken}`;
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
         try {
-            currentUser = await apiRequest('/profile');
-            profileUsername.textContent = currentUser.username;
-            profileRoles.textContent = `Rollen: ${currentUser.roles.join(', ')}`;
-            profileAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
+            const response = await fetch(`${API_BASE_URL}${path}`, {
+                method,
+                headers,
+                body: body === null ? null : JSON.stringify(body),
+                mode: "cors",
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                let detail = `HTTP ${response.status}`;
+                try {
+                    const payload = await response.json();
+                    if (payload && typeof payload.detail === "string") {
+                        detail = payload.detail;
+                    }
+                } catch (_error) {
+                    // ignore parse failure
+                }
+                throw new Error(detail);
+            }
+
+            const contentType = response.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+                return null;
+            }
+            return await response.json();
         } catch (error) {
-            console.error('Failed to load user profile:', error);
+            if (error.name === "AbortError") {
+                throw new Error("Request timeout.");
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    function displayMessage(content, type = "story") {
+        const wrapper = document.createElement("div");
+        wrapper.className = "mb-4 p-4 rounded-lg";
+
+        if (type === "player") {
+            wrapper.classList.add("text-blue-300", "bg-blue-900", "bg-opacity-30", "font-semibold");
+        } else if (type === "event") {
+            wrapper.classList.add("text-yellow-300", "bg-yellow-900", "bg-opacity-30");
+        } else {
+            wrapper.classList.add("text-gray-200", "bg-gray-800", "bg-opacity-50", "story-text");
+        }
+
+        const safeText = escapeHtml(content || "");
+        wrapper.innerHTML = safeText
+            .split("\n")
+            .map((line) => `<p>${line}</p>`)
+            .join("");
+
+        chatContainer.appendChild(wrapper);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function resetActiveWorld() {
+        activeWorld = { worldId: null, playerId: null, worldName: "" };
+        navWorldName.textContent = "";
+        gameTitle.textContent = "Last-Strawberry Adventure";
+        chatContainer.innerHTML = "";
+        gameInputArea.classList.remove("active");
+    }
+
+    function clearCreateWorldForm() {
+        const ids = [
+            "new-world-name",
+            "new-world-lore",
+            "new-char-name",
+            "new-char-backstory",
+        ];
+        ids.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = "";
+            }
+        });
+        createError.textContent = "";
+        setupAttributeAllocator();
+    }
+
+    function buildWorldDescription() {
+        const lore = (document.getElementById("new-world-lore")?.value || "").trim();
+        const charName = (document.getElementById("new-char-name")?.value || "").trim();
+        const backstory = (document.getElementById("new-char-backstory")?.value || "").trim();
+        const attrs = ATTRIBUTES.map((attr) => `${attr}:${attributePoints[attr]}`).join(", ");
+        return [
+            lore ? `Lore: ${lore}` : "",
+            charName ? `Character: ${charName}` : "",
+            backstory ? `Backstory: ${backstory}` : "",
+            `Attributes: ${attrs}`,
+        ]
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    function setupAttributeAllocator() {
+        attributePoints = {};
+        ATTRIBUTES.forEach((attr) => {
+            attributePoints[attr] = 10;
+        });
+
+        attributesContainer.innerHTML = "";
+        ATTRIBUTES.forEach((attr) => {
+            const row = document.createElement("div");
+            row.className = "glass-card p-4 rounded-lg";
+            row.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-white">${escapeHtml(attr)}</span>
+                    <span id="val-${escapeHtml(attr)}" class="text-lg font-bold text-purple-300">${attributePoints[attr]}</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="attr-btn btn-secondary px-3 py-1 rounded" data-attr="${escapeHtml(attr)}" data-delta="-1">-</button>
+                    <button class="attr-btn btn-primary px-3 py-1 rounded flex-1" data-attr="${escapeHtml(attr)}" data-delta="1">+</button>
+                </div>
+            `;
+            attributesContainer.appendChild(row);
+        });
+        updatePointsDisplay();
+        feather.replace();
+    }
+
+    function updatePointsDisplay() {
+        const spent = Object.values(attributePoints).reduce((sum, value) => sum + Number(value), 0);
+        const remaining = POINT_BUY_BUDGET - spent;
+        pointsDisplay.textContent = `Remaining points: ${remaining}`;
+        pointsDisplay.className = remaining === 0
+            ? "text-center font-bold mb-6 text-lg text-green-400"
+            : "text-center font-bold mb-6 text-lg text-yellow-400";
+    }
+
+    function renderWorlds(worlds) {
+        worldListContainer.innerHTML = "";
+
+        if (!Array.isArray(worlds) || worlds.length === 0) {
+            worldListContainer.innerHTML = `
+                <div class="text-center py-8">
+                    <i data-feather="globe" class="w-12 h-12 mx-auto text-gray-500 mb-4"></i>
+                    <p class="text-gray-300">No worlds yet.</p>
+                    <p class="text-gray-500 text-sm mt-1">Create your first world to begin.</p>
+                </div>
+            `;
+            feather.replace();
+            return;
+        }
+
+        worlds.forEach((world) => {
+            const card = document.createElement("div");
+            card.className = "glass-card p-4 rounded-lg hover:bg-opacity-80 transition-all cursor-pointer";
+            const createdAt = world.created_at ? new Date(world.created_at).toLocaleString() : "n/a";
+            card.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <div class="flex-1">
+                        <h4 class="font-semibold text-white">${escapeHtml(world.name)}</h4>
+                        <p class="text-sm text-gray-400 mt-1">${escapeHtml(world.description || "No description")}</p>
+                        <p class="text-xs text-gray-500 mt-1">Created: ${escapeHtml(createdAt)}</p>
+                    </div>
+                    <i data-feather="play-circle" class="w-5 h-5 text-purple-400"></i>
+                </div>
+            `;
+            card.addEventListener("click", () => startGame(world));
+            worldListContainer.appendChild(card);
+        });
+        feather.replace();
+    }
+
+    async function loadWorlds() {
+        const worlds = await apiRequest("/v2/worlds");
+        renderWorlds(worlds || []);
+    }
+
+    async function handleLogin() {
+        loginError.textContent = "";
+        const username = (usernameInput.value || "").trim();
+        if (!username) {
+            loginError.textContent = "Username is required.";
+            return;
+        }
+
+        setLoading(loginButton, true, "Signing in");
+        try {
+            const userId = resolveLoginUserId(username, passwordInput.value || "");
+            const result = await apiRequest("/v2/auth/login", {
+                method: "POST",
+                body: { user_id: userId, username },
+            });
+            authToken = result.access_token;
+            localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
+            currentUser = parseCurrentUserFromToken(authToken) || { user_id: userId, username, roles: ["player"] };
+            await loadWorlds();
+            showScreen("worldSelection");
+            showNotification("Login successful.", "success");
+        } catch (error) {
+            loginError.textContent = error.message;
+            showNotification(`Login failed: ${error.message}`, "error");
+        } finally {
+            setLoading(loginButton, false, "");
         }
     }
 
     function handleLogout() {
         authToken = null;
         currentUser = null;
-        localStorage.removeItem('lastStrawberryToken');
-        
-        // Reset game state and hide input area
-        activeWorld = { world_id: null, player_id: null };
-        gameInputArea.classList.remove('active');
-        chatContainer.innerHTML = '';
-        
-        showScreen('login');
-        showNotification('Erfolgreich abgemeldet!', 'success');
-        
-        // Clear forms
-        usernameInput.value = '';
-        passwordInput.value = '';
-        loginError.textContent = '';
-    }
-
-    // --- Profile Management ---
-
-    async function handlePasswordChange() {
-        passwordError.textContent = '';
-        passwordSuccess.textContent = '';
-        
-        const currentPassword = currentPasswordInput.value;
-        const newPassword = newPasswordInput.value;
-        const confirmPassword = confirmPasswordInput.value;
-        
-        if (!currentPassword || !newPassword || !confirmPassword) {
-            passwordError.textContent = 'Alle Felder sind erforderlich.';
-            return;
-        }
-        
-        if (newPassword !== confirmPassword) {
-            passwordError.textContent = 'Die neuen Passwörter stimmen nicht überein.';
-            return;
-        }
-        
-        if (newPassword.length < 6) {
-            passwordError.textContent = 'Das neue Passwort muss mindestens 6 Zeichen lang sein.';
-            return;
-        }
-        
-        savePasswordBtn.disabled = true;
-        const originalText = savePasswordBtn.textContent;
-        savePasswordBtn.textContent = 'Speichere...';
-        
-        try {
-            await apiRequest('/profile/password', 'PUT', {
-                current_password: currentPassword,
-                new_password: newPassword
-            });
-            
-            passwordSuccess.textContent = 'Passwort erfolgreich geändert!';
-            showNotification('Passwort erfolgreich geändert!', 'success');
-            
-            // Clear form
-            currentPasswordInput.value = '';
-            newPasswordInput.value = '';
-            confirmPasswordInput.value = '';
-            
-            // Close modal after 2 seconds
-            setTimeout(() => {
-                hideModal(passwordModal);
-            }, 2000);
-            
-        } catch (error) {
-            passwordError.textContent = error.message;
-            showNotification(`Fehler beim Ändern des Passworts: ${error.message}`, 'error');
-        } finally {
-            savePasswordBtn.disabled = false;
-            savePasswordBtn.textContent = originalText;
-        }
-    }
-
-    // --- World Management ---
-
-    async function loadWorlds() {
-        try {
-            const data = await apiRequest('/worlds');
-            worldListContainer.innerHTML = '';
-            
-            if (data.worlds.length === 0) {
-                worldListContainer.innerHTML = `
-                    <div class="text-center py-8">
-                        <i data-feather="globe" class="w-12 h-12 mx-auto text-gray-500 mb-4"></i>
-                        <p class="text-gray-400">Noch keine Welten vorhanden.</p>
-                        <p class="text-gray-500 text-sm">Erstelle eine neue Welt, um dein Abenteuer zu beginnen!</p>
-                    </div>
-                `;
-                feather.replace();
-            } else {
-                data.worlds.forEach(world => {
-                    const worldDiv = document.createElement('div');
-                    worldDiv.className = 'glass-card p-4 rounded-lg hover:bg-opacity-80 transition-all cursor-pointer group';
-                    worldDiv.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <div class="flex-1">
-                                <h4 class="font-semibold text-white group-hover:text-purple-300 transition-colors">${escapeHTML(world.world_name)}</h4>
-                                <p class="text-sm text-gray-400 mt-1">Spieler: ${escapeHTML(world.character_name || 'Unbekannt')}</p>
-                                <p class="text-xs text-gray-500 mt-1">Erstellt: ${escapeHTML(new Date(world.created_at).toLocaleDateString('de-DE'))}</p>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <i data-feather="play-circle" class="w-5 h-5 text-purple-400"></i>
-                            </div>
-                        </div>
-                    `;
-                    worldDiv.addEventListener('click', () => {
-                        startGame(world.world_id, world.player_id, world.world_name);
-                    });
-                    worldListContainer.appendChild(worldDiv);
-                });
-                feather.replace();
-            }
-        } catch (error) {
-            worldListContainer.innerHTML = `
-                <div class="text-center py-8">
-                    <i data-feather="alert-circle" class="w-12 h-12 mx-auto text-red-500 mb-4"></i>
-                    <p class="text-red-400">${escapeHTML(error.message)}</p>
-                </div>
-            `;
-            feather.replace();
-            showNotification(`Fehler beim Laden der Welten: ${error.message}`, 'error');
-        }
-    }
-
-    // --- Character Creation ---
-
-    function setupAttributeAllocator() {
-        const container = document.getElementById('attributes-container');
-        container.innerHTML = '';
-        attributePoints = {};
-        
-        ATTRIBUTES.forEach(attr => {
-            attributePoints[attr] = 10;
-            const attrDiv = document.createElement('div');
-            attrDiv.className = 'glass-card p-4 rounded-lg';
-            attrDiv.innerHTML = `
-                <div class="text-center">
-                    <label class="font-medium text-white block mb-3">${attr}</label>
-                    <div class="flex items-center justify-center space-x-3">
-                        <button data-attr="${attr}" data-delta="-1" class="attr-btn w-10 h-10 bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors">
-                            <i data-feather="minus" class="w-4 h-4"></i>
-                        </button>
-                        <span id="val-${attr}" class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl font-bold text-white">10</span>
-                        <button data-attr="${attr}" data-delta="1" class="attr-btn w-10 h-10 bg-green-600 hover:bg-green-700 text-white rounded-full transition-colors">
-                            <i data-feather="plus" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-            container.appendChild(attrDiv);
-        });
-        feather.replace();
-        updatePointsDisplay();
-    }
-
-    function updatePointsDisplay() {
-        const totalSpent = Object.values(attributePoints).reduce((sum, val) => sum + val, 0);
-        const remaining = POINT_BUY_BUDGET - totalSpent;
-        const display = document.getElementById('points-display');
-        
-        display.innerHTML = `
-            <div class="flex items-center justify-center space-x-2">
-                <i data-feather="zap" class="w-5 h-5"></i>
-                <span>Verbleibende Punkte: ${remaining}</span>
-            </div>
-        `;
-        
-        createWorldButton.disabled = remaining !== 0;
-        
-        if (remaining === 0) {
-            display.className = 'text-center font-bold mb-6 text-lg text-green-400';
-        } else {
-            display.className = 'text-center font-bold mb-6 text-lg text-red-400';
-        }
-        
-        feather.replace();
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        resetActiveWorld();
+        showScreen("login");
+        showNotification("Logged out.", "info");
     }
 
     async function handleCreateWorld() {
-        const createError = document.getElementById('create-error');
-        createError.textContent = '';
-        createWorldButton.disabled = true;
-        
-        const originalText = createWorldButton.innerHTML;
-        createWorldButton.innerHTML = '<i data-feather="loader" class="w-5 h-5 animate-spin"></i> <span>Erschaffe...</span>';
-        feather.replace();
-        
+        createError.textContent = "";
+        const name = (document.getElementById("new-world-name")?.value || "").trim();
+        if (!name) {
+            createError.textContent = "World name is required.";
+            return;
+        }
+
+        setLoading(createWorldButton, true, "Creating");
         try {
-            const worldData = {
-                world_name: document.getElementById('new-world-name').value,
-                lore: document.getElementById('new-world-lore').value,
-                char_name: document.getElementById('new-char-name').value,
-                backstory: document.getElementById('new-char-backstory').value,
-                attributes: attributePoints
-            };
-            
-            if (!worldData.world_name || !worldData.lore || !worldData.char_name || !worldData.backstory) {
-                throw new Error("Alle Felder für die neue Welt sind erforderlich.");
-            }
-            
-            const data = await apiRequestWithWarmup('/worlds/create', 'POST', worldData);
-            showNotification('Welt erfolgreich erstellt!', 'success');
-            startGame(data.world_id, data.player_id, worldData.world_name, data.initial_story);
-            
+            const description = buildWorldDescription();
+            const world = await apiRequest("/v2/worlds", {
+                method: "POST",
+                body: { name, description },
+            });
+            clearCreateWorldForm();
+            await loadWorlds();
+            showScreen("worldSelection");
+            showNotification("World created.", "success");
+            await startGame(world);
         } catch (error) {
-            createError.textContent = `Fehler: ${error.message}`;
-            showNotification(`Fehler beim Erstellen der Welt: ${error.message}`, 'error');
+            createError.textContent = error.message;
+            showNotification(`Create world failed: ${error.message}`, "error");
         } finally {
-            createWorldButton.disabled = false;
-            createWorldButton.innerHTML = originalText;
-            feather.replace();
+            setLoading(createWorldButton, false, "");
         }
     }
 
-    // --- Game Logic ---
+    async function startGame(world) {
+        activeWorld = {
+            worldId: Number(world.id),
+            playerId: currentUser?.user_id || 1,
+            worldName: world.name || "Unknown world",
+        };
+        gameTitle.textContent = `Adventure in: ${activeWorld.worldName}`;
+        navWorldName.textContent = `World: ${activeWorld.worldName}`;
+        chatContainer.innerHTML = "";
+        showScreen("game");
+        displayMessage(`Loaded world "${activeWorld.worldName}".`, "event");
 
-    async function startGame(worldId, playerId, worldName, initialStory = null) {
-        activeWorld.world_id = worldId;
-        activeWorld.player_id = playerId;
-        gameTitle.textContent = `Abenteuer in: ${worldName}`;
-        navWorldName.textContent = `Welt: ${worldName}`;
-        showScreen('game');
-        chatContainer.innerHTML = '';
-
-        if (initialStory) {
-            displayMessage(initialStory, 'story');
-            // Aktiviere die Eingabemaske nach dem ersten Story-Text
-            gameInputArea.classList.add('active');
-            commandInput.focus();
-        } else {
-            displayMessage('Lade Spielzusammenfassung...', 'story');
-            try {
-                const data = await apiRequestWithWarmup(`/load_game_summary?world_id=${worldId}&player_id=${playerId}`);
-                chatContainer.innerHTML = '';
-                displayMessage(data.response || data.summary || 'Willkommen zurück! Was möchtest du tun?', 'story');
-                // Aktiviere die Eingabemaske nach dem Laden
-                gameInputArea.classList.add('active');
-                commandInput.focus();
-            } catch (error) {
-                chatContainer.innerHTML = '';
-                displayMessage(`Fehler beim Laden der Zusammenfassung: ${error.message}`, 'story');
-                // Aktiviere die Eingabemaske auch bei Fehlern
-                gameInputArea.classList.add('active');
-                commandInput.focus();
+        try {
+            const turns = await apiRequest(`/v2/worlds/${activeWorld.worldId}/turns?limit=30`);
+            const orderedTurns = Array.isArray(turns) ? [...turns].reverse() : [];
+            if (orderedTurns.length === 0) {
+                displayMessage("No turns yet. Start with your first command.", "story");
+            } else {
+                orderedTurns.forEach((turn) => {
+                    displayMessage(turn.player_command, "player");
+                    displayMessage(turn.narrative, "story");
+                });
             }
+        } catch (error) {
+            displayMessage(`Could not load turn history: ${error.message}`, "event");
         }
+
+        commandInput.focus();
     }
 
     async function sendCommand() {
-        const command = commandInput.value.trim();
-        if (!command || !authToken || !activeWorld.world_id) return;
+        const command = (commandInput.value || "").trim();
+        if (!command || !activeWorld.worldId || !activeWorld.playerId) {
+            return;
+        }
 
-        displayMessage(command, 'player');
-        commandInput.value = '';
+        displayMessage(command, "player");
+        commandInput.value = "";
         commandInput.disabled = true;
-        sendButton.disabled = true;
-        
-        sendButton.innerHTML = '<i data-feather="loader" class="w-5 h-5 animate-spin"></i>';
-        feather.replace();
+        setLoading(sendButton, true, "Sending");
 
         try {
-            const data = await apiRequestWithWarmup('/command', 'POST', {
-                command,
-                world_id: activeWorld.world_id,
-                player_id: activeWorld.player_id
+            const response = await apiRequest("/v2/game/turn", {
+                method: "POST",
+                body: {
+                    world_id: activeWorld.worldId,
+                    player_id: activeWorld.playerId,
+                    player_command: command,
+                },
             });
-            
-            if (!data.response) {
-                throw new Error('Keine Antwort vom Server erhalten.');
-            }
-
-            // Speichere die letzte AI-Antwort für Korrekturen
-            lastAIResponse = {
-                response: data.response,
-                event_type: data.event_type || 'STORY',
-                raw_data: data
-            };
-
-            if (data.event_type === 'STORY') {
-                displayMessage(data.response, 'story');
-            } else if (data.event_type === 'LEVEL_UP') {
-                displayMessage(data.response, 'event');
-            } else {
-                displayMessage(data.response, 'story');
-            }
-
+            displayMessage(response?.narrative || "No narrative returned.", "story");
         } catch (error) {
-            displayMessage(`Fehler: ${error.message}`, 'story');
-            showNotification(`Fehler beim Senden des Befehls: ${error.message}`, 'error');
+            displayMessage(`Error: ${error.message}`, "event");
         } finally {
             commandInput.disabled = false;
-            sendButton.disabled = false;
-            sendButton.innerHTML = '<i data-feather="send" class="w-5 h-5"></i>';
-            feather.replace();
+            setLoading(sendButton, false, "");
             commandInput.focus();
         }
     }
 
-    // --- Correction Functions ---
-
-    async function openCorrectionModal() {
-        if (!activeWorld.world_id || !activeWorld.player_id) {
-            showNotification('Keine aktive Spielwelt verfügbar.', 'error');
-            return;
-        }
-
-        try {
-            // Lade das letzte Event aus der Datenbank
-            showNotification('Lade letztes Event...', 'info');
-            
-            const data = await apiRequest(`/get_last_event?world_id=${activeWorld.world_id}&player_id=${activeWorld.player_id}`);
-            
-            if (!data || !data.event) {
-                showNotification('Kein Event zum Korrigieren verfügbar.', 'error');
-                return;
-            }
-
-            const event = data.event;
-            
-            // Fülle die Textfelder mit den Event-Daten
-            narrativeTextarea.value = event.ai_output || '';
-            jsonTextarea.value = event.extracted_commands_json || '[]';
-
-            showModal(correctionModal);
-            showNotification('Event-Daten geladen.', 'success');
-            
-        } catch (error) {
-            showNotification(`Fehler beim Laden des Events: ${error.message}`, 'error');
-        }
-    }
-
-    async function saveCorrectionData() {
-        try {
-            const narrativeText = narrativeTextarea.value.trim();
-            const jsonText = jsonTextarea.value.trim();
-
-            if (!narrativeText) {
-                showNotification('Erzähltext darf nicht leer sein.', 'error');
-                return;
-            }
-
-            // Validiere JSON
-            let jsonData;
-            try {
-                jsonData = JSON.parse(jsonText);
-            } catch (error) {
-                showNotification('Ungültiges JSON-Format in extracted_commands_json.', 'error');
-                return;
-            }
-
-            // Sende Korrektur an Backend
-            const correctionData = {
-                world_id: activeWorld.world_id,
-                player_id: activeWorld.player_id,
-                ai_output: narrativeText,
-                extracted_commands_json: jsonText
-            };
-
-            await apiRequest('/save_event_correction', 'POST', correctionData);
-
-            // Aktualisiere auch die Anzeige im Chat (falls die Korrektur den aktuell sichtbaren Text betrifft)
-            const storyMessages = chatContainer.querySelectorAll('.story-text');
-            if (storyMessages.length > 0) {
-                const lastStoryMessage = storyMessages[storyMessages.length - 1];
-                // Sichere Verarbeitung: HTML-Escape ZUERST, dann Markdown-Parsing
-                let processedContent = escapeHTML(narrativeText);
-                processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-                processedContent = processedContent.replace(/\*(.*?)\*/g, '<i>$1</i>');
-                lastStoryMessage.innerHTML = processedContent.split('\n').map(p => `<p>${p}</p>`).join('');
-            }
-
-            hideModal(correctionModal);
-            showNotification('Event-Korrektur erfolgreich gespeichert!', 'success');
-
-        } catch (error) {
-            showNotification(`Fehler beim Speichern der Korrektur: ${error.message}`, 'error');
-        }
-    }
-
-    // --- Event Listeners ---
-    
-    // Login
-    loginButton.addEventListener('click', handleLogin);
-    passwordInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleLogin();
-    });
-    
-    // Navigation
-    profileBtn.addEventListener('click', () => showModal(profileModal));
-    logoutBtn.addEventListener('click', handleLogout);
-    
-    // Profile modal
-    closeProfileModal.addEventListener('click', () => hideModal(profileModal));
-    changePasswordBtn.addEventListener('click', () => {
-        hideModal(profileModal);
-        showModal(passwordModal);
-    });
-    
-    // Password modal
-    closePasswordModal.addEventListener('click', () => hideModal(passwordModal));
-    cancelPasswordBtn.addEventListener('click', () => hideModal(passwordModal));
-    savePasswordBtn.addEventListener('click', handlePasswordChange);
-    
-    // World creation
-    showCreateWorldBtn.addEventListener('click', () => {
-        setupAttributeAllocator();
-        showScreen('createWorld');
-    });
-    cancelCreateBtn.addEventListener('click', () => showScreen('worldSelection'));
-    createWorldButton.addEventListener('click', handleCreateWorld);
-    
-    // Attribute allocation
-    document.getElementById('attribute-allocator').addEventListener('click', (e) => {
-        if (e.target.closest('.attr-btn')) {
-            const btn = e.target.closest('.attr-btn');
-            const attr = btn.dataset.attr;
-            const delta = parseInt(btn.dataset.delta);
-            const newValue = attributePoints[attr] + delta;
-            
-            if (newValue >= MIN_SCORE && newValue <= MAX_SCORE) {
-                attributePoints[attr] = newValue;
-                document.getElementById(`val-${attr}`).textContent = newValue;
-                updatePointsDisplay();
-            }
-        }
-    });
-    
-    // Game
-    sendButton.addEventListener('click', sendCommand);
-    commandInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendCommand();
-    });
-    
-    // Correction modal
-    correctLastBtn.addEventListener('click', openCorrectionModal);
-    closeCorrectionModal.addEventListener('click', () => hideModal(correctionModal));
-    cancelCorrectionBtn.addEventListener('click', () => hideModal(correctionModal));
-    saveCorrectionBtn.addEventListener('click', saveCorrectionData);
-    
-    // Story Export modal
-    storyExportBtn.addEventListener('click', () => {
-        showModal(storyExportModal);
-        loadExportWorldOptions();
-    });
-    closeStoryExportModal.addEventListener('click', () => hideModal(storyExportModal));
-    cancelExportBtn.addEventListener('click', () => hideModal(storyExportModal));
-    startExportBtn.addEventListener('click', startStoryExport);
-    
-    // Close modals on outside click
-    [profileModal, passwordModal, correctionModal, storyExportModal].forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                hideModal(modal);
+    function hideUnsupportedControls() {
+        [profileBtn, storyExportBtn, correctLastBtn, adminLink].forEach((el) => {
+            if (el) {
+                el.classList.add("hidden");
             }
         });
-    });
-
-    // --- Initialisierung ---
-    
-    // Initialisiere Warmup-System
-    lastServerActivity = Date.now();
-    
-    // Stelle sicher, dass beim ersten Laden nur der Login-Screen sichtbar ist
-    Object.values(screens).forEach(screen => screen.classList.remove('active'));
-    gameInputArea.classList.remove('active');
-    
-    const savedToken = localStorage.getItem('lastStrawberryToken');
-    if (savedToken) {
-        authToken = savedToken;
-        loadUserProfile().then(() => {
-            showScreen('worldSelection');
-            loadWorlds();
-        }).catch(() => {
-            // Token invalid, show login
-            handleLogout();
-        });
-    } else {
-        showScreen('login');
     }
 
-    // --- Story Export Funktionen ---
-    
-    async function loadExportWorldOptions() {
-        try {
-            // Populate world selection dropdown - for now just show current world
-            if (activeWorld.world_id) {
-                exportWorldSelect.innerHTML = '<option value="">Aktuelle Welt</option>';
-            } else {
-                exportWorldSelect.innerHTML = '<option value="">Keine aktive Welt</option>';
-            }
-        } catch (error) {
-            console.error('Error loading export world options:', error);
+    function restoreSession() {
+        const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+        if (!token) {
+            return false;
         }
+        const user = parseCurrentUserFromToken(token);
+        if (!user) {
+            localStorage.removeItem(TOKEN_STORAGE_KEY);
+            return false;
+        }
+        authToken = token;
+        currentUser = user;
+        return true;
     }
-    
-    async function startStoryExport() {
-        const format = exportFormatSelect.value;
-        const worldId = activeWorld.world_id;
-        
-        if (!worldId) {
-            showNotification('Keine aktive Welt zum Exportieren.', 'error');
+
+    loginButton.addEventListener("click", handleLogin);
+    passwordInput.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+            handleLogin();
+        }
+    });
+    usernameInput.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+            handleLogin();
+        }
+    });
+    logoutBtn.addEventListener("click", handleLogout);
+
+    showCreateWorldBtn.addEventListener("click", () => {
+        clearCreateWorldForm();
+        showScreen("createWorld");
+    });
+    cancelCreateBtn.addEventListener("click", async () => {
+        showScreen("worldSelection");
+        await loadWorlds();
+    });
+    createWorldButton.addEventListener("click", handleCreateWorld);
+
+    attributeAllocator.addEventListener("click", (event) => {
+        const button = event.target.closest(".attr-btn");
+        if (!button) {
             return;
         }
-        
-        try {
-            startExportBtn.disabled = true;
-            startExportBtn.innerHTML = '<i data-feather="loader" class="w-4 h-4 mr-2 animate-spin"></i>Exportiere...';
-            feather.replace();
-            
-            const response = await fetch(`${API_BASE_URL}/export-story/${worldId}?format=${format}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                    'Content-Type': 'application/json',
-                }
+        const attr = button.dataset.attr;
+        const delta = Number.parseInt(button.dataset.delta || "0", 10);
+        const current = Number(attributePoints[attr] || 10);
+        const next = current + delta;
+        if (next < MIN_SCORE || next > MAX_SCORE) {
+            return;
+        }
+        attributePoints[attr] = next;
+        const valueEl = document.getElementById(`val-${attr}`);
+        if (valueEl) {
+            valueEl.textContent = String(next);
+        }
+        updatePointsDisplay();
+    });
+
+    sendButton.addEventListener("click", sendCommand);
+    commandInput.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+            sendCommand();
+        }
+    });
+
+    hideUnsupportedControls();
+    setupAttributeAllocator();
+    resetActiveWorld();
+
+    if (restoreSession()) {
+        loadWorlds()
+            .then(() => showScreen("worldSelection"))
+            .catch((error) => {
+                console.error("Session restore failed:", error);
+                handleLogout();
             });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Export fehlgeschlagen');
-            }
-
-            // Get filename from response headers or create default
-            let filename = `story_export_${worldId}.${format}`;
-            const contentDisposition = response.headers.get('content-disposition');
-            if (contentDisposition && contentDisposition.includes('filename=')) {
-                filename = contentDisposition.split('filename=')[1].replace(/"/g, '');
-            }
-
-            // Download the file
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            showNotification('Story erfolgreich exportiert!', 'success');
-            hideModal(storyExportModal);
-
-        } catch (error) {
-            console.error('Story export error:', error);
-            showNotification(`Export-Fehler: ${error.message}`, 'error');
-        } finally {
-            startExportBtn.disabled = false;
-            startExportBtn.innerHTML = '<i data-feather="download" class="w-4 h-4 mr-2"></i>Export starten';
-            feather.replace();
-        }
+    } else {
+        showScreen("login");
     }
-    
-    // --- Cloud Run Warmup System für kosteneffiziente Nutzung ---
-    const WARMUP_THRESHOLD = 5 * 60 * 1000; // 5 Minuten
-    
-    async function warmupServerIfNeeded() {
-        const now = Date.now();
-        const timeSinceLastActivity = now - lastServerActivity;
-        
-        // Für lokale Entwicklung: Verkürzte Warmup-Schwelle
-        const isLocal = API_BASE_URL.includes('localhost') || API_BASE_URL.includes('127.0.0.1');
-        const threshold = isLocal ? 1 * 60 * 1000 : WARMUP_THRESHOLD; // 1 Minute für lokal, 5 für Cloud
-        
-        if (timeSinceLastActivity > threshold) {
-            console.log(`⏰ Server potentially cold (${Math.round(timeSinceLastActivity/1000)}s idle), warming up...`);
-            await performWarmupPings();
-            lastServerActivity = now;
-        }
-    }
-    
-    async function performWarmupPings() {
-        const maxRetries = 3; // Reduziert von 5 für lokale Entwicklung
-        let successful = false;
-        
-        for (let i = 0; i < maxRetries && !successful; i++) {
-            try {
-                console.log(`Warmup ping ${i + 1}/${maxRetries}...`);
-                const response = await fetch(`${API_BASE_URL}/ping`, {
-                    method: 'GET',
-                    headers: { 
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    credentials: 'include',
-                    mode: 'cors',
-                    signal: AbortSignal.timeout(5000) // 5s timeout für lokale Verbindungen
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('✅ Server warmup successful:', data.timestamp);
-                    successful = true;
-                } else {
-                    console.warn(`⚠️ Warmup ping ${i + 1} failed:`, response.status);
-                    // Für lokale Entwicklung: kürzere Wartezeiten
-                    if (i < maxRetries - 1) {
-                        const delay = 2000; // 2 Sekunden für lokale Tests
-                        console.log(`⏳ Waiting ${delay / 1000} seconds before next ping attempt...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            } catch (error) {
-                console.warn(`❌ Warmup ping ${i + 1} error:`, error.message);
-                // Für lokale Entwicklung: kürzere Wartezeiten bei Fehlern
-                if (i < maxRetries - 1) {
-                    const delay = 1000; // 1 Sekunde
-                    console.log(`⏳ Waiting ${delay / 1000} seconds before next ping attempt...`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-        }
-        
-        if (!successful) {
-            console.warn('⚠️ Server warmup failed after all retries - continuing anyway for local development');
-        }
-        return successful;
-    }
-    
-    // Erweiterte apiRequest-Funktion mit Warmup
-    async function apiRequestWithWarmup(endpoint, method = 'GET', body = null) {
-        // Warmup nur bei wichtigen API-Calls (nicht bei ping selbst)
-        if (endpoint !== '/ping') {
-            await warmupServerIfNeeded(); // Ensure server is warm before making the request
-        }
-        
-        const result = await apiRequest(endpoint, method, body);
-        lastServerActivity = Date.now(); // Aktualisiere letzte Aktivität
-        return result;
-    }
-    
-    // Initialize feather icons
+
     feather.replace();
 });

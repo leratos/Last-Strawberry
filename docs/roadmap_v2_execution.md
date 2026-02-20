@@ -114,6 +114,7 @@ Zeitraum: 01.04.2026 - 21.04.2026
 - Monitoring-Operationalisierung erweitert: automatisierter SLO-Smoke (`backend_v2/scripts/smoke_slo.py`) und importierbares Grafana-Dashboard (`docs/grafana_dashboard_backend_v2.json`).
 - Lokales Monitoring-Testen erweitert: PowerShell-Generator fuer gezielte Event-Simulation (`backend_v2/scripts/generate_monitoring_events.ps1`).
 - Monitoring-Betrieb weiter gehaertet: End-to-End Stack-Smoke (`backend_v2/scripts/smoke_monitoring_stack.py`) fuer Backend/Prometheus (optional Grafana API).
+- Frontend-MVP auf `/v2`-API angebunden (`web_frontend`): Login (`/v2/auth/login`), Weltenliste/Erstellung (`GET/POST /v2/worlds`), Turn-Loop (`/v2/game/turn`) und Verlaufsladen (`/v2/worlds/{world_id}/turns`); Legacy-UI-Aktionen ohne V2-Backend (Profil/Admin/Export/Korrektur) werden im MVP ausgeblendet.
 
 ---
 

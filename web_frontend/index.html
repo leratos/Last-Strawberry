@@ -146,9 +146,11 @@
                 <div>
                     <label for="password" class="text-sm font-medium text-gray-300 block mb-2">Passwort</label>
                     <input type="password" id="password" name="password" value=""
-                           class="input-field w-full px-4 py-3 text-white rounded-lg focus:outline-none">
+                           class="input-field w-full px-4 py-3 text-white rounded-lg focus:outline-none"
+                           placeholder="Optional: numerische User-ID fuer wiederholbare Logins">
                 </div>
             </div>
+            <p class="text-xs text-gray-500 text-center">MVP-Hinweis: Fuer V2 wird aktuell Username + User-ID-Token-Login verwendet.</p>
             <button id="login-button" class="btn-primary w-full px-4 py-3 font-semibold text-white rounded-lg">
                 <span class="flex items-center justify-center space-x-2">
                     <i data-feather="log-in" class="w-5 h-5"></i>
