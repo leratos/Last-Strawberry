@@ -40,6 +40,8 @@ class RetrievalMetricsCollector:
             self.http_by_status: dict[str, int] = {}
             self.audit_events: dict[str, int] = {}
             self.error_categories: dict[str, int] = {}
+            self.model_route_counts: dict[tuple[str, str, str, bool], int] = {}
+            self.model_attempt_errors: dict[tuple[str, str], int] = {}
             self._http_events: deque[tuple[float, int]] = deque()
             self._audit_event_times: dict[str, deque[float]] = {}
 
@@ -122,6 +124,22 @@ class RetrievalMetricsCollector:
         with self._lock:
             self.error_categories[category] = self.error_categories.get(category, 0) + 1
 
+    def record_model_route(self, *, stage: str, requested_model: str, used_model: str) -> None:
+        with self._lock:
+            stage_clean = stage.strip() or "unknown"
+            requested_clean = requested_model.strip() or "unknown"
+            used_clean = used_model.strip() or "unknown"
+            fallback_used = requested_clean != used_clean
+            key = (stage_clean, requested_clean, used_clean, fallback_used)
+            self.model_route_counts[key] = self.model_route_counts.get(key, 0) + 1
+
+    def record_model_attempt_error(self, *, stage: str, model: str) -> None:
+        with self._lock:
+            stage_clean = stage.strip() or "unknown"
+            model_clean = model.strip() or "unknown"
+            key = (stage_clean, model_clean)
+            self.model_attempt_errors[key] = self.model_attempt_errors.get(key, 0) + 1
+
     @staticmethod
     def _rate_per_minute(count: int, window_seconds: int) -> float:
         if window_seconds <= 0:
@@ -185,5 +203,25 @@ class RetrievalMetricsCollector:
                 },
                 "audit_events": dict(self.audit_events),
                 "error_categories": dict(self.error_categories),
+                "model_routing": {
+                    "routes": [
+                        {
+                            "stage": stage,
+                            "requested_model": requested,
+                            "used_model": used,
+                            "fallback": fallback,
+                            "count": count,
+                        }
+                        for (stage, requested, used, fallback), count in sorted(self.model_route_counts.items())
+                    ],
+                    "attempt_errors": [
+                        {
+                            "stage": stage,
+                            "model": model,
+                            "count": count,
+                        }
+                        for (stage, model), count in sorted(self.model_attempt_errors.items())
+                    ],
+                },
                 "windowed_rates": windowed_rates,
             }

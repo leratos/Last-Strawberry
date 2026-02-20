@@ -72,6 +72,17 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         collector.record_error_category("provider")
         collector.record_error_category("provider")
         collector.record_error_category("auth")
+        collector.record_model_route(
+            stage="analysis",
+            requested_model="model-primary",
+            used_model="model-fallback",
+        )
+        collector.record_model_route(
+            stage="narrative",
+            requested_model="model-primary",
+            used_model="model-primary",
+        )
+        collector.record_model_attempt_error(stage="analysis", model="model-primary")
 
         snapshot = collector.snapshot()
         self.assertEqual(snapshot["http_status"]["total"], 5)
@@ -84,6 +95,20 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["audit_events"]["auth_failed"], 2)
         self.assertEqual(snapshot["error_categories"]["provider"], 2)
         self.assertEqual(snapshot["error_categories"]["auth"], 1)
+
+        model_routing = snapshot["model_routing"]
+        self.assertEqual(len(model_routing["routes"]), 2)
+
+        fallback_route = next(route for route in model_routing["routes"] if route["stage"] == "analysis")
+        self.assertTrue(fallback_route["fallback"])
+        self.assertEqual(fallback_route["requested_model"], "model-primary")
+        self.assertEqual(fallback_route["used_model"], "model-fallback")
+        self.assertEqual(fallback_route["count"], 1)
+
+        attempt_error = model_routing["attempt_errors"][0]
+        self.assertEqual(attempt_error["stage"], "analysis")
+        self.assertEqual(attempt_error["model"], "model-primary")
+        self.assertEqual(attempt_error["count"], 1)
         self.assertIn("60s", snapshot["windowed_rates"])
         self.assertIn("requests_per_minute", snapshot["windowed_rates"]["60s"])
 
@@ -109,6 +134,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["http_status"]["total"], 0)
         self.assertEqual(snapshot["audit_events"], {})
         self.assertEqual(snapshot["error_categories"], {})
+        self.assertEqual(snapshot["model_routing"]["routes"], [])
+        self.assertEqual(snapshot["model_routing"]["attempt_errors"], [])
         self.assertEqual(snapshot["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
 
     def test_windowed_rates_use_time_window(self):
