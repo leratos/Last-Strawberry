@@ -95,6 +95,12 @@ Zeitraum: 01.04.2026 - 21.04.2026
 - V2 Beta-Ready.
 - Migration von Testnutzern auf V2 moeglich.
 
+### Fortschritt (20.02.2026, vorgezogen umgesetzt)
+- Parallel-Turn Last-/Fehlertests als automatisierte API-Tests hinzugefuegt (`backend_v2/tests/test_parallel_turns.py`):
+  - Burst mit aktivem Limiter (`200` + `429` gemischt, inkl. Metrik-Validierung)
+  - Burst mit simuliertem Provider-Ausfall (`502`, inkl. Error-Metrik-Validierung)
+- Lokales Lasttest-CLI fuer manuelle Bursts hinzugefuegt (`backend_v2/scripts/run_parallel_turn_load.py`).
+
 ---
 
 ## Phase 4: Produktiv-Cutover

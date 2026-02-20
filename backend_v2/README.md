@@ -49,6 +49,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Optional metrics API key hardening for Prometheus endpoint: `LS_METRICS_API_KEY` and `LS_METRICS_API_KEY_HEADER`.
 - If `LS_METRICS_API_KEY` is set, `/v2/metrics/prometheus` requires that header and no Bearer token.
 - Monitoring runbook and scrape examples: `docs/monitoring_prometheus_v2.md`.
+- Parallel turn burst test helper: `backend_v2/scripts/run_parallel_turn_load.py` (guide: `docs/parallel_turn_load_tests_v2.md`).
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
 - Provider and persistence error details are sanitized to avoid leaking secrets or internal details.
