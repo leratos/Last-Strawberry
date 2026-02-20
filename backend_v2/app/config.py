@@ -91,6 +91,8 @@ def _discover_windows_keyring_services(username: str) -> list[str]:
             ["cmdkey", "/list"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except Exception:
