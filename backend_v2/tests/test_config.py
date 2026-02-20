@@ -27,6 +27,15 @@ class TestConfig(unittest.TestCase):
             settings = Settings.from_env()
         self.assertEqual(settings.openrouter_api_key, "fallback-key-456")
 
+    def test_ignores_placeholder_ls_key_and_uses_openrouter_api_key(self):
+        with patch.dict(
+            os.environ,
+            {"LS_OPENROUTER_API_KEY": "replace_me", "OPENROUTER_API_KEY": "fallback-key-999"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+        self.assertEqual(settings.openrouter_api_key, "fallback-key-999")
+
     def test_keyring_fallback(self):
         fake_keyring = types.ModuleType("keyring")
 
@@ -50,6 +59,30 @@ class TestConfig(unittest.TestCase):
             settings = Settings.from_env()
 
         self.assertEqual(settings.openrouter_api_key, "keyring-secret-789")
+
+    def test_ignores_placeholder_env_and_uses_keyring_fallback(self):
+        fake_keyring = types.ModuleType("keyring")
+
+        def fake_get_password(service, username):
+            if service == "OPENROUTER_API_KEY" and username == "default":
+                return "keyring-secret-000"
+            return None
+
+        fake_keyring.get_password = fake_get_password
+
+        with patch.dict(
+            os.environ,
+            {
+                "LS_OPENROUTER_API_KEY": "replace_me",
+                "OPENROUTER_API_KEY": "",
+                "LS_OPENROUTER_KEYRING_SERVICE": "OPENROUTER_API_KEY",
+                "LS_OPENROUTER_KEYRING_USERNAME": "default",
+            },
+            clear=False,
+        ), patch.dict(sys.modules, {"keyring": fake_keyring}):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.openrouter_api_key, "keyring-secret-000")
 
     def test_windows_credential_discovery_parser(self):
         fake_output = (

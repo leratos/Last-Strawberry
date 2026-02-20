@@ -6,6 +6,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from backend_v2.app.auth import AuthUser, create_access_token, decode_access_token, get_current_user
@@ -50,11 +51,24 @@ SECURITY_RESPONSE_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
 }
+ALLOWED_CORS_ORIGINS = [
+    "https://last-strawberry.com",
+    "https://www.last-strawberry.com",
+]
+ALLOWED_CORS_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 app = FastAPI(
     title="Last Strawberry Backend V2",
     version="2.0.0-alpha",
     description="OpenRouter-first restart backend for game orchestration.",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_CORS_ORIGINS,
+    allow_origin_regex=ALLOWED_CORS_ORIGIN_REGEX,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

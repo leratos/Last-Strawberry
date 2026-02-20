@@ -115,6 +115,8 @@ Zeitraum: 01.04.2026 - 21.04.2026
 - Lokales Monitoring-Testen erweitert: PowerShell-Generator fuer gezielte Event-Simulation (`backend_v2/scripts/generate_monitoring_events.ps1`).
 - Monitoring-Betrieb weiter gehaertet: End-to-End Stack-Smoke (`backend_v2/scripts/smoke_monitoring_stack.py`) fuer Backend/Prometheus (optional Grafana API).
 - Frontend-MVP auf `/v2`-API angebunden (`web_frontend`): Login (`/v2/auth/login`), Weltenliste/Erstellung (`GET/POST /v2/worlds`), Turn-Loop (`/v2/game/turn`) und Verlaufsladen (`/v2/worlds/{world_id}/turns`); Legacy-UI-Aktionen ohne V2-Backend (Profil/Admin/Export/Korrektur) werden im MVP ausgeblendet.
+- E2E-Bruecke fuer Legacy-Backend vorbereitet: `backend_server` kann Legacy-Endpunkte im Bridge-Modus (`LS_V2_BRIDGE_ENABLED=true`) auf `backend_v2` routen, inkl. Smoke-Script (`backend_server/scripts/smoke_v2_bridge.py`) und Runbook (`docs/backend_server_v2_bridge.md`).
+- Reproduzierbarer Playtest-Quickcheck fuer Bridge-Flow hinzugefuegt (`backend_server/scripts/playtest_bridge_quickcheck.py`, `docs/playtest_bridge_quickcheck.md`) mit Happy Path + Failure Path.
 
 ---
 
