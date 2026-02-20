@@ -63,6 +63,14 @@ class TestConfig(unittest.TestCase):
             services = config._discover_windows_keyring_services("OPENROUTER_API_KEY")
 
         self.assertEqual(services, ["HomeGym_AI_Coach"])
+        run_mock.assert_called_once_with(
+            ["cmdkey", "/list"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
 
     def test_database_settings_from_env(self):
         with patch.dict(
