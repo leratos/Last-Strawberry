@@ -71,7 +71,7 @@ function Set-EnvValuesInFile {
     [System.IO.File]::WriteAllLines((Resolve-Path $Path), $lines, $utf8NoBom)
 }
 
-function Invoke-CurlRequest {
+function Invoke-ApiRequest {
     param(
         [ValidateSet("GET", "POST")]
         [string]$Method,
@@ -79,22 +79,43 @@ function Invoke-CurlRequest {
         [hashtable]$Headers = @{},
         [object]$Body = $null
     )
-    $tmp = [System.IO.Path]::GetTempFileName()
-    $args = @("-sS", "-o", $tmp, "-w", "%{http_code}", "-X", $Method)
-    foreach ($key in $Headers.Keys) {
-        $args += @("-H", "${key}: $($Headers[$key])")
+    $statusCode = 0
+    $content = ""
+
+    $requestParams = @{
+        Method          = $Method
+        Uri             = $Url
+        Headers         = $Headers
+        UseBasicParsing = $true
+        TimeoutSec      = 30
     }
     if ($null -ne $Body) {
-        $jsonBody = $Body | ConvertTo-Json -Compress -Depth 8
-        $args += @("-H", "Content-Type: application/json", "--data-raw", $jsonBody)
+        $requestParams["Body"] = ($Body | ConvertTo-Json -Compress -Depth 8)
+        $requestParams["ContentType"] = "application/json"
     }
-    $args += $Url
-    $statusRaw = & curl.exe @args
-    $content = Get-Content -Path $tmp -Raw
-    Remove-Item -Path $tmp -ErrorAction SilentlyContinue
 
-    $statusCode = 0
-    [void][int]::TryParse(($statusRaw -replace '[^\d]', ''), [ref]$statusCode)
+    try {
+        $response = Invoke-WebRequest @requestParams
+        $statusCode = [int]$response.StatusCode
+        $content = [string]$response.Content
+    }
+    catch {
+        $webResponse = $_.Exception.Response
+        if ($webResponse) {
+            try { $statusCode = [int]$webResponse.StatusCode } catch {}
+            try {
+                $stream = $webResponse.GetResponseStream()
+                if ($stream) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $content = $reader.ReadToEnd()
+                    $reader.Dispose()
+                    $stream.Dispose()
+                }
+            } catch {}
+        } else {
+            $content = [string]$_.Exception.Message
+        }
+    }
 
     $json = $null
     if ($content) {
@@ -118,7 +139,7 @@ function Wait-ForBackend {
     )
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
     while ((Get-Date) -lt $deadline) {
-        $resp = Invoke-CurlRequest -Method GET -Url "$Base/v2/health"
+        $resp = Invoke-ApiRequest -Method GET -Url "$Base/v2/health"
         if ($resp.StatusCode -eq 200) {
             return $true
         }
@@ -137,7 +158,7 @@ function Request-ManualRestartAndWait {
 
 function Login {
     param([string]$Base, [int]$Uid, [string]$User)
-    $resp = Invoke-CurlRequest -Method POST -Url "$Base/v2/auth/login" -Body @{
+    $resp = Invoke-ApiRequest -Method POST -Url "$Base/v2/auth/login" -Body @{
         user_id  = $Uid
         username = $User
     }
@@ -149,7 +170,7 @@ function Login {
 
 function CreateWorld {
     param([string]$Base, [string]$Token, [string]$Name)
-    $resp = Invoke-CurlRequest -Method POST -Url "$Base/v2/worlds" -Headers @{
+    $resp = Invoke-ApiRequest -Method POST -Url "$Base/v2/worlds" -Headers @{
         Authorization = "Bearer $Token"
     } -Body @{
         name        = $Name
@@ -168,7 +189,7 @@ function RunTurn {
         [int]$WorldId,
         [string]$Command
     )
-    return Invoke-CurlRequest -Method POST -Url "$Base/v2/game/turn" -Headers @{
+    return Invoke-ApiRequest -Method POST -Url "$Base/v2/game/turn" -Headers @{
         Authorization = "Bearer $Token"
     } -Body @{
         world_id       = $WorldId
@@ -195,7 +216,7 @@ try {
 
     Write-Step "1) Auth-Failures erzeugen ($AuthFailures x 401)"
     for ($i = 1; $i -le $AuthFailures; $i++) {
-        $r = Invoke-CurlRequest -Method GET -Url "$base/v2/worlds/1"
+        $r = Invoke-ApiRequest -Method GET -Url "$base/v2/worlds/1"
         Write-Host "auth_failed request $i -> status $($r.StatusCode)"
     }
 
