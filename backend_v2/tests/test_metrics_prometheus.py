@@ -99,8 +99,14 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             "audit_events": {},
             "error_categories": {},
             "model_routing": {
-                "routes": ["invalid"],
-                "attempt_errors": [{"stage": "analysis", "count": "invalid"}],
+                "routes": [
+                    "invalid",
+                    {"stage": "analysis", "requested_model": "model-a", "used_model": "model-b", "count": "invalid"},
+                ],
+                "attempt_errors": [
+                    "invalid",
+                    {"stage": "analysis", "count": "invalid"},
+                ],
             },
             "windowed_rates": {"60s": {"requests_per_minute": "invalid"}, "broken": "invalid"},
         }
@@ -109,6 +115,8 @@ class TestMetricsPrometheusExport(unittest.TestCase):
         self.assertIn("ls_backend_v2_retrieval_fallback_requests_total 2", payload)
         self.assertIn('ls_backend_v2_retrieval_strategy_total{strategy="lexical"} 1', payload)
         self.assertIn('ls_backend_v2_retrieval_latency_ms_bucket{le="100"} 1', payload)
+        self.assertNotIn('ls_backend_v2_model_route_total{stage=', payload)
+        self.assertNotIn('ls_backend_v2_model_attempt_error_total{stage=', payload)
         self.assertNotIn("invalid", payload)
 
 

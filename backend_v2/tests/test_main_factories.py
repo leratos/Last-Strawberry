@@ -12,10 +12,27 @@ from backend_v2.app.services.retrieval import LexicalMemoryRetriever
 
 class TestMainFactories(unittest.TestCase):
     def tearDown(self):
+        main_module.get_orchestrator.cache_clear()
         main_module.get_embeddings_provider.cache_clear()
         main_module.get_memory_retriever.cache_clear()
         main_module.get_retrieval_metrics_collector.cache_clear()
         main_module.get_turn_rate_limiter.cache_clear()
+
+    def test_factory_wires_metrics_collector_into_orchestrator(self):
+        settings = Settings(
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+        )
+        collector = RetrievalMetricsCollector()
+
+        with patch("backend_v2.app.main.get_settings", return_value=settings), patch(
+            "backend_v2.app.main.get_retrieval_metrics_collector",
+            return_value=collector,
+        ):
+            main_module.get_orchestrator.cache_clear()
+            orchestrator = main_module.get_orchestrator()
+
+        self.assertIs(orchestrator.metrics_collector, collector)
 
     def test_factories_support_none_embeddings_and_lexical_retriever(self):
         settings = Settings(
