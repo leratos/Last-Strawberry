@@ -92,6 +92,10 @@ Damit kann ein schneller API-SLO-Check ohne PromQL erfolgen (z. B. `errors_5xx_p
 
 ## SLO-Status Endpoint
 `GET /v2/metrics/slo` liefert einen kompakten Pass/Fail-Status fuer ein Zeitfenster.
+Defaultwerte kommen aus:
+- `LS_SLO_WINDOW` (default `300s`)
+- `LS_SLO_MAX_5XX_PERCENT` (default `1.0`)
+- `LS_SLO_MAX_429_PERCENT` (default `5.0`)
 
 Beispiel:
 ```bash

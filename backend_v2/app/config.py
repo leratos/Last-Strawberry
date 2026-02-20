@@ -165,6 +165,9 @@ class Settings:
     login_rate_limit_requests: int = 200
     login_rate_limit_window_seconds: int = 60
     max_request_body_bytes: int = 262144
+    slo_window: str = "300s"
+    slo_max_5xx_percent: float = 1.0
+    slo_max_429_percent: float = 5.0
     metrics_api_key: str | None = None
     metrics_api_key_header: str = "X-Metrics-Key"
     environment: str = "development"
@@ -226,6 +229,9 @@ class Settings:
             login_rate_limit_requests=max(1, int(_read_env("LS_LOGIN_RATE_LIMIT_REQUESTS", "200") or "200")),
             login_rate_limit_window_seconds=max(1, int(_read_env("LS_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")),
             max_request_body_bytes=max(1024, int(_read_env("LS_MAX_REQUEST_BODY_BYTES", "262144") or "262144")),
+            slo_window=(_read_env("LS_SLO_WINDOW", "300s") or "300s").strip() or "300s",
+            slo_max_5xx_percent=max(0.0, float(_read_env("LS_SLO_MAX_5XX_PERCENT", "1.0") or "1.0")),
+            slo_max_429_percent=max(0.0, float(_read_env("LS_SLO_MAX_429_PERCENT", "5.0") or "5.0")),
             metrics_api_key=_read_env("LS_METRICS_API_KEY"),
             metrics_api_key_header=_read_env("LS_METRICS_API_KEY_HEADER", "X-Metrics-Key") or "X-Metrics-Key",
             environment=_read_env("LS_ENVIRONMENT", "development") or "development",

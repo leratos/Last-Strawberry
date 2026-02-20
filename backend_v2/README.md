@@ -48,7 +48,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Retrieval metrics endpoint exposes retrieval counters/histograms plus API status buckets (`2xx/4xx/5xx`, `429`), audit event counters (auth/rate-limit), error categories (`auth`, `rate_limit`, `provider`, `persistence`, `server`), and windowed request/error rates (`60s`, `300s`).
 - Timeouts in `/v2/game/turn` emit `audit_events.turn_timeout` and return `504`.
 - Windowed rates also include percentage ratios (`errors_5xx_percent`, `rate_limit_429_percent`) for quick SLO checks.
-- SLO status endpoint (`/v2/metrics/slo`) evaluates a window (`window=300s` default) against thresholds (`max_5xx_percent`, `max_429_percent`).
+- SLO status endpoint (`/v2/metrics/slo`) evaluates a window against thresholds; defaults come from `LS_SLO_WINDOW`, `LS_SLO_MAX_5XX_PERCENT`, `LS_SLO_MAX_429_PERCENT` and can be overridden via query params.
 - Retrieval metrics also expose model-routing telemetry (`model_routing.routes`, `model_routing.attempt_errors`) for fallback analysis per stage (`analysis`/`narrative`).
 - Prometheus-compatible export is available at `GET /v2/metrics/prometheus` (Bearer by default, optional API-key mode).
 - Optional metrics API key hardening for Prometheus endpoint: `LS_METRICS_API_KEY` and `LS_METRICS_API_KEY_HEADER`.

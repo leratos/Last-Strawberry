@@ -488,18 +488,22 @@ async def get_retrieval_metrics(current_user: AuthUser = Depends(get_current_use
 @app.get("/v2/metrics/slo")
 async def get_slo_metrics(
     current_user: AuthUser = Depends(get_current_user),
-    window: str = Query(default="300s"),
-    max_5xx_percent: float = Query(default=1.0, ge=0.0, le=100.0),
-    max_429_percent: float = Query(default=5.0, ge=0.0, le=100.0),
+    window: str | None = Query(default=None),
+    max_5xx_percent: float | None = Query(default=None, ge=0.0, le=100.0),
+    max_429_percent: float | None = Query(default=None, ge=0.0, le=100.0),
 ) -> dict[str, object]:
     _ = current_user
+    settings = get_settings()
+    selected_window = window or settings.slo_window
+    selected_max_5xx = settings.slo_max_5xx_percent if max_5xx_percent is None else max_5xx_percent
+    selected_max_429 = settings.slo_max_429_percent if max_429_percent is None else max_429_percent
     collector = get_retrieval_metrics_collector()
     snapshot = collector.snapshot()
     return evaluate_slo(
         snapshot=snapshot,
-        window=window,
-        max_5xx_percent=max_5xx_percent,
-        max_429_percent=max_429_percent,
+        window=selected_window,
+        max_5xx_percent=selected_max_5xx,
+        max_429_percent=selected_max_429,
     )
 
 
