@@ -52,6 +52,7 @@ uvicorn backend_v2.app.main:app --reload --port 8002
 - Parallel turn burst test helper: `backend_v2/scripts/run_parallel_turn_load.py` (guide: `docs/parallel_turn_load_tests_v2.md`).
 - Each response includes `X-Request-ID`; provide the same header on request to keep end-to-end correlation IDs.
 - Turn endpoint rate limits are configurable (`LS_TURN_RATE_LIMIT_ENABLED`, `LS_TURN_RATE_LIMIT_REQUESTS`, `LS_TURN_RATE_LIMIT_WINDOW_SECONDS`).
+- Turn endpoint IP rate limits are configurable (`LS_TURN_IP_RATE_LIMIT_ENABLED`, `LS_TURN_IP_RATE_LIMIT_REQUESTS`, `LS_TURN_IP_RATE_LIMIT_WINDOW_SECONDS`).
 - Login endpoint rate limit is configurable (`LS_LOGIN_RATE_LIMIT_ENABLED`, `LS_LOGIN_RATE_LIMIT_REQUESTS`, `LS_LOGIN_RATE_LIMIT_WINDOW_SECONDS`).
 - Request-body guard is configurable (`LS_MAX_REQUEST_BODY_BYTES`, default `262144`) and returns `413` on oversized payloads.
 - Security response headers are always set (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).

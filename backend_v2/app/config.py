@@ -157,6 +157,9 @@ class Settings:
     turn_rate_limit_enabled: bool = True
     turn_rate_limit_requests: int = 20
     turn_rate_limit_window_seconds: int = 60
+    turn_ip_rate_limit_enabled: bool = True
+    turn_ip_rate_limit_requests: int = 60
+    turn_ip_rate_limit_window_seconds: int = 60
     login_rate_limit_enabled: bool = True
     login_rate_limit_requests: int = 200
     login_rate_limit_window_seconds: int = 60
@@ -211,6 +214,12 @@ class Settings:
             turn_rate_limit_enabled=_read_bool_env("LS_TURN_RATE_LIMIT_ENABLED", True),
             turn_rate_limit_requests=max(1, int(_read_env("LS_TURN_RATE_LIMIT_REQUESTS", "20") or "20")),
             turn_rate_limit_window_seconds=max(1, int(_read_env("LS_TURN_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")),
+            turn_ip_rate_limit_enabled=_read_bool_env("LS_TURN_IP_RATE_LIMIT_ENABLED", True),
+            turn_ip_rate_limit_requests=max(1, int(_read_env("LS_TURN_IP_RATE_LIMIT_REQUESTS", "60") or "60")),
+            turn_ip_rate_limit_window_seconds=max(
+                1,
+                int(_read_env("LS_TURN_IP_RATE_LIMIT_WINDOW_SECONDS", "60") or "60"),
+            ),
             login_rate_limit_enabled=_read_bool_env("LS_LOGIN_RATE_LIMIT_ENABLED", True),
             login_rate_limit_requests=max(1, int(_read_env("LS_LOGIN_RATE_LIMIT_REQUESTS", "200") or "200")),
             login_rate_limit_window_seconds=max(1, int(_read_env("LS_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")),

@@ -158,6 +158,22 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.turn_rate_limit_requests, 9)
         self.assertEqual(settings.turn_rate_limit_window_seconds, 45)
 
+    def test_turn_ip_rate_limit_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_TURN_IP_RATE_LIMIT_ENABLED": "false",
+                "LS_TURN_IP_RATE_LIMIT_REQUESTS": "99",
+                "LS_TURN_IP_RATE_LIMIT_WINDOW_SECONDS": "90",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertFalse(settings.turn_ip_rate_limit_enabled)
+        self.assertEqual(settings.turn_ip_rate_limit_requests, 99)
+        self.assertEqual(settings.turn_ip_rate_limit_window_seconds, 90)
+
     def test_login_rate_limit_settings_from_env(self):
         with patch.dict(
             os.environ,

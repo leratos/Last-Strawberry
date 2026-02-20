@@ -206,6 +206,16 @@ def get_turn_rate_limiter() -> SlidingWindowRateLimiter:
 
 
 @lru_cache
+def get_turn_ip_rate_limiter() -> SlidingWindowRateLimiter:
+    settings = get_settings()
+    return SlidingWindowRateLimiter(
+        limit=settings.turn_ip_rate_limit_requests,
+        window_seconds=settings.turn_ip_rate_limit_window_seconds,
+        enabled=settings.turn_ip_rate_limit_enabled,
+    )
+
+
+@lru_cache
 def get_login_rate_limiter() -> SlidingWindowRateLimiter:
     settings = get_settings()
     return SlidingWindowRateLimiter(
@@ -258,6 +268,7 @@ async def health() -> HealthResponse:
 @app.post("/v2/game/turn", response_model=TurnResponse)
 async def run_turn(
     request: TurnRequest,
+    raw_request: Request,
     current_user: AuthUser = Depends(get_current_user),
 ) -> TurnResponse:
     settings = get_settings()
@@ -266,9 +277,27 @@ async def run_turn(
     memory_policy = get_memory_policy()
     memory_retriever = get_memory_retriever()
     metrics_collector = get_retrieval_metrics_collector()
+    ip_rate_limiter = get_turn_ip_rate_limiter()
     rate_limiter = get_turn_rate_limiter()
     try:
         _assert_world_access(repository, request.world_id, current_user.user_id)
+        client_host = raw_request.client.host if raw_request.client and raw_request.client.host else "unknown"
+        ip_limit_check = ip_rate_limiter.check(f"turn_ip:{client_host}")
+        if not ip_limit_check.allowed:
+            retry_after = ip_limit_check.retry_after_seconds or 1
+            metrics_collector.record_audit_event("rate_limit_ip_exceeded")
+            logger.warning(
+                "request_id=%s rate_limit_ip_exceeded user_id=%s ip=%s retry_after_s=%s",
+                get_request_id(),
+                current_user.user_id,
+                sanitize_for_log(client_host, max_length=64),
+                retry_after,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="IP rate limit exceeded.",
+                headers={"Retry-After": str(retry_after), ERROR_CATEGORY_HEADER: "rate_limit"},
+            )
         limit_check = rate_limiter.check(f"user:{current_user.user_id}")
         if not limit_check.allowed:
             retry_after = limit_check.retry_after_seconds or 1
