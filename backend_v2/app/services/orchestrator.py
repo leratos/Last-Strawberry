@@ -144,13 +144,39 @@ class GameOrchestrator:
             return []
         try:
             data = json.loads(raw_text)
-            return data if isinstance(data, list) else []
+            return self._normalize_extracted_commands(data)
         except json.JSONDecodeError:
             match = re.search(r"\[[\s\S]*\]", raw_text)
             if not match:
                 return []
             try:
                 data = json.loads(match.group(0))
-                return data if isinstance(data, list) else []
+                return self._normalize_extracted_commands(data)
             except json.JSONDecodeError:
                 return []
+
+    def _normalize_extracted_commands(self, data: Any) -> list[dict[str, Any]]:
+        if not isinstance(data, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for item in data:
+            if isinstance(item, dict):
+                normalized.append(item)
+                continue
+
+            if isinstance(item, str):
+                command_name = item.strip()
+                if command_name:
+                    normalized.append({"command": command_name})
+                continue
+
+            if isinstance(item, list) and item and isinstance(item[0], str):
+                # Accept compact tuple-like shape from some model outputs,
+                # e.g. ["PLAYER_MOVE", {"location_name":"Bridge"}].
+                command_name = item[0].strip()
+                payload = item[1] if len(item) > 1 and isinstance(item[1], dict) else {}
+                if command_name:
+                    normalized.append({"command": command_name, **payload})
+
+        return normalized

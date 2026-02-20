@@ -66,6 +66,26 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.extracted_commands[0]["command"], "PLAYER_MOVE")
         self.assertEqual(result.extracted_commands[0]["location_name"], "Tempel")
 
+    async def test_run_turn_accepts_string_command_array_from_analysis(self):
+        class StringArrayProvider:
+            name = "fake"
+
+            def __init__(self):
+                self.calls = 0
+
+            async def generate(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return '["PLAYER_STATE_UPDATE"]'
+                return "Du atmest tief durch. Was tust du als naechstes?"
+
+        settings = Settings(openrouter_api_key="test-key", analysis_model="a", narrative_model="b")
+        orchestrator = GameOrchestrator(provider=StringArrayProvider(), settings=settings)
+        request = TurnRequest(world_id=1, player_id=1, player_command="Ich sammle mich.")
+
+        result = await orchestrator.run_turn(request)
+        self.assertEqual(result.extracted_commands, [{"command": "PLAYER_STATE_UPDATE"}])
+
     async def test_run_turn_uses_fallback_models(self):
         class FallbackProvider:
             name = "fake"
@@ -200,6 +220,19 @@ class TestOrchestratorHelpers(unittest.TestCase):
     def test_extract_commands_invalid_json_returns_empty(self):
         self.assertEqual(self.orchestrator._extract_commands("[{broken json]"), [])
         self.assertEqual(self.orchestrator._extract_commands("no json here"), [])
+
+    def test_extract_commands_string_array_is_normalized(self):
+        parsed = self.orchestrator._extract_commands('["PLAYER_STATE_UPDATE"]')
+        self.assertEqual(parsed, [{"command": "PLAYER_STATE_UPDATE"}])
+
+    def test_extract_commands_mixed_entries_only_keeps_valid_shapes(self):
+        raw = '["NPC_CREATE", {"command":"ROLL_CHECK","attribut":"Starke"}, 123, ["PLAYER_MOVE", {"location_name":"Halle"}]]'
+        parsed = self.orchestrator._extract_commands(raw)
+        self.assertEqual(len(parsed), 3)
+        self.assertEqual(parsed[0]["command"], "NPC_CREATE")
+        self.assertEqual(parsed[1]["command"], "ROLL_CHECK")
+        self.assertEqual(parsed[2]["command"], "PLAYER_MOVE")
+        self.assertEqual(parsed[2]["location_name"], "Halle")
 
     def test_build_analysis_prompts_contains_expected_fields(self):
         request = TurnRequest(

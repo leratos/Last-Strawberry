@@ -282,6 +282,17 @@ class TestMainApi(unittest.TestCase):
         self.assertIsNotNone(request_id)
         self.assertRegex(request_id, re.compile(r"^[0-9a-f]{32}$"))
 
+    def test_cors_preflight_login_is_handled(self):
+        response = self.client.options(
+            "/v2/auth/login",
+            headers={
+                "Origin": "http://127.0.0.1:8080",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://127.0.0.1:8080")
+
     def test_login_returns_token(self):
         response = self.client.post("/v2/auth/login", json={"user_id": 1, "username": "alice"})
         self.assertEqual(response.status_code, 200)

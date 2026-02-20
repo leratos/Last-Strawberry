@@ -3,6 +3,14 @@ import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 
+_OPENROUTER_PLACEHOLDER_VALUES = {
+    "replace_me",
+    "changeme",
+    "change-me",
+    "your_api_key_here",
+    "your_openrouter_api_key",
+}
+
 
 def _read_env(key: str, default: str | None = None) -> str | None:
     value = os.getenv(key)
@@ -36,10 +44,14 @@ def _read_csv_env(key: str) -> tuple[str, ...]:
 
 
 def _read_openrouter_api_key() -> str | None:
-    # 1) Explicit env vars have highest priority.
-    explicit = _read_env("LS_OPENROUTER_API_KEY") or _read_env("OPENROUTER_API_KEY")
-    if explicit:
-        return explicit
+    # 1) Explicit env vars have highest priority, except known placeholders.
+    for explicit in (_read_env("LS_OPENROUTER_API_KEY"), _read_env("OPENROUTER_API_KEY")):
+        candidate = (explicit or "").strip()
+        if not candidate:
+            continue
+        if candidate.lower() in _OPENROUTER_PLACEHOLDER_VALUES:
+            continue
+        return candidate
 
     # 2) Fallback to keyring if available.
     try:
