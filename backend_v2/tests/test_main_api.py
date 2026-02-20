@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 import re
 import unittest
@@ -38,6 +39,19 @@ class _LeakyProviderErrorOrchestrator:
 class _UnexpectedErrorOrchestrator:
     async def run_turn(self, request):
         raise RuntimeError("boom")
+
+
+class _SlowOrchestrator:
+    async def run_turn(self, request):
+        _ = request
+        await asyncio.sleep(0.05)
+        return TurnResponse(
+            narrative="Zu spaet.",
+            extracted_commands=[],
+            provider="fake",
+            models={"analysis": "model-a", "narrative": "model-b"},
+            created_at=datetime.now(UTC),
+        )
 
 
 class _MemoryRepo:
@@ -392,6 +406,23 @@ class TestMainApi(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertIn("upstream provider", response.json()["detail"])
         self.assertIsNone(response.headers.get("x-ls-error-category"))
+
+    def test_game_turn_timeout_maps_to_504(self):
+        headers = self._auth_headers(user_id=11)
+        self.client.post(
+            "/v2/worlds",
+            headers=headers,
+            json={"name": "Dorf", "description": ""},
+        )
+        payload = {"world_id": 1, "player_id": 7, "player_command": "Ich warte."}
+        with patch("backend_v2.app.main.get_orchestrator", return_value=_SlowOrchestrator()), patch(
+            "backend_v2.app.main.get_settings",
+            return_value=Settings(turn_timeout_seconds=0),
+        ):
+            response = self.client.post("/v2/game/turn", headers=headers, json=payload)
+        self.assertEqual(response.status_code, 504)
+        self.assertEqual(response.json()["detail"], "Turn processing timeout.")
+        self.assertGreaterEqual(self.metrics.snapshot()["error_categories"].get("provider", 0), 1)
 
     def test_game_turn_provider_error_redacts_sensitive_fields(self):
         headers = self._auth_headers(user_id=11)

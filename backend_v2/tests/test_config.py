@@ -94,6 +94,26 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.jwt_algorithm, "HS256")
         self.assertEqual(settings.jwt_expire_minutes, 15)
 
+    def test_turn_timeout_seconds_from_env(self):
+        with patch.dict(
+            os.environ,
+            {"LS_TURN_TIMEOUT_SECONDS": "75"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.turn_timeout_seconds, 75)
+
+    def test_turn_timeout_seconds_has_minimum_floor(self):
+        with patch.dict(
+            os.environ,
+            {"LS_TURN_TIMEOUT_SECONDS": "0"},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.turn_timeout_seconds, 1)
+
     def test_memory_settings_from_env(self):
         with patch.dict(
             os.environ,

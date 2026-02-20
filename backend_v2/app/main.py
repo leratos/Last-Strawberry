@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextvars import ContextVar
 from functools import lru_cache
@@ -348,7 +349,10 @@ async def run_turn(
                 "memory_context": memory_context,
             }
         )
-        response = await orchestrator.run_turn(enriched_request)
+        response = await asyncio.wait_for(
+            orchestrator.run_turn(enriched_request),
+            timeout=float(settings.turn_timeout_seconds),
+        )
         saved_turn = repository.save_turn(enriched_request, response)
         memory_items = memory_policy.build_items(enriched_request, response)
         repository.save_memory_items(
@@ -363,6 +367,13 @@ async def run_turn(
         raise HTTPException(
             status_code=502,
             detail=redact_sensitive_text(exc, max_length=280),
+            headers={ERROR_CATEGORY_HEADER: "provider"},
+        ) from exc
+    except TimeoutError as exc:
+        logger.warning("request_id=%s Turn processing timeout.", get_request_id())
+        raise HTTPException(
+            status_code=504,
+            detail="Turn processing timeout.",
             headers={ERROR_CATEGORY_HEADER: "provider"},
         ) from exc
     except PersistenceError as exc:

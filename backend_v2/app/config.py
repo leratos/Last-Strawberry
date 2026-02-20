@@ -140,6 +140,7 @@ class Settings:
     analysis_max_tokens: int = 700
     narrative_max_tokens: int = 1200
     request_timeout_seconds: int = 45
+    turn_timeout_seconds: int = 60
     database_url: str = "sqlite:///backend_v2/data/last_strawberry_v2.db"
     database_auto_init: bool = True
     jwt_secret: str = "change-me-in-production-please-use-32-plus-chars"
@@ -184,6 +185,7 @@ class Settings:
             analysis_max_tokens=int(_read_env("LS_ANALYSIS_MAX_TOKENS", "700") or "700"),
             narrative_max_tokens=int(_read_env("LS_NARRATIVE_MAX_TOKENS", "1200") or "1200"),
             request_timeout_seconds=int(_read_env("LS_REQUEST_TIMEOUT_SECONDS", "45") or "45"),
+            turn_timeout_seconds=max(1, int(_read_env("LS_TURN_TIMEOUT_SECONDS", "60") or "60")),
             database_url=_read_env("LS_DATABASE_URL", "sqlite:///backend_v2/data/last_strawberry_v2.db")
             or "sqlite:///backend_v2/data/last_strawberry_v2.db",
             database_auto_init=_read_bool_env("LS_DATABASE_AUTO_INIT", True),
