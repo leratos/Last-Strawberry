@@ -106,6 +106,7 @@ Zeitraum: 01.04.2026 - 21.04.2026
   - Login-Rate-Limit fuer `/v2/auth/login` inkl. Audit-Event (`auth_login_rate_limited`)
   - Zusaetzliches IP-basiertes Turn-Rate-Limit (`rate_limit_ip_exceeded`) fuer `/v2/game/turn`
 - Turn-Timeout-Guard fuer `/v2/game/turn` umgesetzt (`LS_TURN_TIMEOUT_SECONDS`, default `60`, `504` bei Ueberschreitung) inkl. API-/Config-Tests.
+- Retrieval-Monitoring erweitert: `windowed_rates` liefert jetzt auch prozentuale API-Fehlerraten (`errors_5xx_percent`, `rate_limit_429_percent`) fuer schnellere SLO-Bewertung.
 
 ---
 
