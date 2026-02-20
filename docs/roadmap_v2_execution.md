@@ -112,6 +112,7 @@ Zeitraum: 01.04.2026 - 21.04.2026
 - SLO-Defaults zentral in Runtime-Config verankert (`LS_SLO_WINDOW`, `LS_SLO_MAX_5XX_PERCENT`, `LS_SLO_MAX_429_PERCENT`) und ueber API-Query weiterhin uebersteuerbar.
 - Prometheus-Alert-Starterset hinzugefuegt (`docs/alert_rules_backend_v2.yml`) fuer SLO-, Timeout-, Provider- und Auth-Fehler-Signale.
 - Monitoring-Operationalisierung erweitert: automatisierter SLO-Smoke (`backend_v2/scripts/smoke_slo.py`) und importierbares Grafana-Dashboard (`docs/grafana_dashboard_backend_v2.json`).
+- Lokales Monitoring-Testen erweitert: PowerShell-Generator fuer gezielte Event-Simulation (`backend_v2/scripts/generate_monitoring_events.ps1`).
 
 ---
 
