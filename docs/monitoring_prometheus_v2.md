@@ -81,3 +81,10 @@ Seit Phase 3 exportiert Prometheus auch Modellrouting-Metriken:
 Empfohlene Alarme:
 - Erhoehte `model_attempt_error_total` fuer Primarmodelle (`stage="analysis"` und/oder `stage="narrative"`).
 - Sprunghaft steigender Anteil von `fallback="true"` in `model_route_total`.
+
+## SLO-Snapshot im Retrieval-Endpoint
+`GET /v2/metrics/retrieval` liefert in `windowed_rates` pro Zeitfenster jetzt auch:
+- `errors_5xx_percent`
+- `rate_limit_429_percent`
+
+Damit kann ein schneller API-SLO-Check ohne PromQL erfolgen (z. B. `errors_5xx_percent < 1.0` fuer Beta-Ziel).

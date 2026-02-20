@@ -146,6 +146,12 @@ class RetrievalMetricsCollector:
             return 0.0
         return round((count * 60.0) / float(window_seconds), 2)
 
+    @staticmethod
+    def _percent(numerator: int, denominator: int) -> float:
+        if denominator <= 0:
+            return 0.0
+        return round((float(numerator) * 100.0) / float(denominator), 2)
+
     def snapshot(self) -> dict:
         with self._lock:
             now = self._clock()
@@ -176,7 +182,9 @@ class RetrievalMetricsCollector:
                 windowed_rates[window_key] = {
                     "requests_per_minute": self._rate_per_minute(request_count, window_seconds),
                     "errors_5xx_per_minute": self._rate_per_minute(status_5xx_count, window_seconds),
+                    "errors_5xx_percent": self._percent(status_5xx_count, request_count),
                     "rate_limit_429_per_minute": self._rate_per_minute(status_429_count, window_seconds),
+                    "rate_limit_429_percent": self._percent(status_429_count, request_count),
                     "auth_failed_per_minute": self._rate_per_minute(auth_failed_count, window_seconds),
                 }
 

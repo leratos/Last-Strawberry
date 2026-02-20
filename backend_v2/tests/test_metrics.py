@@ -111,6 +111,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(attempt_error["count"], 1)
         self.assertIn("60s", snapshot["windowed_rates"])
         self.assertIn("requests_per_minute", snapshot["windowed_rates"]["60s"])
+        self.assertIn("errors_5xx_percent", snapshot["windowed_rates"]["60s"])
+        self.assertIn("rate_limit_429_percent", snapshot["windowed_rates"]["60s"])
 
     def test_reset(self):
         collector = RetrievalMetricsCollector()
@@ -151,7 +153,9 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         rates = snapshot["windowed_rates"]["60s"]
         self.assertEqual(rates["requests_per_minute"], 3.0)
         self.assertEqual(rates["errors_5xx_per_minute"], 1.0)
+        self.assertEqual(rates["errors_5xx_percent"], 33.33)
         self.assertEqual(rates["rate_limit_429_per_minute"], 1.0)
+        self.assertEqual(rates["rate_limit_429_percent"], 33.33)
         self.assertEqual(rates["auth_failed_per_minute"], 1.0)
 
         clock.advance(61.0)
@@ -159,7 +163,9 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         rates = snapshot["windowed_rates"]["60s"]
         self.assertEqual(rates["requests_per_minute"], 0.0)
         self.assertEqual(rates["errors_5xx_per_minute"], 0.0)
+        self.assertEqual(rates["errors_5xx_percent"], 0.0)
         self.assertEqual(rates["rate_limit_429_per_minute"], 0.0)
+        self.assertEqual(rates["rate_limit_429_percent"], 0.0)
         self.assertEqual(rates["auth_failed_per_minute"], 0.0)
 
     def test_windowed_rates_skip_events_outside_smaller_window(self):
@@ -175,6 +181,9 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
 
     def test_rate_per_minute_guard_on_non_positive_window(self):
         self.assertEqual(RetrievalMetricsCollector._rate_per_minute(5, 0), 0.0)
+
+    def test_percent_guard_on_non_positive_denominator(self):
+        self.assertEqual(RetrievalMetricsCollector._percent(5, 0), 0.0)
 
 
 if __name__ == "__main__":
