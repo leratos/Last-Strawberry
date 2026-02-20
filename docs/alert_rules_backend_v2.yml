@@ -1,0 +1,66 @@
+groups:
+  - name: last_strawberry_backend_v2_slo
+    interval: 30s
+    rules:
+      - alert: LastStrawberryV2High5xxPercent
+        expr: ls_backend_v2_errors_5xx_percent{window="300s"} > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 5xx-Anteil zu hoch"
+          description: "ls_backend_v2_errors_5xx_percent (300s) liegt seit 10m ueber 1.0%."
+
+      - alert: LastStrawberryV2High429Percent
+        expr: ls_backend_v2_rate_limit_429_percent{window="300s"} > 5.0
+        for: 10m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 429-Anteil zu hoch"
+          description: "ls_backend_v2_rate_limit_429_percent (300s) liegt seit 10m ueber 5.0%."
+
+  - name: last_strawberry_backend_v2_operational
+    interval: 30s
+    rules:
+      - alert: LastStrawberryV2TurnTimeoutSpike
+        expr: increase(ls_backend_v2_audit_event_total{event="turn_timeout"}[10m]) >= 5
+        for: 0m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Turn-Timeout-Spike"
+          description: "Mindestens 5 turn_timeout Events in 10 Minuten."
+
+      - alert: LastStrawberryV2ProviderErrorsSpike
+        expr: increase(ls_backend_v2_error_category_total{category="provider"}[10m]) >= 10
+        for: 0m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Provider-Fehler-Spike"
+          description: "Mindestens 10 Provider-Fehler in 10 Minuten."
+
+      - alert: LastStrawberryV2AuthFailureSpike
+        expr: increase(ls_backend_v2_audit_event_total{event="auth_failed"}[10m]) >= 20
+        for: 0m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Auth-Fehler-Spike"
+          description: "Mindestens 20 auth_failed Events in 10 Minuten."
+
+      - alert: LastStrawberryV2TargetDown
+        expr: up{job="last_strawberry_backend_v2"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Target down"
+          description: "Prometheus kann den Job last_strawberry_backend_v2 seit 2m nicht scrapen."

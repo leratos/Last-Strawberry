@@ -63,6 +63,17 @@ scrape_configs:
 Falls deine Prometheus-Version `http_headers` nicht unterstuetzt:
 - Zugriff ueber einen internen Reverse Proxy absichern und Header dort injizieren.
 
+## Alert Rules einbinden
+Starter-Regeln liegen in `docs/alert_rules_backend_v2.yml`.
+
+In `prometheus.yml`:
+```yaml
+rule_files:
+  - /etc/prometheus/rules/alert_rules_backend_v2.yml
+```
+
+Datei nach `/etc/prometheus/rules/alert_rules_backend_v2.yml` kopieren und Prometheus neu laden.
+
 ## Betriebsregeln
 - `LS_METRICS_API_KEY` als Secret verwalten, nicht im Repo speichern.
 - Key rotieren (z. B. monatlich oder nach Incident).
