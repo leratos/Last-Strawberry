@@ -72,6 +72,7 @@ Falls deine Prometheus-Version `http_headers` nicht unterstuetzt:
 - `429` auf `/v2/auth/login` bzw. `audit_event_total{event="auth_login_rate_limited"}` beobachten (Brute-Force/Abuse-Indikator).
 - `429` auf `/v2/game/turn` mit `audit_event_total{event="rate_limit_ip_exceeded"}` als Signal fuer IP-basierten Abuse beobachten.
 - `504` auf `/v2/game/turn` beobachten (Turn-Timeout-Guard via `LS_TURN_TIMEOUT_SECONDS`, default `60`); bei Anstieg Modell-Latenz/Fallback-Kette pruefen.
+- `audit_event_total{event="turn_timeout"}` als Timeout-Fruehwarnsignal verwenden (ergaenzt `http_status_total{status="504"}`).
 
 ## Modell-Fallback Telemetrie
 Seit Phase 3 exportiert Prometheus auch Modellrouting-Metriken:
