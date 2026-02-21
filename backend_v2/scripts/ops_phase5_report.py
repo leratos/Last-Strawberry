@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -86,6 +87,7 @@ def main() -> int:
             "max_estimated_cost_per_minute": args.max_estimated_cost_per_minute,
             "max_provider_cost_per_minute": args.max_provider_cost_per_minute,
             "require_prometheus_families": bool(args.require_prometheus_families),
+            "metrics_key_header": args.metrics_key_header,
         },
         "checks": [],
     }
@@ -154,30 +156,49 @@ def main() -> int:
             )
 
             if args.require_prometheus_families:
+                # Prefer explicit CLI value, then environment fallback.
+                metrics_key_value = (args.metrics_key or "").strip() or (os.getenv("LS_METRICS_API_KEY", "").strip())
                 metrics_response = _get_with_auth(
                     client,
                     f"{base_url}/v2/metrics/prometheus",
                     token=access_token,
-                    metrics_key=(args.metrics_key or "").strip() or None,
+                    metrics_key=metrics_key_value or None,
                     metrics_key_header=args.metrics_key_header,
                 )
-                metrics_response.raise_for_status()
-                metrics_text = metrics_response.text
                 required_families = [
                     "ls_backend_v2_model_latency_ms_p95",
                     "ls_backend_v2_estimated_cost_usd_per_minute",
                     "ls_backend_v2_errors_5xx_percent",
                     "ls_backend_v2_rate_limit_429_percent",
                 ]
-                missing = [family for family in required_families if family not in metrics_text]
-                checks.append(
-                    {
-                        "name": "prometheus_families",
-                        "ok": len(missing) == 0,
-                        "missing": missing,
-                        "required": required_families,
-                    }
-                )
+                if metrics_response.status_code != 200:
+                    hint = (
+                        "Set --metrics-key <value> or LS_METRICS_API_KEY when metrics endpoint runs in API-key mode."
+                        if metrics_response.status_code == 401
+                        else "Check /v2/metrics/prometheus availability and auth mode."
+                    )
+                    checks.append(
+                        {
+                            "name": "prometheus_families",
+                            "ok": False,
+                            "status_code": metrics_response.status_code,
+                            "required": required_families,
+                            "hint": hint,
+                            "response_excerpt": (metrics_response.text or "")[:300],
+                        }
+                    )
+                else:
+                    metrics_text = metrics_response.text
+                    missing = [family for family in required_families if family not in metrics_text]
+                    checks.append(
+                        {
+                            "name": "prometheus_families",
+                            "ok": len(missing) == 0,
+                            "missing": missing,
+                            "required": required_families,
+                            "auth_mode": "metrics_key" if metrics_key_value else "bearer",
+                        }
+                    )
 
     except httpx.HTTPStatusError as exc:
         report["ok"] = False
