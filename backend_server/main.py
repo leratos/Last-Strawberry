@@ -14,6 +14,7 @@ import json
 import subprocess
 import asyncio
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -135,12 +136,24 @@ V2_BASE_URL_ENV = "LS_V2_BASE_URL"
 V2_TIMEOUT_SECONDS_ENV = "LS_V2_TIMEOUT_SECONDS"
 DEFAULT_V2_BASE_URL = "http://127.0.0.1:8002"
 DEFAULT_V2_TIMEOUT_SECONDS = 30.0
-# --- FastAPI App ---
 
+# --- Globale Instanzen ---
+db_manager = DatabaseManager()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db_manager.setup_database()
+    logger.info("Backend-Server gestartet, DB-Schema geprueft und Bridge-only Modus aktiv.")
+    yield
+
+
+# --- FastAPI App ---
 app = FastAPI(
     title="Last-Strawberry Backend Server",
     description="Verwaltet die Spiellogik und Benutzer.",
-    version="1.4.0"
+    version="1.5.0",
+    lifespan=lifespan,
 )
 
 # Request Logging Middleware - MUSS vor CORS stehen
@@ -285,11 +298,6 @@ app.add_middleware(
 logger.info(f"ðŸŒ CORS-Konfiguration: Origins={len(allowed_origins)} erlaubte Domains, Credentials=True")
 logger.info(f"ðŸ“‹ Erlaubte Origins: {', '.join(allowed_origins[:3])}{'...' if len(allowed_origins) > 3 else ''}")
 
-# --- Globale Instanzen ---
-# Diese werden beim Start der Anwendung initialisiert
-db_manager = DatabaseManager()
-
-
 def _is_v2_bridge_enabled() -> bool:
     raw = (os.getenv(V2_BRIDGE_ENABLED_ENV, "false") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
@@ -379,12 +387,6 @@ def _build_v2_world_description(request: "WorldCreateRequest") -> str:
         f"Attributes: {attributes}" if attributes else "",
     ]
     return "\n".join([block for block in blocks if block])
-
-@app.on_event("startup")
-def startup_event():
-    """Initialisiert den GameManager beim Start des Servers."""
-    db_manager.setup_database()    
-    logger.info("Backend-Server gestartet, DB-Schema geprÃ¼ft und Bridge-only Modus aktiv.")
 
 # --- Login-System ---
 # oauth2_scheme wurde bereits oben definiert - Duplikat entfernt

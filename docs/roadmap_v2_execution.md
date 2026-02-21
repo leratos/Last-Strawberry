@@ -150,6 +150,9 @@ Zeitraum: 22.04.2026 - 13.05.2026
   - Gameplay-Endpunkte laufen bridge-only ueber `backend_v2`; ohne `LS_V2_BRIDGE_ENABLED=true` liefern sie `503`
   - Google-Auth/GCP-Inferenzcode entfernt; `backend_server/requirements.txt` ohne `google-auth`/`certifi`
   - Cutover-Runbook auf Bridge-only-Betrieb und artefaktbasierten Rollback aktualisiert
+- Phase 4D gestartet: Runtime-Hardening im `backend_server`
+  - FastAPI-Startup von `@app.on_event("startup")` auf `lifespan` migriert (deprecation-sicher)
+  - Backend-Tests auf no-op Lifespan umgestellt, damit sie ohne DB-Startup-Seiteneffekte stabil bleiben
 
 ---
 

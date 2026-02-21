@@ -4,6 +4,7 @@ import os
 import sys
 import types
 import unittest
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,11 @@ class _NoopFileHandler(logging.Handler):
 
     def emit(self, record):
         return
+
+
+@asynccontextmanager
+async def _noop_lifespan(_app):
+    yield
 
 
 class TestBackendErrorStatusCodes(unittest.TestCase):
@@ -72,8 +78,7 @@ class TestBackendErrorStatusCodes(unittest.TestCase):
                 cls.backend_main = importlib.import_module("backend_server.main")
 
         # Vermeidet DB/Service-Initialisierung im Startup während der Tests.
-        cls.backend_main.app.router.on_startup.clear()
-        cls.backend_main.app.router.on_shutdown.clear()
+        cls.backend_main.app.router.lifespan_context = _noop_lifespan
 
         cls.backend_main.app.dependency_overrides[cls.backend_main.get_current_active_user] = (
             lambda: {"user_id": 1, "username": "test-user", "roles": ["admin"], "is_active": True}
