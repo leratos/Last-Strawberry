@@ -21,6 +21,50 @@ def _window_key(value: str) -> str:
     return raw if raw.endswith("s") else f"{raw}s"
 
 
+def _read_env_value_from_file(key: str, env_path: Path) -> str:
+    if not env_path.exists():
+        return ""
+    try:
+        lines = env_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return ""
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].strip()
+        lhs, sep, rhs = line.partition("=")
+        if not sep:
+            continue
+        if lhs.strip() != key:
+            continue
+        value = rhs.strip()
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        return value.strip()
+    return ""
+
+
+def _resolve_metrics_key(cli_value: str) -> tuple[str, str]:
+    explicit = (cli_value or "").strip()
+    if explicit:
+        return explicit, "cli"
+
+    env_value = os.getenv("LS_METRICS_API_KEY", "").strip()
+    if env_value:
+        return env_value, "env"
+
+    local_env_candidates = [Path("backend_v2/.env"), Path(".env")]
+    for env_path in local_env_candidates:
+        file_value = _read_env_value_from_file("LS_METRICS_API_KEY", env_path)
+        if file_value:
+            return file_value, str(env_path)
+
+    return "", "none"
+
+
 def _get_with_auth(
     client: httpx.Client,
     url: str,
@@ -156,8 +200,8 @@ def main() -> int:
             )
 
             if args.require_prometheus_families:
-                # Prefer explicit CLI value, then environment fallback.
-                metrics_key_value = (args.metrics_key or "").strip() or (os.getenv("LS_METRICS_API_KEY", "").strip())
+                # Prefer explicit CLI value, then process env, then local .env file.
+                metrics_key_value, metrics_key_source = _resolve_metrics_key(args.metrics_key)
                 metrics_response = _get_with_auth(
                     client,
                     f"{base_url}/v2/metrics/prometheus",
@@ -183,6 +227,7 @@ def main() -> int:
                             "ok": False,
                             "status_code": metrics_response.status_code,
                             "required": required_families,
+                            "metrics_key_source": metrics_key_source,
                             "hint": hint,
                             "response_excerpt": (metrics_response.text or "")[:300],
                         }
@@ -197,6 +242,7 @@ def main() -> int:
                             "missing": missing,
                             "required": required_families,
                             "auth_mode": "metrics_key" if metrics_key_value else "bearer",
+                            "metrics_key_source": metrics_key_source,
                         }
                     )
 
