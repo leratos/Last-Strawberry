@@ -1,6 +1,6 @@
 # Last-Strawberry V2 Roadmap (OpenRouter + Codecov)
 
-Stand: 19. Februar 2026
+Stand: 21. Februar 2026
 
 ## Zielbild
 - V2 als OpenRouter-first Plattform stabil ausrollen.
@@ -153,6 +153,16 @@ Zeitraum: 22.04.2026 - 13.05.2026
 - Phase 4D gestartet: Runtime-Hardening im `backend_server`
   - FastAPI-Startup von `@app.on_event("startup")` auf `lifespan` migriert (deprecation-sicher)
   - Backend-Tests auf no-op Lifespan umgestellt, damit sie ohne DB-Startup-Seiteneffekte stabil bleiben
+- Phase 4E abgeschlossen: Finale Cutover-Abnahme
+  - gebuendelter Release-Smoke hinzugefuegt (`backend_server/scripts/smoke_phase4_release.py`)
+  - M4-Abnahmekriterien formalisiert (`docs/m4_definition_of_done.md`)
+  - Runbook um finalen Validation-Command erweitert (`docs/phase4_cutover_runbook.md`)
+
+### Meilensteinstatus
+- M4 erreicht am 21.02.2026:
+  - V2/OpenRouter ist primaerer und aktiver Runtime-Pfad.
+  - Legacy-GCP-Inferenzpfad ist aus Runtime deaktiviert/archiviert.
+  - Betriebs- und Abnahmecheckliste fuer den Cutover ist dokumentiert und automatisierbar.
 
 ---
 
