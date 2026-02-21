@@ -4,7 +4,7 @@ from unittest.mock import patch
 import httpx
 
 from backend_v2.app.config import Settings
-from backend_v2.app.providers.base import ProviderError
+from backend_v2.app.providers.base import LLMProvider, ProviderError
 from backend_v2.app.providers.openrouter import OpenRouterProvider
 
 
@@ -39,6 +39,30 @@ class TestOpenRouterProvider(unittest.TestCase):
         provider = OpenRouterProvider(settings)
         with self.assertRaises(ProviderError):
             provider._build_headers()
+
+    def test_extract_usage_handles_non_dict_and_invalid_cost(self):
+        settings = Settings(openrouter_api_key="test-key")
+        provider = OpenRouterProvider(settings)
+        usage = provider._extract_usage({"usage": "invalid", "total_cost": "not-a-number"})
+        self.assertEqual(usage.prompt_tokens, 0)
+        self.assertEqual(usage.completion_tokens, 0)
+        self.assertEqual(usage.total_tokens, 0)
+        self.assertIsNone(usage.provider_reported_cost_usd)
+
+
+class _BaseProviderImpl(LLMProvider):
+    name = "base-test"
+
+    async def generate(self, **kwargs):
+        _ = kwargs
+        return "ok"
+
+
+class _BaseProviderSuperCall(LLMProvider):
+    name = "base-test-super"
+
+    async def generate(self, **kwargs):
+        return await super().generate(**kwargs)
 
 
 class _FakeResponse:
@@ -75,6 +99,30 @@ class _FakeAsyncClientContext:
 
 
 class TestOpenRouterProviderAsync(unittest.IsolatedAsyncioTestCase):
+    async def test_base_provider_generate_result_default_implementation(self):
+        provider = _BaseProviderImpl()
+        result = await provider.generate_result(
+            system_prompt="sys",
+            user_prompt="user",
+            model="m",
+            temperature=0.1,
+            max_tokens=10,
+        )
+        self.assertEqual(result.text, "ok")
+        self.assertEqual(result.model, "m")
+        self.assertGreaterEqual(result.latency_ms, 0.0)
+
+    async def test_base_provider_abstract_generate_raises_not_implemented(self):
+        provider = _BaseProviderSuperCall()
+        with self.assertRaises(NotImplementedError):
+            await provider.generate(
+                system_prompt="sys",
+                user_prompt="user",
+                model="m",
+                temperature=0.1,
+                max_tokens=10,
+            )
+
     async def test_generate_result_includes_usage_tokens_and_cost(self):
         settings = Settings(openrouter_api_key="k")
         response = _FakeResponse(

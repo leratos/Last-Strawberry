@@ -231,6 +231,33 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
     def test_percent_guard_on_non_positive_denominator(self):
         self.assertEqual(RetrievalMetricsCollector._percent(5, 0), 0.0)
 
+    def test_quantile_handles_empty_and_bounds(self):
+        self.assertEqual(RetrievalMetricsCollector._quantile([], 0.95), 0.0)
+        self.assertEqual(RetrievalMetricsCollector._quantile([1.0, 3.0, 2.0], 0.0), 1.0)
+        self.assertEqual(RetrievalMetricsCollector._quantile([1.0, 3.0, 2.0], 1.0), 3.0)
+
+    def test_windowed_cost_rates_skip_events_outside_smaller_window(self):
+        clock = _Clock(start=0.0)
+        collector = RetrievalMetricsCollector(rate_windows_seconds=(60, 300), clock=clock)
+
+        collector.record_model_attempt(
+            stage="analysis",
+            model="model-a",
+            latency_ms=50.0,
+            estimated_total_cost_usd=0.005,
+            provider_reported_cost_usd=0.006,
+        )
+
+        clock.advance(200.0)
+        snapshot = collector.snapshot()
+
+        rates_60 = snapshot["windowed_rates"]["60s"]
+        rates_300 = snapshot["windowed_rates"]["300s"]
+        self.assertEqual(rates_60["estimated_cost_usd_per_minute"], 0.0)
+        self.assertEqual(rates_60["provider_reported_cost_usd_per_minute"], 0.0)
+        self.assertGreater(rates_300["estimated_cost_usd_per_minute"], 0.0)
+        self.assertGreater(rates_300["provider_reported_cost_usd_per_minute"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

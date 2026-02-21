@@ -2,7 +2,7 @@ import unittest
 
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest
-from backend_v2.app.providers.base import ProviderError
+from backend_v2.app.providers.base import GenerationResult, ProviderError
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
 from backend_v2.app.services.orchestrator import GameOrchestrator
 
@@ -335,6 +335,25 @@ class TestOrchestratorHelpers(unittest.TestCase):
             ("model-a", "model-b", "", " model-b ", "model-c"),
         )
         self.assertEqual(candidates, ("model-a", "model-b", "model-c"))
+
+    def test_stage_helpers_return_safe_defaults_for_unknown_stage(self):
+        budget = self.orchestrator._get_stage_latency_budget_ms(stage_name="unknown")
+        costs = self.orchestrator._estimate_stage_cost(
+            stage_name="unknown",
+            prompt_tokens=100,
+            completion_tokens=50,
+        )
+        self.assertEqual(budget, 0)
+        self.assertEqual(costs, (0.0, 0.0, 0.0))
+
+    def test_record_model_attempt_metrics_is_noop_without_collector(self):
+        orchestrator = GameOrchestrator(
+            provider=FakeProvider(),
+            settings=self.settings,
+            metrics_collector=None,
+        )
+        generation = GenerationResult(text="ok", model="model-a", latency_ms=10.0)
+        orchestrator._record_model_attempt_metrics(stage_name="analysis", model="model-a", generation=generation)
 
 
 if __name__ == "__main__":
