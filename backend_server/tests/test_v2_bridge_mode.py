@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 import sys
 import types
 import unittest
@@ -102,7 +103,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         worlds_payload = [
             {"id": 4, "name": "Bridge World", "created_at": "2026-02-20T20:00:00Z"},
         ]
-        with patch.object(self.backend_main, "_is_v2_bridge_enabled", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -120,7 +121,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(body["worlds"][0]["player_id"], 7)
 
     def test_create_world_endpoint_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_is_v2_bridge_enabled", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -148,7 +149,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertIn("Willkommen", body["initial_story"])
 
     def test_command_endpoint_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_is_v2_bridge_enabled", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -175,7 +176,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(body["response"], "Die Szene geht weiter.")
 
     def test_load_game_summary_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_is_v2_bridge_enabled", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -189,6 +190,46 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Aeltere", response.json()["response"])
         self.assertIn("Neueste", response.json()["response"])
+
+    def test_should_use_v2_bridge_false_when_canary_zero(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_V2_BRIDGE_ENABLED": "true",
+                "LS_V2_BRIDGE_CANARY_PERCENT": "0",
+                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "",
+            },
+            clear=False,
+        ):
+            result = self.backend_main._should_use_v2_bridge({"user_id": 7, "username": "bridge-user"})
+        self.assertFalse(result)
+
+    def test_should_use_v2_bridge_true_when_forced_user(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_V2_BRIDGE_ENABLED": "true",
+                "LS_V2_BRIDGE_CANARY_PERCENT": "0",
+                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "7, 99",
+            },
+            clear=False,
+        ):
+            result = self.backend_main._should_use_v2_bridge({"user_id": 7, "username": "bridge-user"})
+        self.assertTrue(result)
+
+    def test_should_use_v2_bridge_is_sticky_for_same_user(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_V2_BRIDGE_ENABLED": "true",
+                "LS_V2_BRIDGE_CANARY_PERCENT": "50",
+                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "",
+            },
+            clear=False,
+        ):
+            first = self.backend_main._should_use_v2_bridge({"user_id": 4242, "username": "bridge-user"})
+            second = self.backend_main._should_use_v2_bridge({"user_id": 4242, "username": "bridge-user"})
+        self.assertEqual(first, second)
 
 
 if __name__ == "__main__":

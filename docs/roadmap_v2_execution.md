@@ -137,6 +137,12 @@ Zeitraum: 22.04.2026 - 13.05.2026
 - Vollstaendiger Cutover auf OpenRouter-basierte V2-Plattform.
 - Legacy-Inferenzpfad ausser Betrieb.
 
+### Fortschritt (21.02.2026, Phase 4A gestartet)
+- Canary-Mechanik im `backend_server` als user-sticky Routing umgesetzt:
+  - `LS_V2_BRIDGE_CANARY_PERCENT` (0..100) fuer schrittweisen Traffic-Shift.
+  - `LS_V2_BRIDGE_CANARY_FORCE_USER_IDS` fuer interne Pilot-/QA-User.
+- Bridge-Runbook erweitert (`docs/backend_server_v2_bridge.md`) und separates Cutover-Runbook hinzugefuegt (`docs/phase4_cutover_runbook.md`).
+
 ---
 
 ## Codecov Setup-Checklist (konkret)
