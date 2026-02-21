@@ -135,7 +135,7 @@ V2_BRIDGE_ENABLED_ENV = "LS_V2_BRIDGE_ENABLED"
 V2_BASE_URL_ENV = "LS_V2_BASE_URL"
 V2_TIMEOUT_SECONDS_ENV = "LS_V2_TIMEOUT_SECONDS"
 DEFAULT_V2_BASE_URL = "http://127.0.0.1:8002"
-DEFAULT_V2_TIMEOUT_SECONDS = 30.0
+DEFAULT_V2_TIMEOUT_SECONDS = 90.0
 
 # --- Globale Instanzen ---
 db_manager = DatabaseManager()
@@ -949,6 +949,7 @@ async def root_health_check():
     bridge_status = {
         "enabled": _is_v2_bridge_enabled(),
         "base_url": _get_v2_base_url(),
+        "timeout_seconds": _get_v2_timeout_seconds(),
         "status": "disabled",
     }
     

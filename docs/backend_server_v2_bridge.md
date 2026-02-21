@@ -19,7 +19,7 @@ uvicorn backend_server.main:app --reload --port 8001
 Optional timeout tuning:
 
 ```powershell
-$env:LS_V2_TIMEOUT_SECONDS="45"
+$env:LS_V2_TIMEOUT_SECONDS="90"
 ```
 
 ## 3. Run smoke test (legacy API path)
