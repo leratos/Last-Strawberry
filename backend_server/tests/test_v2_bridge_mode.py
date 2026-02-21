@@ -188,6 +188,11 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         ):
             self.backend_main._require_v2_bridge_enabled()
 
+    def test_service_worker_endpoint_returns_javascript(self):
+        response = self.client.get("/service-worker.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/javascript", response.headers.get("content-type", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
