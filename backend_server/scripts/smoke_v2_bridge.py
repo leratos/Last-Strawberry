@@ -12,15 +12,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--password", required=True, help="legacy backend password")
     parser.add_argument("--world-name", default="Bridge Smoke World", help="world name for smoke run")
     parser.add_argument("--command", default="Ich schaue mich um.", help="test command to send")
+    parser.add_argument("--timeout", type=float, default=90.0, help="HTTP timeout seconds")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     base_url = args.base_url.rstrip("/")
+    timeout_seconds = max(1.0, float(args.timeout))
 
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=timeout_seconds) as client:
             token_response = client.post(
                 f"{base_url}/token",
                 data={"username": args.username, "password": args.password},
@@ -72,6 +74,9 @@ def main() -> int:
     except httpx.HTTPStatusError as exc:
         body = exc.response.text if exc.response is not None else str(exc)
         print(f"FAIL: HTTP {exc.response.status_code} - {body}")
+        return 1
+    except httpx.TimeoutException as exc:
+        print(f"FAIL: timed out (timeout={timeout_seconds}s): {exc}")
         return 1
     except Exception as exc:
         print(f"FAIL: {exc}")

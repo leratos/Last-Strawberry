@@ -74,7 +74,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--v2-base-url", default="http://127.0.0.1:8002", help="backend_v2 base URL")
     parser.add_argument("--username", required=True, help="Legacy backend username")
     parser.add_argument("--password", required=True, help="Legacy backend password")
-    parser.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout seconds")
+    parser.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout seconds for health/SLO checks")
+    parser.add_argument("--bridge-timeout", type=float, default=90.0, help="HTTP timeout seconds for bridge gameplay checks")
     parser.add_argument(
         "--skip-playtest",
         action="store_true",
@@ -93,6 +94,7 @@ def main() -> int:
         "inputs": {
             "backend_base_url": backend_base,
             "v2_base_url": v2_base,
+            "bridge_timeout": args.bridge_timeout,
             "skip_playtest": args.skip_playtest,
         },
         "checks": [],
@@ -129,6 +131,8 @@ def main() -> int:
                 "Phase4 Release Smoke World",
                 "--command",
                 "Ich pruefe den Release-Flow.",
+                "--timeout",
+                str(args.bridge_timeout),
             ],
         )
     )
@@ -150,6 +154,8 @@ def main() -> int:
                     "Phase4 Release Playtest World",
                     "--commands",
                     "Ich schaue mich um.|Ich spreche mit einem Haendler.|Ich gehe zum Rathaus.",
+                    "--timeout",
+                    str(args.bridge_timeout),
                 ],
             )
         )

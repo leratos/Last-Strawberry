@@ -23,7 +23,7 @@ Vollstaendiger Cutover auf die OpenRouter-basierte V2-Plattform ohne aktiven Leg
 
 ## Abschluss-Checks
 1. `python -m pytest backend_v2/tests backend_server/tests -q`
-2. `python backend_server/scripts/smoke_phase4_release.py --backend-base-url http://127.0.0.1:8001 --v2-base-url http://127.0.0.1:8002 --username <user> --password <pass>`
+2. `python backend_server/scripts/smoke_phase4_release.py --backend-base-url http://127.0.0.1:8001 --v2-base-url http://127.0.0.1:8002 --username <user> --password <pass> --bridge-timeout 90`
 3. Grafana/Prometheus Gates laut `docs/phase4_cutover_runbook.md` sind gruen.
 
 ## Ergebnis

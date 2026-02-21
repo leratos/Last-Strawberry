@@ -39,7 +39,8 @@ python backend_server/scripts/smoke_phase4_release.py `
   --backend-base-url http://127.0.0.1:8001 `
   --v2-base-url http://127.0.0.1:8002 `
   --username admin `
-  --password Strawberry!2026
+  --password Strawberry!2026 `
+  --bridge-timeout 90
 ```
 
 Expected: JSON output with `"ok": true`.
