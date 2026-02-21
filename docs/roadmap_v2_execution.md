@@ -166,6 +166,38 @@ Zeitraum: 22.04.2026 - 13.05.2026
 
 ---
 
+## Phase 5: Betriebsstabilitaet und Kostenkontrolle
+Zeitraum: 21.02.2026 - 07.03.2026
+
+### Deliverables
+- README auf aktuellen OpenRouter/V2-Stand konsolidieren (inkl. Codecov-Tag).
+- Post-cutover Ops-Playbook mit Daily/Weekly-Routinen.
+- Wiederholbarer Ops-Report fuer Health + SLO + Kostenraten.
+- Erweiterte Prometheus-Alert-Starterregeln fuer Latenzbudget- und Kosten-Spikes.
+
+### Meilenstein M5
+- Operative Daily-Checks sind skriptbar und dokumentiert.
+- Alert-Regeln decken Verfuegbarkeit, Fehler, Latenzbudget und Kostenrate ab.
+- Projekt-Doku reflektiert den realen Produktivpfad (V2/OpenRouter, bridge-only).
+
+### Fortschritt (21.02.2026)
+- Neuer Ops-Report fuer V2 hinzugefuegt: `backend_v2/scripts/ops_phase5_report.py`
+  - Prueft `v2/health`, `v2/metrics/slo`, Kostenrate und optional zentrale Prometheus-Metric-Familien.
+- Monitoring-Runbook erweitert um Phase-5-Ops-Report (`docs/monitoring_prometheus_v2.md`).
+- Alert-Starterregeln erweitert (`docs/alert_rules_backend_v2.yml`):
+  - `LastStrawberryV2AnalysisLatencyBudgetSpike`
+  - `LastStrawberryV2NarrativeLatencyBudgetSpike`
+  - `LastStrawberryV2EstimatedCostRateHigh`
+- Betriebsplaybook hinzugefuegt: `docs/phase5_operations_playbook.md`.
+
+### Meilensteinstatus
+- M5 erreicht am 21.02.2026:
+  - Phase-5-Ops-Checks sind implementiert und dokumentiert.
+  - Alerting deckt jetzt auch Latenzbudget- und Kosten-Spitzen ab.
+  - Doku-Basis ist auf den aktiven V2-Betrieb vereinheitlicht.
+
+---
+
 ## Codecov Setup-Checklist (konkret)
 1. Repo unter `https://app.codecov.io/gh/leratos/...` verbinden.
 2. GitHub Action ergaenzen:

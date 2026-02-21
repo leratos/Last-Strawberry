@@ -1,6 +1,6 @@
 # Monitoring Runbook: Prometheus Export (V2)
 
-Stand: 19. Februar 2026
+Stand: 21. Februar 2026
 
 ## Ziel
 - `/v2/metrics/prometheus` stabil und sicher fuer Prometheus bereitstellen.
@@ -129,6 +129,11 @@ Empfohlene Alarme:
 - Erhoehte `analysis_latency_budget_exceeded` oder `narrative_latency_budget_exceeded`.
 - Deutlicher Anstieg von `estimated_cost_usd_per_minute` ohne Lastanstieg (`requests_per_minute`).
 
+In `docs/alert_rules_backend_v2.yml` sind dafuer seit Phase 5 Starter-Regeln enthalten:
+- `LastStrawberryV2AnalysisLatencyBudgetSpike`
+- `LastStrawberryV2NarrativeLatencyBudgetSpike`
+- `LastStrawberryV2EstimatedCostRateHigh`
+
 ## SLO-Snapshot im Retrieval-Endpoint
 `GET /v2/metrics/retrieval` liefert in `windowed_rates` pro Zeitfenster jetzt auch:
 - `errors_5xx_percent`
@@ -168,6 +173,28 @@ python backend_v2/scripts/smoke_slo.py \
   --max-5xx 1.0 \
   --max-429 5.0 \
   --require-ok
+```
+
+## Phase 5 Ops Report (Daily Check)
+Kompakter Operations-Report fuer Health, SLO und Kostenrate:
+
+```bash
+python backend_v2/scripts/ops_phase5_report.py \
+  --base-url http://localhost:8002 \
+  --window 300s \
+  --max-5xx 1.0 \
+  --max-429 5.0 \
+  --max-estimated-cost-per-minute 0.10 \
+  --max-provider-cost-per-minute 0.10 \
+  --require-prometheus-families
+```
+
+Optional Report als Datei:
+
+```bash
+python backend_v2/scripts/ops_phase5_report.py \
+  --base-url http://localhost:8002 \
+  --output reports/phase5_ops_report.json
 ```
 
 ### Monitoring-Stack Smoke (Backend + Prometheus)
