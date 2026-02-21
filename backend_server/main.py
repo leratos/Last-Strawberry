@@ -23,7 +23,7 @@ from typing import Dict, Any, List, Optional
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -991,8 +991,20 @@ async def ping():
         "status": "pong", 
         "service": "Backend Server",
         "timestamp": datetime.now().isoformat(),
-        "version": "1.4.0"
+        "version": "1.5.0"
     }
+
+
+@app.get("/service-worker.js", include_in_schema=False)
+async def service_worker():
+    """No-op service worker endpoint to avoid repeated browser 404 probes."""
+    return Response(
+        content=(
+            "self.addEventListener('install', () => self.skipWaiting());"
+            "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));"
+        ),
+        media_type="application/javascript",
+    )
 
 class AttributeUpdateRequest(BaseModel):
     player_id: int
