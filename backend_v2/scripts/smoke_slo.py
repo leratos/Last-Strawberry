@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import json
+import os
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -28,21 +29,53 @@ def _get_json(url: str, token: str, timeout_seconds: float) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def main() -> int:
+def _read_float_env(key: str, default: float) -> float:
+    raw = (os.getenv(key) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    default_window = (os.getenv("LS_OPS_SLO_OVERRIDE_WINDOW") or "60s").strip() or "60s"
+    default_max_5xx = _read_float_env("LS_OPS_MAX_5XX_PERCENT", _read_float_env("LS_SLO_MAX_5XX_PERCENT", 1.0))
+    default_max_429 = _read_float_env("LS_OPS_MAX_429_PERCENT", _read_float_env("LS_SLO_MAX_429_PERCENT", 5.0))
+
     parser = argparse.ArgumentParser(description="Smoke test for /v2/metrics/slo endpoint.")
     parser.add_argument("--base-url", default="http://localhost:8002", help="Base URL of backend_v2.")
     parser.add_argument("--user-id", type=int, default=1, help="User ID for login token.")
     parser.add_argument("--username", default="slo-smoke", help="Username for login token.")
-    parser.add_argument("--window", default="60s", help="Window override for second SLO request.")
-    parser.add_argument("--max-5xx", type=float, default=1.0, help="max_5xx_percent override.")
-    parser.add_argument("--max-429", type=float, default=5.0, help="max_429_percent override.")
+    parser.add_argument(
+        "--window",
+        default=default_window,
+        help="Window override for second SLO request. Env: LS_OPS_SLO_OVERRIDE_WINDOW.",
+    )
+    parser.add_argument(
+        "--max-5xx",
+        type=float,
+        default=default_max_5xx,
+        help="max_5xx_percent override. Env fallback: LS_OPS_MAX_5XX_PERCENT -> LS_SLO_MAX_5XX_PERCENT.",
+    )
+    parser.add_argument(
+        "--max-429",
+        type=float,
+        default=default_max_429,
+        help="max_429_percent override. Env fallback: LS_OPS_MAX_429_PERCENT -> LS_SLO_MAX_429_PERCENT.",
+    )
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout seconds.")
     parser.add_argument(
         "--require-ok",
         action="store_true",
         help="Exit with code 2 if one of the SLO results is not status=ok.",
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def main() -> int:
+    args = parse_args()
 
     base = args.base_url.rstrip("/")
     login_url = f"{base}/v2/auth/login"

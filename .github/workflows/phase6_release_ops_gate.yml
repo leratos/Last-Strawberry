@@ -1,0 +1,162 @@
+name: Phase6 Release Ops Gate
+
+on:
+  pull_request:
+    paths:
+      - "backend_v2/**"
+      - "backend_server/**"
+      - "class_folder/**"
+      - ".github/workflows/phase6_release_ops_gate.yml"
+      - "docs/**"
+  push:
+    branches: [main]
+    paths:
+      - "backend_v2/**"
+      - "backend_server/**"
+      - "class_folder/**"
+      - ".github/workflows/phase6_release_ops_gate.yml"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase6_release_ops_gate:
+    name: phase6_release_ops_gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      LS_V2_BRIDGE_ENABLED: "true"
+      LS_V2_BASE_URL: "http://127.0.0.1:8002"
+      LS_V2_TIMEOUT_SECONDS: "90"
+      LS_OPENROUTER_API_KEY: "phase6-mock-openrouter-key"
+      LS_OPENROUTER_BASE_URL: "http://127.0.0.1:8031/api/v1"
+      LS_METRICS_API_KEY: "phase6-metrics-key"
+      LS_METRICS_API_KEY_HEADER: "X-Metrics-Key"
+      LS_OPS_WINDOW: "300s"
+      LS_OPS_MAX_5XX_PERCENT: "1.0"
+      LS_OPS_MAX_429_PERCENT: "5.0"
+      LS_OPS_MAX_ESTIMATED_COST_PER_MINUTE: "0.10"
+      LS_OPS_MAX_PROVIDER_COST_PER_MINUTE: "0.10"
+      LS_OPS_REQUIRE_PROMETHEUS_FAMILIES: "true"
+      LS_PHASE6_SMOKE_USERNAME: "phase6-admin"
+      LS_PHASE6_SMOKE_PASSWORD: "Phase6!SmokePass123"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend_v2/requirements.txt
+          pip install -r backend_server/requirements.txt
+
+      - name: Bootstrap backend_server smoke user
+        run: |
+          python - <<'PY'
+          import os
+          from class_folder.core.database_manager import DatabaseManager
+          from server_tools.auth_utils import get_password_hash
+
+          username = os.environ["LS_PHASE6_SMOKE_USERNAME"]
+          password = os.environ["LS_PHASE6_SMOKE_PASSWORD"]
+
+          db = DatabaseManager()
+          db.setup_database()
+          existing = db.get_user_by_username(username)
+          if existing:
+              print(f"User already exists: {username}")
+          else:
+              user_id = db.create_user(
+                  username=username,
+                  hashed_password=get_password_hash(password),
+                  roles=["admin", "gamemaster"],
+              )
+              if not user_id:
+                  raise RuntimeError("Could not create smoke user.")
+              print(f"Created smoke user: {username} (id={user_id})")
+          PY
+
+      - name: Start mock provider and services
+        run: |
+          set -euo pipefail
+          python backend_v2/scripts/mock_openrouter_server.py --host 127.0.0.1 --port 8031 > phase6_mock_openrouter.log 2>&1 &
+          echo $! > phase6_mock_openrouter.pid
+
+          python -m uvicorn backend_v2.app.main:app --host 127.0.0.1 --port 8002 > phase6_backend_v2.log 2>&1 &
+          echo $! > phase6_backend_v2.pid
+
+          python -m uvicorn backend_server.main:app --host 127.0.0.1 --port 8001 > phase6_backend_server.log 2>&1 &
+          echo $! > phase6_backend_server.pid
+
+      - name: Wait for services
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8031/health >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8031/health >/dev/null
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8002/v2/health >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8002/v2/health >/dev/null
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8001/health >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8001/health >/dev/null
+
+      - name: Run release smoke gate
+        run: |
+          python backend_server/scripts/smoke_phase4_release.py \
+            --backend-base-url http://127.0.0.1:8001 \
+            --v2-base-url http://127.0.0.1:8002 \
+            --username "$LS_PHASE6_SMOKE_USERNAME" \
+            --password "$LS_PHASE6_SMOKE_PASSWORD" \
+            --bridge-timeout 30
+
+      - name: Run ops report gate
+        run: |
+          python backend_v2/scripts/ops_phase5_report.py \
+            --base-url http://127.0.0.1:8002 \
+            --require-prometheus-families
+
+      - name: Upload gate logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase6-release-ops-gate-logs
+          path: |
+            phase6_mock_openrouter.log
+            phase6_backend_v2.log
+            phase6_backend_server.log
+
+      - name: Stop background services
+        if: always()
+        run: |
+          for pid_file in phase6_backend_server.pid phase6_backend_v2.pid phase6_mock_openrouter.pid; do
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file")"
+              if [ -n "$pid" ]; then
+                kill "$pid" >/dev/null 2>&1 || true
+              fi
+            fi
+          done

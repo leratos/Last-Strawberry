@@ -16,6 +16,23 @@ def _to_float(value: object, default: float = 0.0) -> float:
         return default
 
 
+def _read_float_env(key: str, default: float) -> float:
+    raw = (os.getenv(key) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_bool_env(key: str, default: bool) -> bool:
+    raw = (os.getenv(key) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _window_key(value: str) -> str:
     raw = (value or "").strip()
     return raw if raw.endswith("s") else f"{raw}s"
@@ -81,38 +98,66 @@ def _get_with_auth(
     return client.get(url, headers=headers)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    default_window = (os.getenv("LS_OPS_WINDOW") or os.getenv("LS_SLO_WINDOW") or "300s").strip() or "300s"
+    default_max_5xx = _read_float_env("LS_OPS_MAX_5XX_PERCENT", _read_float_env("LS_SLO_MAX_5XX_PERCENT", 1.0))
+    default_max_429 = _read_float_env("LS_OPS_MAX_429_PERCENT", _read_float_env("LS_SLO_MAX_429_PERCENT", 5.0))
+    default_max_estimated_cost = _read_float_env("LS_OPS_MAX_ESTIMATED_COST_PER_MINUTE", 0.10)
+    default_max_provider_cost = _read_float_env("LS_OPS_MAX_PROVIDER_COST_PER_MINUTE", 0.10)
+    default_require_prometheus = _read_bool_env("LS_OPS_REQUIRE_PROMETHEUS_FAMILIES", False)
+
     parser = argparse.ArgumentParser(
         description="Phase 5 ops report for backend_v2 (health, SLO, cost rate, metrics presence)."
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8002", help="backend_v2 base URL")
     parser.add_argument("--user-id", type=int, default=1, help="Login user_id for JWT auth")
     parser.add_argument("--username", default="phase5-ops", help="Login username for JWT auth")
-    parser.add_argument("--window", default="300s", help="Window key (e.g. 60s, 300s)")
-    parser.add_argument("--max-5xx", type=float, default=1.0, help="SLO max 5xx percent")
-    parser.add_argument("--max-429", type=float, default=5.0, help="SLO max 429 percent")
+    parser.add_argument(
+        "--window",
+        default=default_window,
+        help="Window key (e.g. 60s, 300s). Env fallback: LS_OPS_WINDOW -> LS_SLO_WINDOW.",
+    )
+    parser.add_argument(
+        "--max-5xx",
+        type=float,
+        default=default_max_5xx,
+        help="SLO max 5xx percent. Env fallback: LS_OPS_MAX_5XX_PERCENT -> LS_SLO_MAX_5XX_PERCENT.",
+    )
+    parser.add_argument(
+        "--max-429",
+        type=float,
+        default=default_max_429,
+        help="SLO max 429 percent. Env fallback: LS_OPS_MAX_429_PERCENT -> LS_SLO_MAX_429_PERCENT.",
+    )
     parser.add_argument(
         "--max-estimated-cost-per-minute",
         type=float,
-        default=0.10,
-        help="Max estimated cost USD/min for selected window (0 disables check)",
+        default=default_max_estimated_cost,
+        help="Max estimated cost USD/min for selected window (0 disables check). Env: LS_OPS_MAX_ESTIMATED_COST_PER_MINUTE.",
     )
     parser.add_argument(
         "--max-provider-cost-per-minute",
         type=float,
-        default=0.10,
-        help="Max provider-reported cost USD/min for selected window (0 disables check)",
+        default=default_max_provider_cost,
+        help="Max provider-reported cost USD/min for selected window (0 disables check). Env: LS_OPS_MAX_PROVIDER_COST_PER_MINUTE.",
     )
     parser.add_argument(
         "--require-prometheus-families",
         action="store_true",
+        default=default_require_prometheus,
         help="Require key Prometheus metric families to be present in /v2/metrics/prometheus output",
+    )
+    parser.add_argument(
+        "--no-require-prometheus-families",
+        action="store_false",
+        dest="require_prometheus_families",
+        help="Disable required Prometheus families check even if LS_OPS_REQUIRE_PROMETHEUS_FAMILIES=true.",
     )
     parser.add_argument("--metrics-key", default="", help="Optional LS_METRICS_API_KEY value")
     parser.add_argument("--metrics-key-header", default="X-Metrics-Key", help="Metrics key header name")
     parser.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout seconds")
     parser.add_argument("--output", default="", help="Optional output JSON path")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> int:

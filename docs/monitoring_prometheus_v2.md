@@ -189,6 +189,19 @@ python backend_v2/scripts/ops_phase5_report.py \
   --require-prometheus-families
 ```
 
+Phase-6 Defaultwerte koennen zentral ueber Env gesetzt werden:
+- `LS_OPS_WINDOW`
+- `LS_OPS_MAX_5XX_PERCENT`
+- `LS_OPS_MAX_429_PERCENT`
+- `LS_OPS_MAX_ESTIMATED_COST_PER_MINUTE`
+- `LS_OPS_MAX_PROVIDER_COST_PER_MINUTE`
+- `LS_OPS_REQUIRE_PROMETHEUS_FAMILIES`
+
+`smoke_slo.py` nutzt ebenfalls zentrale Defaults:
+- `LS_OPS_MAX_5XX_PERCENT`
+- `LS_OPS_MAX_429_PERCENT`
+- `LS_OPS_SLO_OVERRIDE_WINDOW`
+
 Optional Report als Datei:
 
 ```bash
@@ -196,6 +209,16 @@ python backend_v2/scripts/ops_phase5_report.py \
   --base-url http://localhost:8002 \
   --output reports/phase5_ops_report.json
 ```
+
+## Phase 6 Release/Ops Gate (CI)
+Workflow:
+- `.github/workflows/phase6_release_ops_gate.yml`
+
+Gate umfasst:
+1. `smoke_phase4_release.py` (Bridge-End-to-End)
+2. `ops_phase5_report.py --require-prometheus-families`
+
+Der Workflow startet fuer CI einen lokalen Mock-OpenRouter, damit der Gate-Lauf deterministisch und ohne externe API-Kosten bleibt.
 
 ### Monitoring-Stack Smoke (Backend + Prometheus)
 ```bash

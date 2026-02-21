@@ -198,6 +198,40 @@ Zeitraum: 21.02.2026 - 07.03.2026
 
 ---
 
+## Phase 6: Release-Automation und Incident-Playbooks
+Zeitraum: 21.02.2026 - 28.02.2026
+
+### Deliverables
+- Automatisierter CI-Gate fuer Release-/Ops-Abnahme:
+  - `smoke_phase4_release.py`
+  - `ops_phase5_report.py --require-prometheus-families`
+- Zentrale Ops-Schwellen als Env-Defaults fuer Skripte (`LS_OPS_*`).
+- Konkrete Incident-Playbooks fuer die Top-Fehlerbilder (`504`, `401`, `502`).
+
+### Meilenstein M6
+- Reproduzierbarer Release/Ops-Gate in GitHub Actions.
+- Schwellenwerte fuer SLO/Kosten nicht mehr nur als CLI-Konvention, sondern zentral als Env-Defaults.
+- Incident-Response fuer haeufige Stoerungen als Schritt-fuer-Schritt-Runbook dokumentiert.
+
+### Fortschritt (21.02.2026)
+- Neuer Workflow: `.github/workflows/phase6_release_ops_gate.yml`
+  - startet lokalen Mock-OpenRouter (`backend_v2/scripts/mock_openrouter_server.py`)
+  - startet `backend_v2` + `backend_server`
+  - fuehrt `smoke_phase4_release.py` und `ops_phase5_report.py` als Gate aus
+- Ops-/SLO-Skripte lesen zentrale Env-Defaults:
+  - `backend_v2/scripts/ops_phase5_report.py`
+  - `backend_v2/scripts/smoke_slo.py`
+- Incident-Runbook hinzugefuegt:
+  - `docs/phase6_incident_playbooks.md`
+
+### Meilensteinstatus
+- M6 erreicht am 21.02.2026:
+  - Release/Ops-Gate ist CI-automatisiert und reproduzierbar.
+  - Ops-Schwellen sind zentralisierbar ueber `LS_OPS_*`.
+  - Incident-Playbooks fuer `504`/`401`/`502` sind dokumentiert.
+
+---
+
 ## Codecov Setup-Checklist (konkret)
 1. Repo unter `https://app.codecov.io/gh/leratos/...` verbinden.
 2. GitHub Action ergaenzen:
