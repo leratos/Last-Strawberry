@@ -11,6 +11,7 @@
 - Smoke scripts green:
   - `python backend_server/scripts/smoke_v2_bridge.py ...`
   - `python backend_server/scripts/playtest_bridge_quickcheck.py ...`
+  - `python backend_server/scripts/smoke_phase4_release.py ...`
 
 ## Environment Controls
 - `LS_V2_BRIDGE_ENABLED=true`
@@ -31,6 +32,17 @@
 - Estimated cost trend stable:
 - `ls_backend_v2_estimated_cost_usd_per_minute{window="60s"}`
 - Manual quickcheck still passes.
+
+## Final validation command
+```powershell
+python backend_server/scripts/smoke_phase4_release.py `
+  --backend-base-url http://127.0.0.1:8001 `
+  --v2-base-url http://127.0.0.1:8002 `
+  --username admin `
+  --password Strawberry!2026
+```
+
+Expected: JSON output with `"ok": true`.
 
 ## Rollback
 1. Keep bridge enabled (`LS_V2_BRIDGE_ENABLED=true`) and restart `backend_server`.
