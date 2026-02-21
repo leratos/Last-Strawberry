@@ -64,3 +64,33 @@ groups:
         annotations:
           summary: "Backend V2 Target down"
           description: "Prometheus kann den Job last_strawberry_backend_v2 seit 2m nicht scrapen."
+
+      - alert: LastStrawberryV2AnalysisLatencyBudgetSpike
+        expr: increase(ls_backend_v2_audit_event_total{event="analysis_latency_budget_exceeded"}[10m]) >= 5
+        for: 0m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Analysis-Latenzbudget-Spike"
+          description: "Mindestens 5 analysis_latency_budget_exceeded Events in 10 Minuten."
+
+      - alert: LastStrawberryV2NarrativeLatencyBudgetSpike
+        expr: increase(ls_backend_v2_audit_event_total{event="narrative_latency_budget_exceeded"}[10m]) >= 5
+        for: 0m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 Narrative-Latenzbudget-Spike"
+          description: "Mindestens 5 narrative_latency_budget_exceeded Events in 10 Minuten."
+
+      - alert: LastStrawberryV2EstimatedCostRateHigh
+        expr: ls_backend_v2_estimated_cost_usd_per_minute{window="60s"} > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          service: last-strawberry-backend-v2
+        annotations:
+          summary: "Backend V2 geschaetzte Kostenrate zu hoch"
+          description: "ls_backend_v2_estimated_cost_usd_per_minute (60s) liegt seit 10m ueber 0.10 USD/min."
