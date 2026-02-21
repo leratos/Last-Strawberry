@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--username", required=True, help="Legacy backend username")
     parser.add_argument("--password", required=True, help="Legacy backend password")
     parser.add_argument("--world-name", default="Bridge Playtest World", help="World name for this playtest")
+    parser.add_argument("--timeout", type=float, default=90.0, help="HTTP timeout seconds")
     parser.add_argument(
         "--commands",
         default="Ich gehe zum Marktplatz.|Ich frage einen Haendler nach Geruechten.|Ich untersuche das Rathaus.",
@@ -138,12 +139,13 @@ def main() -> int:
     args = parse_args()
     base_url = args.base_url.rstrip("/")
     commands = _split_commands(args.commands)
+    timeout_seconds = max(1.0, float(args.timeout))
     if not commands:
         print("FAIL: no commands provided")
         return 1
 
     try:
-        with httpx.Client(timeout=45.0) as client:
+        with httpx.Client(timeout=timeout_seconds) as client:
             happy = run_happy_path(
                 client=client,
                 base_url=base_url,
@@ -156,6 +158,9 @@ def main() -> int:
     except httpx.HTTPStatusError as exc:
         body = exc.response.text if exc.response is not None else str(exc)
         print(f"FAIL: HTTP {exc.response.status_code} - {body}")
+        return 1
+    except httpx.TimeoutException as exc:
+        print(f"FAIL: timed out (timeout={timeout_seconds}s): {exc}")
         return 1
     except Exception as exc:
         print(f"FAIL: {exc}")
