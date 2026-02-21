@@ -19,31 +19,6 @@ class _NoopFileHandler(logging.Handler):
 
 class TestBackendV2BridgeMode(unittest.TestCase):
     @staticmethod
-    def _install_google_auth_stubs_if_missing():
-        try:
-            import google.oauth2.id_token  # noqa: F401
-            import google.auth.transport.requests  # noqa: F401
-            return
-        except Exception:
-            pass
-
-        google_module = sys.modules.setdefault("google", types.ModuleType("google"))
-        oauth2_module = sys.modules.setdefault("google.oauth2", types.ModuleType("google.oauth2"))
-        id_token_module = sys.modules.setdefault("google.oauth2.id_token", types.ModuleType("google.oauth2.id_token"))
-        auth_module = sys.modules.setdefault("google.auth", types.ModuleType("google.auth"))
-        transport_module = sys.modules.setdefault("google.auth.transport", types.ModuleType("google.auth.transport"))
-        requests_module = sys.modules.setdefault("google.auth.transport.requests", types.ModuleType("google.auth.transport.requests"))
-
-        id_token_module.fetch_id_token = lambda _request, _audience: "stub-token"
-        requests_module.Request = object
-
-        google_module.oauth2 = oauth2_module
-        google_module.auth = auth_module
-        oauth2_module.id_token = id_token_module
-        auth_module.transport = transport_module
-        transport_module.requests = requests_module
-
-    @staticmethod
     def _install_auth_utils_stub_if_missing():
         if "server_tools.auth_utils" in sys.modules:
             return
@@ -78,7 +53,6 @@ class TestBackendV2BridgeMode(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls._install_google_auth_stubs_if_missing()
         cls._install_auth_utils_stub_if_missing()
         cls._install_multipart_stub_if_missing()
 
@@ -103,7 +77,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         worlds_payload = [
             {"id": 4, "name": "Bridge World", "created_at": "2026-02-20T20:00:00Z"},
         ]
-        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_require_v2_bridge_enabled", return_value=None), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -121,7 +95,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(body["worlds"][0]["player_id"], 7)
 
     def test_create_world_endpoint_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_require_v2_bridge_enabled", return_value=None), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -149,7 +123,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertIn("Willkommen", body["initial_story"])
 
     def test_command_endpoint_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_require_v2_bridge_enabled", return_value=None), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -176,7 +150,7 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(body["response"], "Die Szene geht weiter.")
 
     def test_load_game_summary_uses_v2_bridge(self):
-        with patch.object(self.backend_main, "_should_use_v2_bridge", return_value=True), patch.object(
+        with patch.object(self.backend_main, "_require_v2_bridge_enabled", return_value=None), patch.object(
             self.backend_main,
             "_v2_login_for_user",
             AsyncMock(return_value="v2-token"),
@@ -191,45 +165,28 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertIn("Aeltere", response.json()["response"])
         self.assertIn("Neueste", response.json()["response"])
 
-    def test_should_use_v2_bridge_false_when_canary_zero(self):
+    def test_require_v2_bridge_enabled_raises_when_disabled(self):
         with patch.dict(
             os.environ,
             {
-                "LS_V2_BRIDGE_ENABLED": "true",
-                "LS_V2_BRIDGE_CANARY_PERCENT": "0",
-                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "",
+                "LS_V2_BRIDGE_ENABLED": "false",
             },
             clear=False,
         ):
-            result = self.backend_main._should_use_v2_bridge({"user_id": 7, "username": "bridge-user"})
-        self.assertFalse(result)
+            with self.assertRaises(self.backend_main.HTTPException) as exc:
+                self.backend_main._require_v2_bridge_enabled()
+        self.assertEqual(exc.exception.status_code, 503)
+        self.assertIn("decommissioned", str(exc.exception.detail))
 
-    def test_should_use_v2_bridge_true_when_forced_user(self):
+    def test_require_v2_bridge_enabled_passes_when_enabled(self):
         with patch.dict(
             os.environ,
             {
                 "LS_V2_BRIDGE_ENABLED": "true",
-                "LS_V2_BRIDGE_CANARY_PERCENT": "0",
-                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "7, 99",
             },
             clear=False,
         ):
-            result = self.backend_main._should_use_v2_bridge({"user_id": 7, "username": "bridge-user"})
-        self.assertTrue(result)
-
-    def test_should_use_v2_bridge_is_sticky_for_same_user(self):
-        with patch.dict(
-            os.environ,
-            {
-                "LS_V2_BRIDGE_ENABLED": "true",
-                "LS_V2_BRIDGE_CANARY_PERCENT": "50",
-                "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS": "",
-            },
-            clear=False,
-        ):
-            first = self.backend_main._should_use_v2_bridge({"user_id": 4242, "username": "bridge-user"})
-            second = self.backend_main._should_use_v2_bridge({"user_id": 4242, "username": "bridge-user"})
-        self.assertEqual(first, second)
+            self.backend_main._require_v2_bridge_enabled()
 
 
 if __name__ == "__main__":

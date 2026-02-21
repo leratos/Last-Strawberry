@@ -146,6 +146,10 @@ Zeitraum: 22.04.2026 - 13.05.2026
   - neue Metriken fuer Stage+Modell (`model_attempt_total`, `model_latency_ms_{avg,p95,p99,max}`, `model_tokens_total`, `model_cost_usd_total`)
   - Kostenrate je Fenster (`estimated_cost_usd_per_minute`, `provider_reported_cost_usd_per_minute`)
   - Budget-Audit-Events fuer Stage-Latenz (`analysis_latency_budget_exceeded`, `narrative_latency_budget_exceeded`)
+- Phase 4C gestartet: Legacy-GCP-Inferenzpfad im `backend_server` deaktiviert/archiviert
+  - Gameplay-Endpunkte laufen bridge-only ueber `backend_v2`; ohne `LS_V2_BRIDGE_ENABLED=true` liefern sie `503`
+  - Google-Auth/GCP-Inferenzcode entfernt; `backend_server/requirements.txt` ohne `google-auth`/`certifi`
+  - Cutover-Runbook auf Bridge-only-Betrieb und artefaktbasierten Rollback aktualisiert
 
 ---
 

@@ -1,6 +1,6 @@
 # Backend Server V2 Bridge (E2E)
 
-This mode keeps legacy `backend_server` endpoints (`/token`, `/worlds/create`, `/command`, `/load_game_summary`) but executes gameplay via `backend_v2`.
+This mode keeps legacy `backend_server` endpoint shapes (`/token`, `/worlds/create`, `/command`, `/load_game_summary`) but executes gameplay strictly via `backend_v2`.
 
 ## 1. Start backend_v2
 
@@ -22,16 +22,6 @@ Optional timeout tuning:
 $env:LS_V2_TIMEOUT_SECONDS="45"
 ```
 
-Optional sticky canary rollout:
-
-```powershell
-# percent of users that use V2 bridge (0..100, default 100)
-$env:LS_V2_BRIDGE_CANARY_PERCENT="10"
-
-# optional allowlist of legacy user_id values that must always use V2
-$env:LS_V2_BRIDGE_CANARY_FORCE_USER_IDS="1,7,42"
-```
-
 ## 3. Run smoke test (legacy API path)
 
 ```powershell
@@ -46,10 +36,9 @@ Expected: `PASS: backend_server bridge smoke succeeded`
 ## Behavior
 
 - Auth to `backend_server` remains legacy (`/token`).
-- Bridge routing is user-sticky:
-  - `LS_V2_BRIDGE_ENABLED=true` activates bridge mode.
-  - `LS_V2_BRIDGE_CANARY_PERCENT` controls what share of users is routed to V2.
-  - `LS_V2_BRIDGE_CANARY_FORCE_USER_IDS` always routes selected users to V2 (for internal QA/canary users).
+- Bridge routing is mandatory for gameplay endpoints:
+  - `LS_V2_BRIDGE_ENABLED=true` is required for `/worlds`, `/worlds/create`, `/command`, `/load_game_summary`.
+  - If bridge mode is disabled, these endpoints return `503` with a decommission hint.
 - For each protected game request, `backend_server` performs an internal `/v2/auth/login` and forwards to:
   - `GET /v2/worlds`
   - `POST /v2/worlds`
