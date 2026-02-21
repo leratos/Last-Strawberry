@@ -75,6 +75,35 @@ class _FakeAsyncClientContext:
 
 
 class TestOpenRouterProviderAsync(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_result_includes_usage_tokens_and_cost(self):
+        settings = Settings(openrouter_api_key="k")
+        response = _FakeResponse(
+            {
+                "choices": [{"message": {"content": "Antwort"}}],
+                "usage": {
+                    "prompt_tokens": 12,
+                    "completion_tokens": 34,
+                    "total_tokens": 46,
+                    "cost": 0.00123,
+                },
+            }
+        )
+        provider = OpenRouterProvider(settings, client=_FakeClient(response=response))
+
+        result = await provider.generate_result(
+            system_prompt="sys",
+            user_prompt="user",
+            model="m",
+            temperature=0.2,
+            max_tokens=200,
+        )
+        self.assertEqual(result.text, "Antwort")
+        self.assertEqual(result.usage.prompt_tokens, 12)
+        self.assertEqual(result.usage.completion_tokens, 34)
+        self.assertEqual(result.usage.total_tokens, 46)
+        self.assertEqual(result.usage.provider_reported_cost_usd, 0.00123)
+        self.assertGreaterEqual(result.latency_ms, 0.0)
+
     async def test_generate_success_with_injected_client(self):
         settings = Settings(openrouter_api_key="k")
         response = _FakeResponse({"choices": [{"message": {"content": "  Hallo Welt  "}}]})

@@ -101,6 +101,34 @@ Empfohlene Alarme:
 - Erhoehte `model_attempt_error_total` fuer Primarmodelle (`stage="analysis"` und/oder `stage="narrative"`).
 - Sprunghaft steigender Anteil von `fallback="true"` in `model_route_total`.
 
+## Phase 4B: Kosten-/Latenz-Telemetrie je Modellroute
+Seit Phase 4B werden pro Stage+Modell zusaetzlich exportiert:
+- `ls_backend_v2_model_attempt_total{stage,model}`
+- `ls_backend_v2_model_latency_ms_avg{stage,model}`
+- `ls_backend_v2_model_latency_ms_p95{stage,model}`
+- `ls_backend_v2_model_latency_ms_p99{stage,model}`
+- `ls_backend_v2_model_latency_ms_max{stage,model}`
+- `ls_backend_v2_model_tokens_total{stage,model,type}` (`prompt|completion|total`)
+- `ls_backend_v2_model_cost_usd_total{stage,model,type}` (`estimated_input|estimated_output|estimated_total|provider_reported_total`)
+- `ls_backend_v2_estimated_cost_usd_per_minute{window}`
+- `ls_backend_v2_provider_reported_cost_usd_per_minute{window}`
+
+Neue Audit-Events fuer Stage-Latenzbudgets:
+- `audit_event_total{event="analysis_latency_budget_exceeded"}`
+- `audit_event_total{event="narrative_latency_budget_exceeded"}`
+
+Konfigurierbare Budget-/Kosten-Parameter:
+- `LS_ANALYSIS_LATENCY_BUDGET_MS`
+- `LS_NARRATIVE_LATENCY_BUDGET_MS`
+- `LS_ANALYSIS_INPUT_COST_PER_1K_USD`
+- `LS_ANALYSIS_OUTPUT_COST_PER_1K_USD`
+- `LS_NARRATIVE_INPUT_COST_PER_1K_USD`
+- `LS_NARRATIVE_OUTPUT_COST_PER_1K_USD`
+
+Empfohlene Alarme:
+- Erhoehte `analysis_latency_budget_exceeded` oder `narrative_latency_budget_exceeded`.
+- Deutlicher Anstieg von `estimated_cost_usd_per_minute` ohne Lastanstieg (`requests_per_minute`).
+
 ## SLO-Snapshot im Retrieval-Endpoint
 `GET /v2/metrics/retrieval` liefert in `windowed_rates` pro Zeitfenster jetzt auch:
 - `errors_5xx_percent`

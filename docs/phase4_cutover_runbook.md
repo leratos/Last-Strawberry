@@ -36,6 +36,14 @@
 - `429` percent within SLO (`/v2/metrics/slo`).
 - No sustained `turn_timeout` spike.
 - No sustained provider error spike.
+- No sustained stage budget spike:
+  - `audit_event_total{event="analysis_latency_budget_exceeded"}`
+  - `audit_event_total{event="narrative_latency_budget_exceeded"}`
+- p95/p99 model latency stable for active models:
+  - `ls_backend_v2_model_latency_ms_p95{stage,model}`
+  - `ls_backend_v2_model_latency_ms_p99{stage,model}`
+- Estimated cost trend stable:
+  - `ls_backend_v2_estimated_cost_usd_per_minute{window="60s"}`
 - Manual quickcheck still passes.
 
 ## Rollback

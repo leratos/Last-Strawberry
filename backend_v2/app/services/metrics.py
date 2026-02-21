@@ -42,13 +42,17 @@ class RetrievalMetricsCollector:
             self.error_categories: dict[str, int] = {}
             self.model_route_counts: dict[tuple[str, str, str, bool], int] = {}
             self.model_attempt_errors: dict[tuple[str, str], int] = {}
+            self.model_attempt_stats: dict[tuple[str, str], dict[str, object]] = {}
             self._http_events: deque[tuple[float, int]] = deque()
+            self._cost_events: deque[tuple[float, float, float]] = deque()
             self._audit_event_times: dict[str, deque[float]] = {}
 
     def _prune_old_rate_events(self, now: float) -> None:
         cutoff = now - self._max_rate_window_seconds
         while self._http_events and self._http_events[0][0] < cutoff:
             self._http_events.popleft()
+        while self._cost_events and self._cost_events[0][0] < cutoff:
+            self._cost_events.popleft()
 
         for event_name in list(self._audit_event_times.keys()):
             timestamps = self._audit_event_times[event_name]
@@ -152,6 +156,83 @@ class RetrievalMetricsCollector:
             return 0.0
         return round((float(numerator) * 100.0) / float(denominator), 2)
 
+    @staticmethod
+    def _quantile(values: list[float], q: float) -> float:
+        if not values:
+            return 0.0
+        if q <= 0:
+            return round(min(values), 2)
+        if q >= 1:
+            return round(max(values), 2)
+
+        ordered = sorted(values)
+        index = int((len(ordered) - 1) * q)
+        return round(float(ordered[index]), 2)
+
+    def record_model_attempt(
+        self,
+        *,
+        stage: str,
+        model: str,
+        latency_ms: float,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        estimated_input_cost_usd: float = 0.0,
+        estimated_output_cost_usd: float = 0.0,
+        estimated_total_cost_usd: float = 0.0,
+        provider_reported_cost_usd: float | None = None,
+    ) -> None:
+        with self._lock:
+            stage_clean = stage.strip() or "unknown"
+            model_clean = model.strip() or "unknown"
+            key = (stage_clean, model_clean)
+            now = self._clock()
+            self._prune_old_rate_events(now)
+
+            stats = self.model_attempt_stats.get(key)
+            if stats is None:
+                stats = {
+                    "count": 0,
+                    "latency_sum_ms": 0.0,
+                    "latency_max_ms": 0.0,
+                    "latencies_ms": deque(maxlen=2048),
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "estimated_input_cost_usd": 0.0,
+                    "estimated_output_cost_usd": 0.0,
+                    "estimated_total_cost_usd": 0.0,
+                    "provider_reported_cost_usd": 0.0,
+                }
+                self.model_attempt_stats[key] = stats
+
+            latency_clean = max(0.0, float(latency_ms))
+            prompt_clean = max(0, int(prompt_tokens))
+            completion_clean = max(0, int(completion_tokens))
+            total_clean = max(0, int(total_tokens or (prompt_clean + completion_clean)))
+            estimated_input_clean = max(0.0, float(estimated_input_cost_usd))
+            estimated_output_clean = max(0.0, float(estimated_output_cost_usd))
+            estimated_total_clean = max(0.0, float(estimated_total_cost_usd))
+            provider_total_clean = max(0.0, float(provider_reported_cost_usd or 0.0))
+
+            stats["count"] = int(stats["count"]) + 1
+            stats["latency_sum_ms"] = float(stats["latency_sum_ms"]) + latency_clean
+            stats["latency_max_ms"] = max(float(stats["latency_max_ms"]), latency_clean)
+            stats["prompt_tokens"] = int(stats["prompt_tokens"]) + prompt_clean
+            stats["completion_tokens"] = int(stats["completion_tokens"]) + completion_clean
+            stats["total_tokens"] = int(stats["total_tokens"]) + total_clean
+            stats["estimated_input_cost_usd"] = float(stats["estimated_input_cost_usd"]) + estimated_input_clean
+            stats["estimated_output_cost_usd"] = float(stats["estimated_output_cost_usd"]) + estimated_output_clean
+            stats["estimated_total_cost_usd"] = float(stats["estimated_total_cost_usd"]) + estimated_total_clean
+            stats["provider_reported_cost_usd"] = float(stats["provider_reported_cost_usd"]) + provider_total_clean
+
+            latencies_ms = stats["latencies_ms"]
+            if isinstance(latencies_ms, deque):
+                latencies_ms.append(latency_clean)
+
+            self._cost_events.append((now, estimated_total_clean, provider_total_clean))
+
     def snapshot(self) -> dict:
         with self._lock:
             now = self._clock()
@@ -179,6 +260,14 @@ class RetrievalMetricsCollector:
                 if auth_failed_timestamps:
                     auth_failed_count = sum(1 for timestamp in auth_failed_timestamps if timestamp >= cutoff)
 
+                estimated_cost_total = 0.0
+                provider_cost_total = 0.0
+                for timestamp, estimated_cost, provider_cost in self._cost_events:
+                    if timestamp < cutoff:
+                        continue
+                    estimated_cost_total += estimated_cost
+                    provider_cost_total += provider_cost
+
                 windowed_rates[window_key] = {
                     "requests_per_minute": self._rate_per_minute(request_count, window_seconds),
                     "errors_5xx_per_minute": self._rate_per_minute(status_5xx_count, window_seconds),
@@ -186,7 +275,70 @@ class RetrievalMetricsCollector:
                     "rate_limit_429_per_minute": self._rate_per_minute(status_429_count, window_seconds),
                     "rate_limit_429_percent": self._percent(status_429_count, request_count),
                     "auth_failed_per_minute": self._rate_per_minute(auth_failed_count, window_seconds),
+                    "estimated_cost_usd_per_minute": self._rate_per_minute(
+                        int(round(estimated_cost_total * 1_000_000)),
+                        window_seconds,
+                    )
+                    / 1_000_000.0,
+                    "provider_reported_cost_usd_per_minute": self._rate_per_minute(
+                        int(round(provider_cost_total * 1_000_000)),
+                        window_seconds,
+                    )
+                    / 1_000_000.0,
                 }
+
+            model_performance_attempts: list[dict[str, object]] = []
+            model_performance_totals = {
+                "attempts": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_input_cost_usd": 0.0,
+                "estimated_output_cost_usd": 0.0,
+                "estimated_total_cost_usd": 0.0,
+                "provider_reported_cost_usd": 0.0,
+            }
+            for (stage, model), stats in sorted(self.model_attempt_stats.items()):
+                count = int(stats.get("count", 0))
+                latency_sum_ms = float(stats.get("latency_sum_ms", 0.0))
+                latency_max_ms = float(stats.get("latency_max_ms", 0.0))
+                prompt_tokens = int(stats.get("prompt_tokens", 0))
+                completion_tokens = int(stats.get("completion_tokens", 0))
+                total_tokens = int(stats.get("total_tokens", 0))
+                estimated_input_cost_usd = float(stats.get("estimated_input_cost_usd", 0.0))
+                estimated_output_cost_usd = float(stats.get("estimated_output_cost_usd", 0.0))
+                estimated_total_cost_usd = float(stats.get("estimated_total_cost_usd", 0.0))
+                provider_reported_cost_usd = float(stats.get("provider_reported_cost_usd", 0.0))
+                latencies_ms = stats.get("latencies_ms", deque())
+                latency_values = list(latencies_ms) if isinstance(latencies_ms, deque) else []
+
+                model_performance_attempts.append(
+                    {
+                        "stage": stage,
+                        "model": model,
+                        "count": count,
+                        "latency_ms_avg": round((latency_sum_ms / count), 2) if count > 0 else 0.0,
+                        "latency_ms_p95": self._quantile(latency_values, 0.95),
+                        "latency_ms_p99": self._quantile(latency_values, 0.99),
+                        "latency_ms_max": round(latency_max_ms, 2),
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens,
+                        "estimated_input_cost_usd": round(estimated_input_cost_usd, 8),
+                        "estimated_output_cost_usd": round(estimated_output_cost_usd, 8),
+                        "estimated_total_cost_usd": round(estimated_total_cost_usd, 8),
+                        "provider_reported_cost_usd": round(provider_reported_cost_usd, 8),
+                    }
+                )
+
+                model_performance_totals["attempts"] += count
+                model_performance_totals["prompt_tokens"] += prompt_tokens
+                model_performance_totals["completion_tokens"] += completion_tokens
+                model_performance_totals["total_tokens"] += total_tokens
+                model_performance_totals["estimated_input_cost_usd"] += estimated_input_cost_usd
+                model_performance_totals["estimated_output_cost_usd"] += estimated_output_cost_usd
+                model_performance_totals["estimated_total_cost_usd"] += estimated_total_cost_usd
+                model_performance_totals["provider_reported_cost_usd"] += provider_reported_cost_usd
 
             return {
                 "totals": {
@@ -230,6 +382,19 @@ class RetrievalMetricsCollector:
                         }
                         for (stage, model), count in sorted(self.model_attempt_errors.items())
                     ],
+                },
+                "model_performance": {
+                    "attempts": model_performance_attempts,
+                    "totals": {
+                        "attempts": model_performance_totals["attempts"],
+                        "prompt_tokens": model_performance_totals["prompt_tokens"],
+                        "completion_tokens": model_performance_totals["completion_tokens"],
+                        "total_tokens": model_performance_totals["total_tokens"],
+                        "estimated_input_cost_usd": round(model_performance_totals["estimated_input_cost_usd"], 8),
+                        "estimated_output_cost_usd": round(model_performance_totals["estimated_output_cost_usd"], 8),
+                        "estimated_total_cost_usd": round(model_performance_totals["estimated_total_cost_usd"], 8),
+                        "provider_reported_cost_usd": round(model_performance_totals["provider_reported_cost_usd"], 8),
+                    },
                 },
                 "windowed_rates": windowed_rates,
             }

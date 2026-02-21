@@ -31,6 +31,36 @@ class TestMetricsPrometheusExport(unittest.TestCase):
                 ],
                 "attempt_errors": [{"stage": "analysis", "model": "model-a", "count": 1}],
             },
+            "model_performance": {
+                "attempts": [
+                    {
+                        "stage": "analysis",
+                        "model": "model-b",
+                        "count": 2,
+                        "latency_ms_avg": 1200.0,
+                        "latency_ms_p95": 1800.0,
+                        "latency_ms_p99": 1900.0,
+                        "latency_ms_max": 2000.0,
+                        "prompt_tokens": 200,
+                        "completion_tokens": 120,
+                        "total_tokens": 320,
+                        "estimated_input_cost_usd": 0.01,
+                        "estimated_output_cost_usd": 0.02,
+                        "estimated_total_cost_usd": 0.03,
+                        "provider_reported_cost_usd": 0.031,
+                    }
+                ],
+                "totals": {
+                    "attempts": 2,
+                    "prompt_tokens": 200,
+                    "completion_tokens": 120,
+                    "total_tokens": 320,
+                    "estimated_input_cost_usd": 0.01,
+                    "estimated_output_cost_usd": 0.02,
+                    "estimated_total_cost_usd": 0.03,
+                    "provider_reported_cost_usd": 0.031,
+                },
+            },
             "windowed_rates": {
                 "60s": {
                     "requests_per_minute": 4.0,
@@ -39,6 +69,8 @@ class TestMetricsPrometheusExport(unittest.TestCase):
                     "rate_limit_429_per_minute": 1.0,
                     "rate_limit_429_percent": 25.0,
                     "auth_failed_per_minute": 1.0,
+                    "estimated_cost_usd_per_minute": 0.03,
+                    "provider_reported_cost_usd_per_minute": 0.031,
                 }
             },
         }
@@ -53,9 +85,14 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             payload,
         )
         self.assertIn('ls_backend_v2_model_attempt_error_total{stage="analysis",model="model-a"} 1', payload)
+        self.assertIn('ls_backend_v2_model_attempt_total{stage="analysis",model="model-b"} 2', payload)
+        self.assertIn('ls_backend_v2_model_latency_ms_p95{stage="analysis",model="model-b"} 1800.0', payload)
+        self.assertIn('ls_backend_v2_model_tokens_total{stage="analysis",model="model-b",type="total"} 320', payload)
+        self.assertIn('ls_backend_v2_model_cost_usd_total{stage="analysis",model="model-b",type="estimated_total"} 0.03', payload)
         self.assertIn('ls_backend_v2_requests_per_minute{window="60s"} 4.0', payload)
         self.assertIn('ls_backend_v2_errors_5xx_percent{window="60s"} 25.0', payload)
         self.assertIn('ls_backend_v2_rate_limit_429_percent{window="60s"} 25.0', payload)
+        self.assertIn('ls_backend_v2_estimated_cost_usd_per_minute{window="60s"} 0.03', payload)
 
     def test_histogram_conversion_uses_cumulative_buckets(self):
         snapshot = {
@@ -66,6 +103,7 @@ class TestMetricsPrometheusExport(unittest.TestCase):
             "audit_events": {},
             "error_categories": {},
             "model_routing": {},
+            "model_performance": {},
             "windowed_rates": {},
         }
 
@@ -112,6 +150,12 @@ class TestMetricsPrometheusExport(unittest.TestCase):
                     {"stage": "analysis", "count": "invalid"},
                 ],
             },
+            "model_performance": {
+                "attempts": [
+                    "invalid",
+                    {"stage": "analysis", "count": "invalid"},
+                ]
+            },
             "windowed_rates": {"60s": {"requests_per_minute": "invalid"}, "broken": "invalid"},
         }
 
@@ -121,6 +165,7 @@ class TestMetricsPrometheusExport(unittest.TestCase):
         self.assertIn('ls_backend_v2_retrieval_latency_ms_bucket{le="100"} 1', payload)
         self.assertNotIn('ls_backend_v2_model_route_total{stage=', payload)
         self.assertNotIn('ls_backend_v2_model_attempt_error_total{stage=', payload)
+        self.assertNotIn('ls_backend_v2_model_attempt_total{stage=', payload)
         self.assertNotIn("invalid", payload)
 
 

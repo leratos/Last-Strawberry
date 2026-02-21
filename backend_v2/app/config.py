@@ -153,6 +153,12 @@ class Settings:
     narrative_temperature: float = 0.7
     analysis_max_tokens: int = 700
     narrative_max_tokens: int = 1200
+    analysis_latency_budget_ms: int = 3000
+    narrative_latency_budget_ms: int = 8000
+    analysis_input_cost_per_1k_usd: float = 0.0
+    analysis_output_cost_per_1k_usd: float = 0.0
+    narrative_input_cost_per_1k_usd: float = 0.0
+    narrative_output_cost_per_1k_usd: float = 0.0
     request_timeout_seconds: int = 45
     turn_timeout_seconds: int = 60
     database_url: str = "sqlite:///backend_v2/data/last_strawberry_v2.db"
@@ -201,6 +207,24 @@ class Settings:
             narrative_temperature=float(_read_env("LS_NARRATIVE_TEMPERATURE", "0.7") or "0.7"),
             analysis_max_tokens=int(_read_env("LS_ANALYSIS_MAX_TOKENS", "700") or "700"),
             narrative_max_tokens=int(_read_env("LS_NARRATIVE_MAX_TOKENS", "1200") or "1200"),
+            analysis_latency_budget_ms=max(0, int(_read_env("LS_ANALYSIS_LATENCY_BUDGET_MS", "3000") or "3000")),
+            narrative_latency_budget_ms=max(0, int(_read_env("LS_NARRATIVE_LATENCY_BUDGET_MS", "8000") or "8000")),
+            analysis_input_cost_per_1k_usd=max(
+                0.0,
+                float(_read_env("LS_ANALYSIS_INPUT_COST_PER_1K_USD", "0.0") or "0.0"),
+            ),
+            analysis_output_cost_per_1k_usd=max(
+                0.0,
+                float(_read_env("LS_ANALYSIS_OUTPUT_COST_PER_1K_USD", "0.0") or "0.0"),
+            ),
+            narrative_input_cost_per_1k_usd=max(
+                0.0,
+                float(_read_env("LS_NARRATIVE_INPUT_COST_PER_1K_USD", "0.0") or "0.0"),
+            ),
+            narrative_output_cost_per_1k_usd=max(
+                0.0,
+                float(_read_env("LS_NARRATIVE_OUTPUT_COST_PER_1K_USD", "0.0") or "0.0"),
+            ),
             request_timeout_seconds=int(_read_env("LS_REQUEST_TIMEOUT_SECONDS", "45") or "45"),
             turn_timeout_seconds=max(1, int(_read_env("LS_TURN_TIMEOUT_SECONDS", "60") or "60")),
             database_url=_read_env("LS_DATABASE_URL", "sqlite:///backend_v2/data/last_strawberry_v2.db")

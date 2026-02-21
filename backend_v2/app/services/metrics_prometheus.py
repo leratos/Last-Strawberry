@@ -176,6 +176,72 @@ def snapshot_to_prometheus(snapshot: Mapping[str, object], namespace: str = "ls_
                     },
                 )
 
+    model_performance = snapshot.get("model_performance", {})
+    if isinstance(model_performance, Mapping):
+        attempts = model_performance.get("attempts")
+        if isinstance(attempts, list):
+            attempt_total_name = f"{ns}_model_attempt_total"
+            _add_header(lines, attempt_total_name, "counter", "Model generation attempts by stage and model.")
+            latency_avg_name = f"{ns}_model_latency_ms_avg"
+            _add_header(lines, latency_avg_name, "gauge", "Average model latency in milliseconds.")
+            latency_p95_name = f"{ns}_model_latency_ms_p95"
+            _add_header(lines, latency_p95_name, "gauge", "p95 model latency in milliseconds.")
+            latency_p99_name = f"{ns}_model_latency_ms_p99"
+            _add_header(lines, latency_p99_name, "gauge", "p99 model latency in milliseconds.")
+            latency_max_name = f"{ns}_model_latency_ms_max"
+            _add_header(lines, latency_max_name, "gauge", "Maximum model latency in milliseconds.")
+            token_total_name = f"{ns}_model_tokens_total"
+            _add_header(lines, token_total_name, "counter", "Model token totals by stage/model/type.")
+            cost_total_name = f"{ns}_model_cost_usd_total"
+            _add_header(lines, cost_total_name, "counter", "Model cost totals in USD by stage/model/type.")
+
+            for entry in attempts:
+                if not isinstance(entry, Mapping):
+                    continue
+                count = entry.get("count")
+                if isinstance(count, (int, float)):
+                    labels = {
+                        "stage": entry.get("stage", "unknown"),
+                        "model": entry.get("model", "unknown"),
+                    }
+                    _append_counter(lines, attempt_total_name, count, labels=labels)
+                    _append_counter(lines, latency_avg_name, entry.get("latency_ms_avg", 0.0), labels=labels)
+                    _append_counter(lines, latency_p95_name, entry.get("latency_ms_p95", 0.0), labels=labels)
+                    _append_counter(lines, latency_p99_name, entry.get("latency_ms_p99", 0.0), labels=labels)
+                    _append_counter(lines, latency_max_name, entry.get("latency_ms_max", 0.0), labels=labels)
+                    _append_counter(lines, token_total_name, entry.get("prompt_tokens", 0), labels={**labels, "type": "prompt"})
+                    _append_counter(
+                        lines,
+                        token_total_name,
+                        entry.get("completion_tokens", 0),
+                        labels={**labels, "type": "completion"},
+                    )
+                    _append_counter(lines, token_total_name, entry.get("total_tokens", 0), labels={**labels, "type": "total"})
+                    _append_counter(
+                        lines,
+                        cost_total_name,
+                        entry.get("estimated_input_cost_usd", 0.0),
+                        labels={**labels, "type": "estimated_input"},
+                    )
+                    _append_counter(
+                        lines,
+                        cost_total_name,
+                        entry.get("estimated_output_cost_usd", 0.0),
+                        labels={**labels, "type": "estimated_output"},
+                    )
+                    _append_counter(
+                        lines,
+                        cost_total_name,
+                        entry.get("estimated_total_cost_usd", 0.0),
+                        labels={**labels, "type": "estimated_total"},
+                    )
+                    _append_counter(
+                        lines,
+                        cost_total_name,
+                        entry.get("provider_reported_cost_usd", 0.0),
+                        labels={**labels, "type": "provider_reported_total"},
+                    )
+
     windowed_rates = snapshot.get("windowed_rates", {})
     if isinstance(windowed_rates, Mapping):
         for window, rates in windowed_rates.items():

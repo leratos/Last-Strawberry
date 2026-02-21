@@ -145,6 +145,10 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
             analysis_model="analysis-primary",
             analysis_fallback_models=("analysis-fallback",),
             narrative_model="narrative-primary",
+            analysis_input_cost_per_1k_usd=0.01,
+            analysis_output_cost_per_1k_usd=0.02,
+            narrative_input_cost_per_1k_usd=0.03,
+            narrative_output_cost_per_1k_usd=0.04,
         )
         provider = FallbackProvider()
         orchestrator = GameOrchestrator(provider=provider, settings=settings, metrics_collector=collector)
@@ -155,9 +159,12 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
         routing = collector.snapshot()["model_routing"]
         routes = routing["routes"]
         attempt_errors = routing["attempt_errors"]
+        model_performance = collector.snapshot()["model_performance"]
 
         self.assertEqual(len(routes), 2)
         self.assertEqual(len(attempt_errors), 1)
+        self.assertEqual(model_performance["totals"]["attempts"], 2)
+        self.assertGreaterEqual(model_performance["totals"]["estimated_total_cost_usd"], 0.0)
 
         analysis_route = next(route for route in routes if route["stage"] == "analysis")
         narrative_route = next(route for route in routes if route["stage"] == "narrative")
@@ -170,6 +177,45 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(attempt_errors[0]["stage"], "analysis")
         self.assertEqual(attempt_errors[0]["model"], "analysis-primary")
+
+    async def test_run_turn_records_latency_budget_breach_audit_event(self):
+        class SlowProvider:
+            name = "fake"
+
+            def __init__(self):
+                self.calls = 0
+
+            async def generate_result(self, **kwargs):
+                from backend_v2.app.providers.base import GenerationResult
+
+                self.calls += 1
+                if self.calls == 1:
+                    return GenerationResult(
+                        text='[{"command":"PLAYER_STATE_UPDATE"}]',
+                        model=kwargs["model"],
+                        latency_ms=300.0,
+                    )
+                return GenerationResult(
+                    text="Du blickst nach vorne. Was tust du als naechstes?",
+                    model=kwargs["model"],
+                    latency_ms=900.0,
+                )
+
+        collector = RetrievalMetricsCollector()
+        settings = Settings(
+            openrouter_api_key="test-key",
+            analysis_model="analysis-primary",
+            narrative_model="narrative-primary",
+            analysis_latency_budget_ms=200,
+            narrative_latency_budget_ms=800,
+        )
+        orchestrator = GameOrchestrator(provider=SlowProvider(), settings=settings, metrics_collector=collector)
+
+        request = TurnRequest(world_id=1, player_id=1, player_command="Ich pruefe die Lage.")
+        await orchestrator.run_turn(request)
+        audit = collector.snapshot()["audit_events"]
+        self.assertEqual(audit["analysis_latency_budget_exceeded"], 1)
+        self.assertEqual(audit["narrative_latency_budget_exceeded"], 1)
 
     async def test_run_turn_raises_if_all_analysis_models_fail(self):
         class AlwaysFailProvider:
