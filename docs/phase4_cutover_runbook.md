@@ -16,7 +16,7 @@
 ## Environment Controls
 - `LS_V2_BRIDGE_ENABLED=true`
 - `LS_V2_BASE_URL=http://127.0.0.1:8002` (adjust per environment)
-- `LS_V2_TIMEOUT_SECONDS=45`
+- `LS_V2_TIMEOUT_SECONDS=90`
 
 ## Release Gates (must stay green)
 - `5xx` percent within SLO (`/v2/metrics/slo`).

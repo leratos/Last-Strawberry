@@ -198,6 +198,14 @@ class TestBackendV2BridgeMode(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/javascript", response.headers.get("content-type", ""))
 
+    def test_v2_timeout_defaults_to_90_seconds(self):
+        with patch.dict(os.environ, {"LS_V2_TIMEOUT_SECONDS": ""}, clear=False):
+            self.assertEqual(self.backend_main._get_v2_timeout_seconds(), 90.0)
+
+    def test_v2_timeout_uses_minimum_floor(self):
+        with patch.dict(os.environ, {"LS_V2_TIMEOUT_SECONDS": "0"}, clear=False):
+            self.assertEqual(self.backend_main._get_v2_timeout_seconds(), 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
