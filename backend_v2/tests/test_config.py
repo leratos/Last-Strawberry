@@ -329,6 +329,28 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.analysis_fallback_models, ("model-a", "model-b", "model-c"))
         self.assertEqual(settings.narrative_fallback_models, ("narrative-fast",))
 
+    def test_model_latency_budget_and_cost_settings_from_env(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LS_ANALYSIS_LATENCY_BUDGET_MS": "2500",
+                "LS_NARRATIVE_LATENCY_BUDGET_MS": "9000",
+                "LS_ANALYSIS_INPUT_COST_PER_1K_USD": "0.002",
+                "LS_ANALYSIS_OUTPUT_COST_PER_1K_USD": "0.006",
+                "LS_NARRATIVE_INPUT_COST_PER_1K_USD": "0.003",
+                "LS_NARRATIVE_OUTPUT_COST_PER_1K_USD": "0.009",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.analysis_latency_budget_ms, 2500)
+        self.assertEqual(settings.narrative_latency_budget_ms, 9000)
+        self.assertEqual(settings.analysis_input_cost_per_1k_usd, 0.002)
+        self.assertEqual(settings.analysis_output_cost_per_1k_usd, 0.006)
+        self.assertEqual(settings.narrative_input_cost_per_1k_usd, 0.003)
+        self.assertEqual(settings.narrative_output_cost_per_1k_usd, 0.009)
+
 
 if __name__ == "__main__":
     unittest.main()

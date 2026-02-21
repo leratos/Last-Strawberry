@@ -142,6 +142,10 @@ Zeitraum: 22.04.2026 - 13.05.2026
   - `LS_V2_BRIDGE_CANARY_PERCENT` (0..100) fuer schrittweisen Traffic-Shift.
   - `LS_V2_BRIDGE_CANARY_FORCE_USER_IDS` fuer interne Pilot-/QA-User.
 - Bridge-Runbook erweitert (`docs/backend_server_v2_bridge.md`) und separates Cutover-Runbook hinzugefuegt (`docs/phase4_cutover_runbook.md`).
+- Phase 4B gestartet: Kosten-/Latenz-Telemetrie je Modellroute in `backend_v2` erweitert
+  - neue Metriken fuer Stage+Modell (`model_attempt_total`, `model_latency_ms_{avg,p95,p99,max}`, `model_tokens_total`, `model_cost_usd_total`)
+  - Kostenrate je Fenster (`estimated_cost_usd_per_minute`, `provider_reported_cost_usd_per_minute`)
+  - Budget-Audit-Events fuer Stage-Latenz (`analysis_latency_budget_exceeded`, `narrative_latency_budget_exceeded`)
 
 ---
 

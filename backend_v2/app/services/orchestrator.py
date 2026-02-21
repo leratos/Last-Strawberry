@@ -1,11 +1,12 @@
 import json
 import re
 from datetime import datetime, UTC
+from time import perf_counter
 from typing import Any
 
 from backend_v2.app.config import Settings
 from backend_v2.app.models import TurnRequest, TurnResponse
-from backend_v2.app.providers.base import LLMProvider, ProviderError
+from backend_v2.app.providers.base import GenerationResult, LLMProvider, ProviderError
 from backend_v2.app.services.metrics import RetrievalMetricsCollector
 
 
@@ -22,7 +23,7 @@ class GameOrchestrator:
 
     async def run_turn(self, request: TurnRequest) -> TurnResponse:
         analysis_system, analysis_user = self._build_analysis_prompts(request)
-        analysis_text, analysis_model = await self._generate_with_fallback(
+        analysis_text, analysis_model, _analysis_generation = await self._generate_with_fallback(
             system_prompt=analysis_system,
             user_prompt=analysis_user,
             primary_model=self.settings.analysis_model,
@@ -34,7 +35,7 @@ class GameOrchestrator:
         extracted_commands = self._extract_commands(analysis_text)
 
         narrative_system, narrative_user = self._build_narrative_prompts(request, extracted_commands)
-        narrative_text, narrative_model = await self._generate_with_fallback(
+        narrative_text, narrative_model, _narrative_generation = await self._generate_with_fallback(
             system_prompt=narrative_system,
             user_prompt=narrative_user,
             primary_model=self.settings.narrative_model,
@@ -65,24 +66,44 @@ class GameOrchestrator:
         temperature: float,
         max_tokens: int,
         stage_name: str,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, GenerationResult]:
         errors: list[str] = []
         for model in self._iter_candidate_models(primary_model, fallback_models):
             try:
-                text = await self.provider.generate(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                if hasattr(self.provider, "generate_result"):
+                    result = await self.provider.generate_result(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                else:
+                    started_at = perf_counter()
+                    text = await self.provider.generate(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    result = GenerationResult(
+                        text=text,
+                        model=model,
+                        latency_ms=(perf_counter() - started_at) * 1000.0,
+                    )
                 if self.metrics_collector is not None:
                     self.metrics_collector.record_model_route(
                         stage=stage_name,
                         requested_model=primary_model,
                         used_model=model,
                     )
-                return text, model
+                    self._record_model_attempt_metrics(
+                        stage_name=stage_name,
+                        model=model,
+                        generation=result,
+                    )
+                return result.text, model, result
             except ProviderError as exc:
                 if self.metrics_collector is not None:
                     self.metrics_collector.record_model_attempt_error(stage=stage_name, model=model)
@@ -90,6 +111,61 @@ class GameOrchestrator:
 
         details = " | ".join(errors) if errors else "No model candidates configured."
         raise ProviderError(f"All {stage_name} models failed. {details}")
+
+    def _record_model_attempt_metrics(self, *, stage_name: str, model: str, generation: GenerationResult) -> None:
+        if self.metrics_collector is None:
+            return
+
+        input_cost_usd, output_cost_usd, estimated_total_cost_usd = self._estimate_stage_cost(
+            stage_name=stage_name,
+            prompt_tokens=generation.usage.prompt_tokens,
+            completion_tokens=generation.usage.completion_tokens,
+        )
+        self.metrics_collector.record_model_attempt(
+            stage=stage_name,
+            model=model,
+            latency_ms=generation.latency_ms,
+            prompt_tokens=generation.usage.prompt_tokens,
+            completion_tokens=generation.usage.completion_tokens,
+            total_tokens=generation.usage.total_tokens,
+            estimated_input_cost_usd=input_cost_usd,
+            estimated_output_cost_usd=output_cost_usd,
+            estimated_total_cost_usd=estimated_total_cost_usd,
+            provider_reported_cost_usd=generation.usage.provider_reported_cost_usd,
+        )
+
+        latency_budget_ms = self._get_stage_latency_budget_ms(stage_name=stage_name)
+        if latency_budget_ms > 0 and generation.latency_ms > float(latency_budget_ms):
+            self.metrics_collector.record_audit_event(f"{stage_name}_latency_budget_exceeded")
+
+    def _get_stage_latency_budget_ms(self, *, stage_name: str) -> int:
+        if stage_name == "analysis":
+            return self.settings.analysis_latency_budget_ms
+        if stage_name == "narrative":
+            return self.settings.narrative_latency_budget_ms
+        return 0
+
+    def _estimate_stage_cost(
+        self,
+        *,
+        stage_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> tuple[float, float, float]:
+        if stage_name == "analysis":
+            input_per_1k = self.settings.analysis_input_cost_per_1k_usd
+            output_per_1k = self.settings.analysis_output_cost_per_1k_usd
+        elif stage_name == "narrative":
+            input_per_1k = self.settings.narrative_input_cost_per_1k_usd
+            output_per_1k = self.settings.narrative_output_cost_per_1k_usd
+        else:
+            input_per_1k = 0.0
+            output_per_1k = 0.0
+
+        input_cost = (max(0, prompt_tokens) / 1000.0) * max(0.0, input_per_1k)
+        output_cost = (max(0, completion_tokens) / 1000.0) * max(0.0, output_per_1k)
+        total_cost = input_cost + output_cost
+        return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
     def _iter_candidate_models(self, primary_model: str, fallback_models: tuple[str, ...]) -> tuple[str, ...]:
         candidates: list[str] = []

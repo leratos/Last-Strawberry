@@ -669,11 +669,13 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("audit_events", payload)
         self.assertIn("error_categories", payload)
         self.assertIn("model_routing", payload)
+        self.assertIn("model_performance", payload)
         self.assertIn("windowed_rates", payload)
         self.assertIn("60s", payload["windowed_rates"])
         self.assertGreaterEqual(payload["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
         self.assertIn("errors_5xx_percent", payload["windowed_rates"]["60s"])
         self.assertIn("rate_limit_429_percent", payload["windowed_rates"]["60s"])
+        self.assertIn("estimated_cost_usd_per_minute", payload["windowed_rates"]["60s"])
 
     def test_slo_metrics_endpoint_detects_5xx_breach(self):
         headers = self._auth_headers(user_id=11)
@@ -750,6 +752,7 @@ class TestMainApi(unittest.TestCase):
         self.assertIn("ls_backend_v2_retrieval_requests_total", payload)
         self.assertIn("ls_backend_v2_http_requests_total", payload)
         self.assertIn('ls_backend_v2_requests_per_minute{window="60s"}', payload)
+        self.assertIn("ls_backend_v2_model_attempt_total", payload)
 
     def test_retrieval_metrics_collect_http_status_and_audit_events(self):
         unauthorized = self.client.post("/v2/worlds", json={"name": "NoAuth", "description": ""})

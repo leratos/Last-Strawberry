@@ -1,7 +1,8 @@
 import httpx
+from time import perf_counter
 
 from backend_v2.app.config import Settings
-from backend_v2.app.providers.base import LLMProvider, ProviderError
+from backend_v2.app.providers.base import GenerationResult, GenerationUsage, LLMProvider, ProviderError
 from backend_v2.app.security import redact_sensitive_text
 
 
@@ -45,7 +46,47 @@ class OpenRouterProvider(LLMProvider):
             "max_tokens": max_tokens,
         }
 
-    async def generate(
+    @staticmethod
+    def _to_non_negative_int(value: object) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return parsed if parsed > 0 else 0
+
+    @staticmethod
+    def _to_non_negative_float(value: object) -> float | None:
+        if value is None:
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0.0 else None
+
+    def _extract_usage(self, data: dict) -> GenerationUsage:
+        usage_payload = data.get("usage", {})
+        if not isinstance(usage_payload, dict):
+            usage_payload = {}
+
+        prompt_tokens = self._to_non_negative_int(usage_payload.get("prompt_tokens"))
+        completion_tokens = self._to_non_negative_int(usage_payload.get("completion_tokens"))
+        total_tokens = self._to_non_negative_int(usage_payload.get("total_tokens"))
+        if total_tokens <= 0:
+            total_tokens = prompt_tokens + completion_tokens
+
+        provider_cost = self._to_non_negative_float(usage_payload.get("cost"))
+        if provider_cost is None:
+            provider_cost = self._to_non_negative_float(data.get("total_cost"))
+
+        return GenerationUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            provider_reported_cost_usd=provider_cost,
+        )
+
+    async def generate_result(
         self,
         *,
         system_prompt: str,
@@ -53,7 +94,8 @@ class OpenRouterProvider(LLMProvider):
         model: str,
         temperature: float,
         max_tokens: int,
-    ) -> str:
+    ) -> GenerationResult:
+        started_at = perf_counter()
         headers = self._build_headers()
         payload = self._build_payload(
             system_prompt=system_prompt,
@@ -82,6 +124,32 @@ class OpenRouterProvider(LLMProvider):
             raise ProviderError(f"OpenRouter request failed: {redact_sensitive_text(exc, max_length=180)}") from exc
 
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            text = data["choices"][0]["message"]["content"].strip()
         except Exception as exc:
             raise ProviderError("Invalid OpenRouter response format.") from exc
+
+        usage = self._extract_usage(data)
+        return GenerationResult(
+            text=text,
+            model=model,
+            latency_ms=(perf_counter() - started_at) * 1000.0,
+            usage=usage,
+        )
+
+    async def generate(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        result = await self.generate_result(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return result.text

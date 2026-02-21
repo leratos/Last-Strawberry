@@ -83,6 +83,30 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
             used_model="model-primary",
         )
         collector.record_model_attempt_error(stage="analysis", model="model-primary")
+        collector.record_model_attempt(
+            stage="analysis",
+            model="model-fallback",
+            latency_ms=1234.5,
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            estimated_input_cost_usd=0.001,
+            estimated_output_cost_usd=0.002,
+            estimated_total_cost_usd=0.003,
+            provider_reported_cost_usd=0.004,
+        )
+        collector.record_model_attempt(
+            stage="analysis",
+            model="model-fallback",
+            latency_ms=2300.0,
+            prompt_tokens=60,
+            completion_tokens=20,
+            total_tokens=80,
+            estimated_input_cost_usd=0.0006,
+            estimated_output_cost_usd=0.0004,
+            estimated_total_cost_usd=0.001,
+            provider_reported_cost_usd=0.0011,
+        )
 
         snapshot = collector.snapshot()
         self.assertEqual(snapshot["http_status"]["total"], 5)
@@ -109,10 +133,21 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(attempt_error["stage"], "analysis")
         self.assertEqual(attempt_error["model"], "model-primary")
         self.assertEqual(attempt_error["count"], 1)
+        model_perf = snapshot["model_performance"]
+        self.assertEqual(model_perf["totals"]["attempts"], 2)
+        self.assertGreater(model_perf["totals"]["estimated_total_cost_usd"], 0.0)
+        perf_entry = model_perf["attempts"][0]
+        self.assertEqual(perf_entry["stage"], "analysis")
+        self.assertEqual(perf_entry["model"], "model-fallback")
+        self.assertEqual(perf_entry["count"], 2)
+        self.assertGreater(perf_entry["latency_ms_p95"], 0.0)
+        self.assertEqual(perf_entry["total_tokens"], 230)
         self.assertIn("60s", snapshot["windowed_rates"])
         self.assertIn("requests_per_minute", snapshot["windowed_rates"]["60s"])
         self.assertIn("errors_5xx_percent", snapshot["windowed_rates"]["60s"])
         self.assertIn("rate_limit_429_percent", snapshot["windowed_rates"]["60s"])
+        self.assertIn("estimated_cost_usd_per_minute", snapshot["windowed_rates"]["60s"])
+        self.assertIn("provider_reported_cost_usd_per_minute", snapshot["windowed_rates"]["60s"])
 
     def test_reset(self):
         collector = RetrievalMetricsCollector()
@@ -138,6 +173,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(snapshot["error_categories"], {})
         self.assertEqual(snapshot["model_routing"]["routes"], [])
         self.assertEqual(snapshot["model_routing"]["attempt_errors"], [])
+        self.assertEqual(snapshot["model_performance"]["attempts"], [])
+        self.assertEqual(snapshot["model_performance"]["totals"]["attempts"], 0)
         self.assertEqual(snapshot["windowed_rates"]["60s"]["requests_per_minute"], 0.0)
 
     def test_windowed_rates_use_time_window(self):
@@ -148,6 +185,13 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         collector.record_http_status(500)
         collector.record_http_status(429)
         collector.record_audit_event("auth_failed")
+        collector.record_model_attempt(
+            stage="analysis",
+            model="model-a",
+            latency_ms=100.0,
+            estimated_total_cost_usd=0.006,
+            provider_reported_cost_usd=0.007,
+        )
 
         snapshot = collector.snapshot()
         rates = snapshot["windowed_rates"]["60s"]
@@ -157,6 +201,8 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
         self.assertEqual(rates["rate_limit_429_per_minute"], 1.0)
         self.assertEqual(rates["rate_limit_429_percent"], 33.33)
         self.assertEqual(rates["auth_failed_per_minute"], 1.0)
+        self.assertEqual(rates["estimated_cost_usd_per_minute"], 0.006)
+        self.assertEqual(rates["provider_reported_cost_usd_per_minute"], 0.007)
 
         clock.advance(61.0)
         snapshot = collector.snapshot()
@@ -184,6 +230,33 @@ class TestRetrievalMetricsCollector(unittest.TestCase):
 
     def test_percent_guard_on_non_positive_denominator(self):
         self.assertEqual(RetrievalMetricsCollector._percent(5, 0), 0.0)
+
+    def test_quantile_handles_empty_and_bounds(self):
+        self.assertEqual(RetrievalMetricsCollector._quantile([], 0.95), 0.0)
+        self.assertEqual(RetrievalMetricsCollector._quantile([1.0, 3.0, 2.0], 0.0), 1.0)
+        self.assertEqual(RetrievalMetricsCollector._quantile([1.0, 3.0, 2.0], 1.0), 3.0)
+
+    def test_windowed_cost_rates_skip_events_outside_smaller_window(self):
+        clock = _Clock(start=0.0)
+        collector = RetrievalMetricsCollector(rate_windows_seconds=(60, 300), clock=clock)
+
+        collector.record_model_attempt(
+            stage="analysis",
+            model="model-a",
+            latency_ms=50.0,
+            estimated_total_cost_usd=0.005,
+            provider_reported_cost_usd=0.006,
+        )
+
+        clock.advance(200.0)
+        snapshot = collector.snapshot()
+
+        rates_60 = snapshot["windowed_rates"]["60s"]
+        rates_300 = snapshot["windowed_rates"]["300s"]
+        self.assertEqual(rates_60["estimated_cost_usd_per_minute"], 0.0)
+        self.assertEqual(rates_60["provider_reported_cost_usd_per_minute"], 0.0)
+        self.assertGreater(rates_300["estimated_cost_usd_per_minute"], 0.0)
+        self.assertGreater(rates_300["provider_reported_cost_usd_per_minute"], 0.0)
 
 
 if __name__ == "__main__":
