@@ -9,8 +9,6 @@ verwaltet die Spiellogik und kommuniziert mit dem KI-Dienst.
 import logging
 import sys
 import os
-import hashlib
-import certifi
 import httpx
 import json
 import subprocess
@@ -20,25 +18,17 @@ from datetime import datetime
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
-try:
-    from google.oauth2 import id_token
-    from google.auth.transport import requests as google_auth_requests
-except ImportError:
-    id_token = None
-    google_auth_requests = None
 
 # FÃ¼ge das Projektverzeichnis zum Python-Pfad hinzu
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import time
 
-# Wir importieren jetzt die neue Online-Version des GameManagers
-from class_folder.game_logic.game_manager_online import GameManagerOnline
 from class_folder.core.database_manager import DatabaseManager
 from server_tools.auth_utils import verify_password, get_password_hash, create_access_token, verify_access_token, get_current_user_from_token
 
@@ -140,20 +130,12 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     return user
 
 # --- Konfiguration ---
-AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.run.app" # Die Adresse unseres Docker-Containers
-# AI_SERVICE_URL = "http://127.0.0.1:8080"  # Lokaler Server fÃ¼r Entwicklung
 V2_BRIDGE_ENABLED_ENV = "LS_V2_BRIDGE_ENABLED"
 V2_BASE_URL_ENV = "LS_V2_BASE_URL"
 V2_TIMEOUT_SECONDS_ENV = "LS_V2_TIMEOUT_SECONDS"
-V2_CANARY_PERCENT_ENV = "LS_V2_BRIDGE_CANARY_PERCENT"
-V2_CANARY_FORCE_USER_IDS_ENV = "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS"
 DEFAULT_V2_BASE_URL = "http://127.0.0.1:8002"
 DEFAULT_V2_TIMEOUT_SECONDS = 30.0
-DEFAULT_V2_CANARY_PERCENT = 100.0
 # --- FastAPI App ---
-key_path = project_root / "backend_server" / "key.json"
-if key_path.exists():
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(key_path)
 
 app = FastAPI(
     title="Last-Strawberry Backend Server",
@@ -305,7 +287,6 @@ logger.info(f"ðŸ“‹ Erlaubte Origins: {', '.join(allowed_origins[:3])}{'...
 
 # --- Globale Instanzen ---
 # Diese werden beim Start der Anwendung initialisiert
-game_manager_instance: Optional[GameManagerOnline] = None
 db_manager = DatabaseManager()
 
 
@@ -328,64 +309,16 @@ def _get_v2_timeout_seconds() -> float:
         return DEFAULT_V2_TIMEOUT_SECONDS
 
 
-def _get_v2_canary_percent() -> float:
-    raw = os.getenv(V2_CANARY_PERCENT_ENV)
-    if not raw:
-        return DEFAULT_V2_CANARY_PERCENT
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_V2_CANARY_PERCENT
-    return min(100.0, max(0.0, value))
-
-
-def _get_v2_canary_force_user_ids() -> set[int]:
-    raw = (os.getenv(V2_CANARY_FORCE_USER_IDS_ENV, "") or "").strip()
-    if not raw:
-        return set()
-
-    user_ids: set[int] = set()
-    for token in raw.split(","):
-        value = token.strip()
-        if not value:
-            continue
-        try:
-            user_id = int(value)
-        except (TypeError, ValueError):
-            continue
-        if user_id > 0:
-            user_ids.add(user_id)
-    return user_ids
-
-
-def _get_bridge_user_id(current_user: dict) -> int:
-    try:
-        user_id = int(current_user.get("user_id") or 0)
-    except (TypeError, ValueError, AttributeError):
-        return 0
-    return user_id if user_id > 0 else 0
-
-
-def _bridge_canary_bucket_for_user(user_id: int) -> int:
-    digest = hashlib.sha256(f"bridge-user:{user_id}".encode("utf-8")).hexdigest()
-    return int(digest[:8], 16) % 100
-
-
-def _should_use_v2_bridge(current_user: dict) -> bool:
-    if not _is_v2_bridge_enabled():
-        return False
-
-    user_id = _get_bridge_user_id(current_user)
-    if user_id and user_id in _get_v2_canary_force_user_ids():
-        return True
-
-    canary_percent = _get_v2_canary_percent()
-    if canary_percent >= 100.0:
-        return True
-    if canary_percent <= 0.0 or user_id <= 0:
-        return False
-
-    return _bridge_canary_bucket_for_user(user_id) < canary_percent
+def _require_v2_bridge_enabled() -> None:
+    if _is_v2_bridge_enabled():
+        return
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Legacy inference path is decommissioned. "
+            f"Set {V2_BRIDGE_ENABLED_ENV}=true to route gameplay via backend_v2."
+        ),
+    )
 
 
 async def _v2_login_for_user(current_user: dict) -> str:
@@ -447,58 +380,11 @@ def _build_v2_world_description(request: "WorldCreateRequest") -> str:
     ]
     return "\n".join([block for block in blocks if block])
 
-# --- KI-Kommunikation ---
-async def get_google_auth_token():
-    """Holt ein gÃ¼ltiges ID-Token fÃ¼r die Anfrage an den Cloud Run Dienst."""
-    if id_token is None or google_auth_requests is None:
-        raise HTTPException(
-            status_code=500,
-            detail="google-auth package is missing. Install backend_server requirements or use V2 bridge mode.",
-        )
-    try:
-        auth_req = google_auth_requests.Request()
-        identity_token = id_token.fetch_id_token(auth_req, AI_SERVICE_URL)
-        return identity_token
-    except Exception as e:
-        logger.error(f"Konnte kein Google Auth ID-Token erstellen: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Authentifizierung fÃ¼r KI-Dienst fehlgeschlagen.")
-
-async def call_ai_service(prompt: str, world_name: str, adapter_type: str) -> str:
-    """Sendet eine authentifizierte Anfrage an den geschÃ¼tzten KI-Dienst."""
-    request_data = {"prompt": prompt, "world_name": world_name, "adapter_type": adapter_type}
-    
-    try:
-        # Hole ein frisches Authentifizierungs-Token fÃ¼r diese Anfrage
-        token = await get_google_auth_token()
-        headers = {'Authorization': f'Bearer {token}'}
-
-        timeout_config = httpx.Timeout(300.0)
-        
-        # Wir benÃ¶tigen hier keinen eigenen SSL-Kontext mehr, da Google's Auth-Bibliothek dies managed.
-        async with httpx.AsyncClient(timeout=timeout_config) as client:
-            response = await client.post(f"{AI_SERVICE_URL}/generate", json=request_data, headers=headers)
-            response.raise_for_status()
-            return response.json()["generated_text"]
-    except httpx.TimeoutException:
-        logger.warning("Timeout bei der Anfrage an den KI-Dienst.")
-        return "[Fehler: Die KI hat zu lange fÃ¼r eine Antwort gebraucht.]"
-    except httpx.RequestError as e:
-        logger.error(f"Request-Fehler beim KI-Dienst: {e}")
-        return f"[Fehler: Der KI-Dienst unter {AI_SERVICE_URL} ist nicht erreichbar.]"
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP-Fehler vom KI-Dienst: {e.response.status_code} - {e.response.text}")
-        return f"[Fehler: Der KI-Dienst hat einen Fehler gemeldet: {e.response.status_code}]"
-    except Exception as e:
-        logger.error(f"Unerwarteter Fehler bei der KI-Kommunikation: {e}", exc_info=True)
-        return "[Ein unerwarteter interner Fehler ist bei der KI-Kommunikation aufgetreten.]"
-
 @app.on_event("startup")
 def startup_event():
     """Initialisiert den GameManager beim Start des Servers."""
-    global game_manager_instance, db_manager
     db_manager.setup_database()    
-    game_manager_instance = GameManagerOnline(ai_caller=call_ai_service)
-    logger.info("Backend-Server gestartet, DB-Schema geprÃ¼ft und GameManagerOnline initialisiert.")
+    logger.info("Backend-Server gestartet, DB-Schema geprÃ¼ft und Bridge-only Modus aktiv.")
 
 # --- Login-System ---
 # oauth2_scheme wurde bereits oben definiert - Duplikat entfernt
@@ -934,123 +820,62 @@ class WorldCreateRequest(BaseModel):
 @app.get("/worlds", tags=["Game"])
 async def get_all_worlds(current_user: dict = Depends(get_current_active_user)):
     """Gibt eine Liste aller existierenden Welten und deren Spieler zurÃ¼ck."""
-    if _should_use_v2_bridge(current_user):
-        token = await _v2_login_for_user(current_user)
-        worlds_payload = await _v2_request("GET", "/v2/worlds", token=token)
-        if not isinstance(worlds_payload, list):
-            raise HTTPException(status_code=502, detail="V2 world list payload invalid.")
+    _require_v2_bridge_enabled()
+    token = await _v2_login_for_user(current_user)
+    worlds_payload = await _v2_request("GET", "/v2/worlds", token=token)
+    if not isinstance(worlds_payload, list):
+        raise HTTPException(status_code=502, detail="V2 world list payload invalid.")
 
-        fallback_player_id = int(current_user.get("user_id") or 1)
-        mapped_worlds: list[dict[str, Any]] = []
-        for world in worlds_payload:
-            if not isinstance(world, dict):
-                continue
-            mapped_worlds.append(
-                {
-                    "world_id": int(world.get("id") or 0),
-                    "player_id": fallback_player_id,
-                    "world_name": str(world.get("name") or "Unnamed World"),
-                    "character_name": str(current_user.get("username") or "Player"),
-                    "created_at": str(world.get("created_at") or ""),
-                }
-            )
+    fallback_player_id = int(current_user.get("user_id") or 1)
+    mapped_worlds: list[dict[str, Any]] = []
+    for world in worlds_payload:
+        if not isinstance(world, dict):
+            continue
+        mapped_worlds.append(
+            {
+                "world_id": int(world.get("id") or 0),
+                "player_id": fallback_player_id,
+                "world_name": str(world.get("name") or "Unnamed World"),
+                "character_name": str(current_user.get("username") or "Player"),
+                "created_at": str(world.get("created_at") or ""),
+            }
+        )
 
-        return {"worlds": mapped_worlds}
-
-    worlds = db_manager.get_all_worlds_and_players()
-    return {"worlds": worlds}
+    return {"worlds": mapped_worlds}
 
 @app.post("/worlds/create", response_model=WorldCreationResponse, tags=["Game"])
 async def create_new_world(request: WorldCreateRequest, current_user: dict = Depends(get_current_active_user)):
     logger.info(f"Anfrage zur Welterstellung fÃ¼r '{request.world_name}' von Benutzer {current_user['username']} erhalten.")
-    if _should_use_v2_bridge(current_user):
-        token = await _v2_login_for_user(current_user)
-        created_world = await _v2_request(
-            "POST",
-            "/v2/worlds",
-            token=token,
-            json_body={
-                "name": request.world_name,
-                "description": _build_v2_world_description(request),
-            },
-        )
-        if not isinstance(created_world, dict):
-            raise HTTPException(status_code=502, detail="V2 world create payload invalid.")
+    _require_v2_bridge_enabled()
+    token = await _v2_login_for_user(current_user)
+    created_world = await _v2_request(
+        "POST",
+        "/v2/worlds",
+        token=token,
+        json_body={
+            "name": request.world_name,
+            "description": _build_v2_world_description(request),
+        },
+    )
+    if not isinstance(created_world, dict):
+        raise HTTPException(status_code=502, detail="V2 world create payload invalid.")
 
-        world_id = int(created_world.get("id") or 0)
-        if world_id <= 0:
-            raise HTTPException(status_code=502, detail="V2 world create returned invalid world id.")
+    world_id = int(created_world.get("id") or 0)
+    if world_id <= 0:
+        raise HTTPException(status_code=502, detail="V2 world create returned invalid world id.")
 
-        player_id = int(current_user.get("user_id") or 1)
-        initial_story = (
-            f"Willkommen in {request.world_name}. "
-            "Die Welt ist vorbereitet. Was tust du als naechstes?"
-        )
-        return {
-            "message": f"Welt '{request.world_name}' erfolgreich erstellt",
-            "world_id": world_id,
-            "player_id": player_id,
-            "initial_story": initial_story,
-            "final_world_name": request.world_name,
-        }
-
-    try:
-        initial_conditions = await game_manager_instance._generate_initial_conditions(
-            world_lore=request.lore,
-            char_backstory=request.backstory
-        )
-        if not initial_conditions:
-            raise HTTPException(status_code=500, detail="KI konnte keine validen Startbedingungen erstellen.")
-
-        new_ids = db_manager.create_world_and_player(
-            world_name=request.world_name, lore=request.lore, template_key=request.template_key,
-            user_id=current_user['user_id'], # Ãœbergibt die ID des angemeldeten Benutzers
-            char_name=request.char_name, backstory=request.backstory, char_attributes=request.attributes,
-            initial_location_name=initial_conditions['location_name'],
-            initial_location_desc=initial_conditions['location_description'],
-            initial_state_dict=initial_conditions['initial_state']
-        )
-        
-        # Verbesserte Fehlerbehandlung
-        if not new_ids:
-            raise HTTPException(status_code=500, detail="Fehler beim Speichern der neuen Welt in der Datenbank.")
-        
-        # PrÃ¼fe auf spezifische Fehler
-        if isinstance(new_ids, dict) and "error" in new_ids:
-            if new_ids["error"] == "world_name_exists":
-                raise HTTPException(status_code=400, detail=f"Ein Welt mit dem Namen '{request.world_name}' existiert bereits. Bitte wÃ¤hlen Sie einen anderen Namen.")
-            elif new_ids["error"] == "integrity_error":
-                raise HTTPException(status_code=400, detail="DatenintegritÃ¤tsfehler beim Erstellen der Welt.")
-            elif new_ids["error"] == "database_error":
-                raise HTTPException(status_code=500, detail="Datenbankfehler beim Erstellen der Welt.")
-            else:
-                raise HTTPException(status_code=500, detail="Unbekannter Fehler beim Erstellen der Welt.")
-
-        game_manager_instance._load_game_state(new_ids['world_id'], new_ids['player_id'])
-        game_manager_instance.is_new_game = True
-        initial_story_response = await game_manager_instance.get_initial_story_prompt()
-
-        # Extrahiere den eigentlichen Story-Text aus der AI-Antwort
-        if isinstance(initial_story_response, dict) and "response" in initial_story_response:
-            initial_story_text = initial_story_response["response"]
-        else:
-            initial_story_text = str(initial_story_response)
-
-        # Verwende den finalen Weltnamen (falls geÃ¤ndert)
-        final_world_name = new_ids.get('final_world_name', request.world_name)
-        
-        return {
-            "message": f"Welt '{final_world_name}' erfolgreich erstellt", 
-            "world_id": new_ids['world_id'],
-            "player_id": new_ids['player_id'], 
-            "initial_story": initial_story_text,
-            "final_world_name": final_world_name
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Fehler bei der Welterstellung: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist bei der Welterstellung aufgetreten.")
+    player_id = int(current_user.get("user_id") or 1)
+    initial_story = (
+        f"Willkommen in {request.world_name}. "
+        "Die Welt ist vorbereitet. Was tust du als naechstes?"
+    )
+    return {
+        "message": f"Welt '{request.world_name}' erfolgreich erstellt",
+        "world_id": world_id,
+        "player_id": player_id,
+        "initial_story": initial_story,
+        "final_world_name": request.world_name,
+    }
 
 class CommandRequest(BaseModel):
     command: str
@@ -1060,76 +885,49 @@ class CommandRequest(BaseModel):
 @app.post("/command", tags=["Game"])
 async def process_command(request: CommandRequest, current_user: dict = Depends(get_current_active_user)):
     """Nimmt einen Spieler-Befehl entgegen und gibt die Antwort des Spiels zurÃ¼ck."""
-    if _should_use_v2_bridge(current_user):
-        token = await _v2_login_for_user(current_user)
-        player_id = int(request.player_id or current_user.get("user_id") or 1)
-        turn_payload = {
-            "world_id": int(request.world_id),
-            "player_id": player_id,
-            "player_command": request.command,
-        }
-        turn_response = await _v2_request(
-            "POST",
-            "/v2/game/turn",
-            token=token,
-            json_body=turn_payload,
-        )
-        if not isinstance(turn_response, dict):
-            raise HTTPException(status_code=502, detail="V2 turn payload invalid.")
+    _require_v2_bridge_enabled()
+    token = await _v2_login_for_user(current_user)
+    player_id = int(request.player_id or current_user.get("user_id") or 1)
+    turn_payload = {
+        "world_id": int(request.world_id),
+        "player_id": player_id,
+        "player_command": request.command,
+    }
+    turn_response = await _v2_request(
+        "POST",
+        "/v2/game/turn",
+        token=token,
+        json_body=turn_payload,
+    )
+    if not isinstance(turn_response, dict):
+        raise HTTPException(status_code=502, detail="V2 turn payload invalid.")
 
-        return {
-            "response": str(turn_response.get("narrative") or ""),
-            "event_type": "STORY",
-            "extracted_commands_json": json.dumps(turn_response.get("extracted_commands", []), ensure_ascii=False),
-            "provider": turn_response.get("provider"),
-            "models": turn_response.get("models", {}),
-        }
-
-    if not game_manager_instance:
-        raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
-        
-    # player_id ist eigentlich char_id aus der Datenbank
-    char_id = request.player_id
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
-        raise HTTPException(status_code=403, detail="Permission denied to act for this player.")
-
-    game_manager_instance._load_game_state(request.world_id, char_id)
-    response = await game_manager_instance.process_player_command(request.command)
-    
-    return response
+    return {
+        "response": str(turn_response.get("narrative") or ""),
+        "event_type": "STORY",
+        "extracted_commands_json": json.dumps(turn_response.get("extracted_commands", []), ensure_ascii=False),
+        "provider": turn_response.get("provider"),
+        "models": turn_response.get("models", {}),
+    }
 
 @app.get("/load_game_summary", tags=["Game"])
 async def load_game_summary(world_id: int, player_id: int, current_user: dict = Depends(get_current_active_user)):
     """Gibt die Start-Zusammenfassung fÃ¼r ein spezifisches Spiel zurÃ¼ck."""
-    if _should_use_v2_bridge(current_user):
-        token = await _v2_login_for_user(current_user)
-        turns_payload = await _v2_request("GET", f"/v2/worlds/{world_id}/turns?limit=5", token=token)
-        if not isinstance(turns_payload, list):
-            raise HTTPException(status_code=502, detail="V2 turns payload invalid.")
+    _require_v2_bridge_enabled()
+    token = await _v2_login_for_user(current_user)
+    turns_payload = await _v2_request("GET", f"/v2/worlds/{world_id}/turns?limit=5", token=token)
+    if not isinstance(turns_payload, list):
+        raise HTTPException(status_code=502, detail="V2 turns payload invalid.")
 
-        narratives: list[str] = []
-        for turn in reversed(turns_payload):
-            if isinstance(turn, dict) and turn.get("narrative"):
-                narratives.append(str(turn["narrative"]).strip())
+    narratives: list[str] = []
+    for turn in reversed(turns_payload):
+        if isinstance(turn, dict) and turn.get("narrative"):
+            narratives.append(str(turn["narrative"]).strip())
 
-        if narratives:
-            summary = "\n\n".join(narratives[-3:])
-        else:
-            summary = "Noch keine Ereignisse vorhanden. Was moechtest du tun?"
-        return {"response": summary}
-
-    if not game_manager_instance:
-        raise HTTPException(status_code=503, detail="GameManager ist nicht initialisiert.")
-
-    # player_id ist eigentlich char_id aus der Datenbank
-    char_id = player_id
-    if not db_manager.is_user_authorized_for_player(current_user['user_id'], char_id):
-        raise HTTPException(status_code=403, detail="Permission denied to access this game summary.")
-
-    game_manager_instance._load_game_state(world_id, char_id)
-    game_manager_instance.is_new_game = False
-    
-    summary = await game_manager_instance.get_load_game_summary()
+    if narratives:
+        summary = "\n\n".join(narratives[-3:])
+    else:
+        summary = "Noch keine Ereignisse vorhanden. Was moechtest du tun?"
     return {"response": summary}
 
 @app.get("/")
@@ -1137,7 +935,7 @@ async def root():
     """Root endpoint fÃ¼r die API."""
     return {
         "message": "Last-Strawberry Backend Server",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "status": "running",
         "docs": "/docs",
         "health": "/health"
@@ -1145,8 +943,12 @@ async def root():
 
 @app.get("/health")
 async def root_health_check():
-    """Health check endpoint - testet Backend-FunktionalitÃ¤t ohne AI-Service Dependencies."""
-    ai_status = {"status": "not_checked", "message": "AI service check skipped for stability"}
+    """Health check endpoint - testet Backend + v2 bridge Erreichbarkeit."""
+    bridge_status = {
+        "enabled": _is_v2_bridge_enabled(),
+        "base_url": _get_v2_base_url(),
+        "status": "disabled",
+    }
     
     # Teste nur die Datenbankverbindung, nicht den AI-Service
     try:
@@ -1157,31 +959,33 @@ async def root_health_check():
         logger.warning(f"Database health check failed: {e}")
         db_status = "error"
     
-    # Optional: AI-Service testen, aber Fehler ignorieren
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{AI_SERVICE_URL}/health")
+    if _is_v2_bridge_enabled():
+        try:
+            timeout = httpx.Timeout(_get_v2_timeout_seconds())
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(f"{_get_v2_base_url()}/v2/health")
             if response.status_code == 200:
-                ai_status = {"status": "ok", "response": response.json()}
+                bridge_status["status"] = "ok"
             else:
-                ai_status = {"status": "unreachable", "code": response.status_code}
-    except Exception as e:
-        logger.warning(f"AI service health check failed: {e}")
-        ai_status = {"status": "unreachable", "error": "An error occurred while checking AI service health."}
+                bridge_status["status"] = "unreachable"
+                bridge_status["code"] = response.status_code
+        except Exception as e:
+            logger.warning(f"V2 bridge health check failed: {e}")
+            bridge_status["status"] = "unreachable"
+            bridge_status["error"] = "An error occurred while checking backend_v2 health."
     
     return {
         "status": "ok",
         "service": "Backend Server", 
         "database": db_status,
-        "ai_service_status": ai_status,
+        "v2_bridge_status": bridge_status,
         "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/ping")
 async def ping():
     """
-    Ping-Endpunkt fÃ¼r Google Cloud Run Kaltstart-Vermeidung.
-    Kann verwendet werden, um den Service warm zu halten.
+    Ping-Endpunkt fÃ¼r Uptime/Monitoring.
     """
     return {
         "status": "pong", 

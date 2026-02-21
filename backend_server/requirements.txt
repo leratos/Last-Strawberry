@@ -11,8 +11,6 @@ python-multipart
 
 # HTTP-Client für die Kommunikation mit dem KI-Dienst
 httpx
-certifi
-google-auth
 # Datenbank-Interaktion
 requests
 

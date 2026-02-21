@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 import sys
 import types
 import unittest
@@ -16,53 +17,7 @@ class _NoopFileHandler(logging.Handler):
         return
 
 
-class _StubGameManager:
-    async def _generate_initial_conditions(self, world_lore, char_backstory):
-        return {
-            "location_name": "Start",
-            "location_description": "Startbereich",
-            "initial_state": {},
-        }
-
-
 class TestBackendErrorStatusCodes(unittest.TestCase):
-    @staticmethod
-    def _install_google_auth_stubs_if_missing():
-        try:
-            import google.oauth2.id_token  # noqa: F401
-            import google.auth.transport.requests  # noqa: F401
-            return
-        except Exception:
-            pass
-
-        google_module = sys.modules.setdefault("google", types.ModuleType("google"))
-        oauth2_module = sys.modules.setdefault("google.oauth2", types.ModuleType("google.oauth2"))
-        id_token_module = sys.modules.setdefault(
-            "google.oauth2.id_token", types.ModuleType("google.oauth2.id_token")
-        )
-        auth_module = sys.modules.setdefault("google.auth", types.ModuleType("google.auth"))
-        transport_module = sys.modules.setdefault(
-            "google.auth.transport", types.ModuleType("google.auth.transport")
-        )
-        requests_module = sys.modules.setdefault(
-            "google.auth.transport.requests", types.ModuleType("google.auth.transport.requests")
-        )
-
-        def _fake_fetch_id_token(_request, _audience):
-            return "stub-token"
-
-        class _FakeRequest:
-            pass
-
-        id_token_module.fetch_id_token = _fake_fetch_id_token
-        requests_module.Request = _FakeRequest
-
-        google_module.oauth2 = oauth2_module
-        google_module.auth = auth_module
-        oauth2_module.id_token = id_token_module
-        auth_module.transport = transport_module
-        transport_module.requests = requests_module
-
     @staticmethod
     def _install_auth_utils_stub_if_missing():
         if "server_tools.auth_utils" in sys.modules:
@@ -107,7 +62,6 @@ class TestBackendErrorStatusCodes(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls._install_google_auth_stubs_if_missing()
         cls._install_auth_utils_stub_if_missing()
         cls._install_multipart_stub_if_missing()
 
@@ -141,7 +95,7 @@ class TestBackendErrorStatusCodes(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("Kein Event", response.json().get("detail", ""))
 
-    def test_create_world_keeps_400_when_world_name_exists(self):
+    def test_create_world_returns_503_when_bridge_disabled(self):
         payload = {
             "world_name": "Vorhandene Welt",
             "lore": "Test-Lore",
@@ -151,15 +105,11 @@ class TestBackendErrorStatusCodes(unittest.TestCase):
             "template_key": "system_fantasy",
         }
 
-        with patch.object(
-            self.backend_main.db_manager,
-            "create_world_and_player",
-            return_value={"error": "world_name_exists"},
-        ), patch.object(self.backend_main, "game_manager_instance", _StubGameManager()):
+        with patch.dict(os.environ, {"LS_V2_BRIDGE_ENABLED": "false"}, clear=False):
             response = self.client.post("/worlds/create", json=payload)
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("existiert bereits", response.json().get("detail", ""))
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("decommissioned", response.json().get("detail", ""))
 
 
 if __name__ == "__main__":
