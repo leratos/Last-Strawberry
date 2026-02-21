@@ -9,6 +9,7 @@ verwaltet die Spiellogik und kommuniziert mit dem KI-Dienst.
 import logging
 import sys
 import os
+import hashlib
 import certifi
 import httpx
 import json
@@ -144,8 +145,11 @@ AI_SERVICE_URL = "https://last-strawberry-ai-service-520324701590.europe-west4.r
 V2_BRIDGE_ENABLED_ENV = "LS_V2_BRIDGE_ENABLED"
 V2_BASE_URL_ENV = "LS_V2_BASE_URL"
 V2_TIMEOUT_SECONDS_ENV = "LS_V2_TIMEOUT_SECONDS"
+V2_CANARY_PERCENT_ENV = "LS_V2_BRIDGE_CANARY_PERCENT"
+V2_CANARY_FORCE_USER_IDS_ENV = "LS_V2_BRIDGE_CANARY_FORCE_USER_IDS"
 DEFAULT_V2_BASE_URL = "http://127.0.0.1:8002"
 DEFAULT_V2_TIMEOUT_SECONDS = 30.0
+DEFAULT_V2_CANARY_PERCENT = 100.0
 # --- FastAPI App ---
 key_path = project_root / "backend_server" / "key.json"
 if key_path.exists():
@@ -322,6 +326,66 @@ def _get_v2_timeout_seconds() -> float:
         return max(1.0, float(raw))
     except (TypeError, ValueError):
         return DEFAULT_V2_TIMEOUT_SECONDS
+
+
+def _get_v2_canary_percent() -> float:
+    raw = os.getenv(V2_CANARY_PERCENT_ENV)
+    if not raw:
+        return DEFAULT_V2_CANARY_PERCENT
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_V2_CANARY_PERCENT
+    return min(100.0, max(0.0, value))
+
+
+def _get_v2_canary_force_user_ids() -> set[int]:
+    raw = (os.getenv(V2_CANARY_FORCE_USER_IDS_ENV, "") or "").strip()
+    if not raw:
+        return set()
+
+    user_ids: set[int] = set()
+    for token in raw.split(","):
+        value = token.strip()
+        if not value:
+            continue
+        try:
+            user_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0:
+            user_ids.add(user_id)
+    return user_ids
+
+
+def _get_bridge_user_id(current_user: dict) -> int:
+    try:
+        user_id = int(current_user.get("user_id") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
+    return user_id if user_id > 0 else 0
+
+
+def _bridge_canary_bucket_for_user(user_id: int) -> int:
+    digest = hashlib.sha256(f"bridge-user:{user_id}".encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % 100
+
+
+def _should_use_v2_bridge(current_user: dict) -> bool:
+    if not _is_v2_bridge_enabled():
+        return False
+
+    user_id = _get_bridge_user_id(current_user)
+    if user_id and user_id in _get_v2_canary_force_user_ids():
+        return True
+
+    canary_percent = _get_v2_canary_percent()
+    if canary_percent >= 100.0:
+        return True
+    if canary_percent <= 0.0 or user_id <= 0:
+        return False
+
+    return _bridge_canary_bucket_for_user(user_id) < canary_percent
 
 
 async def _v2_login_for_user(current_user: dict) -> str:
@@ -870,7 +934,7 @@ class WorldCreateRequest(BaseModel):
 @app.get("/worlds", tags=["Game"])
 async def get_all_worlds(current_user: dict = Depends(get_current_active_user)):
     """Gibt eine Liste aller existierenden Welten und deren Spieler zurÃ¼ck."""
-    if _is_v2_bridge_enabled():
+    if _should_use_v2_bridge(current_user):
         token = await _v2_login_for_user(current_user)
         worlds_payload = await _v2_request("GET", "/v2/worlds", token=token)
         if not isinstance(worlds_payload, list):
@@ -899,7 +963,7 @@ async def get_all_worlds(current_user: dict = Depends(get_current_active_user)):
 @app.post("/worlds/create", response_model=WorldCreationResponse, tags=["Game"])
 async def create_new_world(request: WorldCreateRequest, current_user: dict = Depends(get_current_active_user)):
     logger.info(f"Anfrage zur Welterstellung fÃ¼r '{request.world_name}' von Benutzer {current_user['username']} erhalten.")
-    if _is_v2_bridge_enabled():
+    if _should_use_v2_bridge(current_user):
         token = await _v2_login_for_user(current_user)
         created_world = await _v2_request(
             "POST",
@@ -996,7 +1060,7 @@ class CommandRequest(BaseModel):
 @app.post("/command", tags=["Game"])
 async def process_command(request: CommandRequest, current_user: dict = Depends(get_current_active_user)):
     """Nimmt einen Spieler-Befehl entgegen und gibt die Antwort des Spiels zurÃ¼ck."""
-    if _is_v2_bridge_enabled():
+    if _should_use_v2_bridge(current_user):
         token = await _v2_login_for_user(current_user)
         player_id = int(request.player_id or current_user.get("user_id") or 1)
         turn_payload = {
@@ -1037,7 +1101,7 @@ async def process_command(request: CommandRequest, current_user: dict = Depends(
 @app.get("/load_game_summary", tags=["Game"])
 async def load_game_summary(world_id: int, player_id: int, current_user: dict = Depends(get_current_active_user)):
     """Gibt die Start-Zusammenfassung fÃ¼r ein spezifisches Spiel zurÃ¼ck."""
-    if _is_v2_bridge_enabled():
+    if _should_use_v2_bridge(current_user):
         token = await _v2_login_for_user(current_user)
         turns_payload = await _v2_request("GET", f"/v2/worlds/{world_id}/turns?limit=5", token=token)
         if not isinstance(turns_payload, list):
