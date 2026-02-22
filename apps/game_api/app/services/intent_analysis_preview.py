@@ -29,7 +29,7 @@ _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
-_INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
+_INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "schau", "suche")
 _RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg", "abstand", "fern")
 _APPROACH_VERBS = ("naehere", "nähere", "annaehern", "annähern", "naeher", "näher", "trete")
 _GENERIC_NPC_TARGET_WORDS = {
@@ -185,16 +185,19 @@ def analyze_player_input_preview(
 
     if has_talk_verb:
         target = _extract_talk_target(text) or "npc"
+        target_was_known_name = bool(
+            target and any(target.strip().lower() == known_name.lower() for known_name in (known_npc_names or []))
+        )
         target, target_meta, clarify_message = _resolve_npc_target_reference(
             target,
             known_npc_names or [],
             known_npc_refs or [],
             npc_ref_index,
         )
-        if not clarify_message and _requires_existing_npc_resolution(target=target, target_meta=target_meta):
+        if not clarify_message and not target_was_known_name and _requires_existing_npc_resolution(target=target, target_meta=target_meta):
             clarify_message = (
-                "Die angesprochene Person ist nicht eindeutig bekannt. "
-                "Bitte nenne einen bekannten Namen oder waehle ein Ziel aus der Liste."
+                "Die angesprochene Person ist nicht bekannt oder nicht sichtbar. "
+                "Bitte nenne einen bekannten Namen, waehle ein Ziel aus der Liste oder schau dich zuerst um."
             )
         if not clarify_message and _looks_like_descriptive_unresolved_npc_reference(target=target, target_meta=target_meta):
             clarify_message = (
@@ -499,10 +502,7 @@ def _clarify_action_for_ambiguous_npc_target(message: str) -> TurnIntentAction:
 def _requires_existing_npc_resolution(*, target: str, target_meta: dict[str, str]) -> bool:
     if target_meta:
         return False
-    normalized = (target or "").strip().lower()
-    if not normalized:
-        return True
-    return normalized in _GENERIC_NPC_TARGET_WORDS
+    return True
 
 
 def _looks_like_descriptive_unresolved_npc_reference(*, target: str, target_meta: dict[str, str]) -> bool:

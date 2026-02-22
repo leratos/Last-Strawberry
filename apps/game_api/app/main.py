@@ -49,6 +49,7 @@ class DevSpawnNpcRequest(BaseModel):
     stats: dict[str, int | float | str] = Field(default_factory=dict)
     npc_id: str | None = Field(default=None, max_length=120)
     standing_for_player: int | None = Field(default=None, ge=-100, le=100)
+    revealed_to_player: bool = True
 
 
 engine = RulesEngine()
@@ -98,7 +99,7 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         limit_memories_per_npc=max(1, memory_per_npc),
     )
-    return assemble_game_context(
+    context = assemble_game_context(
         world=session,
         turns=turns,
         npc_memory=npc_memory,
@@ -107,6 +108,16 @@ def _assemble_context_for_world(
         turn_limit=turn_limit,
         memory_per_npc=memory_per_npc,
     )
+    hidden_npc_count = repository.count_hidden_npcs_in_location(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        location_name=session.character_state.location_name,
+    )
+    if hidden_npc_count > 0:
+        context.retrieval_notes.append(
+            f"Es gibt {hidden_npc_count} unbekannte Praesenz(en) an diesem Ort. Umsehen/Untersuchen kann neue Ziele aufdecken."
+        )
+    return context
 
 
 @app.get("/health")
@@ -199,6 +210,7 @@ def devtest_spawn_npc(world_id: str, request: DevSpawnNpcRequest, fastapi_reques
             world_id=world_id,
             profile=profile,
             standing_for_player=request.standing_for_player,
+            revealed_to_player=request.revealed_to_player,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

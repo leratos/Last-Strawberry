@@ -173,10 +173,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200)
         world_id = create_response.json()["world_id"]
 
-        run_response = self.client.post(
-            f"/v1/worlds/{world_id}/turns/run",
-            json={"player_input": "Ich spreche mit Zorak ueber die letzten Vorfaelle."},
-        )
+        run_response = self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich spreche mit Mira."})
         self.assertEqual(run_response.status_code, 200)
 
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
@@ -184,15 +181,12 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         bundles = memory_response.json()
         self.assertGreaterEqual(len(bundles), 1)
 
-        zorak = next((bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak ueber die letzten Vorfaelle"), None)
-        if zorak is None:
-            zorak = next((bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak"), None)
-
-        self.assertIsNotNone(zorak)
-        self.assertIsNotNone(zorak["relationship"])
-        self.assertEqual(zorak["relationship"]["standing"], 1)
-        self.assertGreaterEqual(len(zorak["recent_memories"]), 1)
-        self.assertIn("talk", zorak["recent_memories"][0]["tags"])
+        mira = next((bundle for bundle in bundles if bundle["profile"]["name"] == "Mira"), None)
+        self.assertIsNotNone(mira)
+        self.assertIsNotNone(mira["relationship"])
+        self.assertEqual(mira["relationship"]["standing"], 1)
+        self.assertGreaterEqual(len(mira["recent_memories"]), 1)
+        self.assertIn("talk", mira["recent_memories"][0]["tags"])
 
     def test_g23_talk_turn_resolves_role_title_to_existing_beschwoerer_npc(self):
         create_response = self.client.post(
@@ -252,6 +246,15 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
                         scene_zone_name="Marktstaende",
                     )
                 ],
+                timestamp="2026-02-22T00:00:00Z",
+            )
+            character_row = repository._get_primary_character_row(conn, world_id)  # noqa: SLF001 - test helper access
+            self.assertIsNotNone(character_row)
+            repository._upsert_npc_discovery(  # noqa: SLF001 - test helper access
+                conn=conn,
+                world_id=world_id,
+                world_character_id=str(character_row["world_character_id"]),
+                npc_id="npc-liora-circle",
                 timestamp="2026-02-22T00:00:00Z",
             )
             conn.commit()
@@ -314,6 +317,55 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(lyra_bundle["profile"]["role"], "beschwoerer")
         self.assertEqual(lyra_bundle["relationship"]["standing"], 2)
 
+    def test_g26_hidden_spawned_npc_is_revealed_after_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g26-discovery",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und versteckten Beobachtern.",
+                "character_description": "Ein aufmerksamer Binder, der unbekannte Praesenzen bemerkt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spawn_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-hidden-lyra",
+                "name": "Lyra",
+                "role": "beschwoerer",
+                "faction": "binder_konklave",
+                "location_name": "Marktplatz",
+                "scene_zone_id": "zone-fountain-ring",
+                "scene_zone_name": "Brunnenplatz",
+                "revealed_to_player": False,
+            },
+        )
+        self.assertEqual(spawn_response.status_code, 200)
+
+        context_before = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_before.status_code, 200)
+        before_payload = context_before.json()
+        before_npc_ids = [entry["ref_id"] for entry in before_payload["target_catalog"]["npcs"]]
+        self.assertNotIn("npc-hidden-lyra", before_npc_ids)
+        self.assertTrue(any("unbekannte Praesenz" in note for note in before_payload["retrieval_notes"]))
+
+        inspect_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_response.status_code, 200)
+        inspect_payload = inspect_response.json()
+        inspect_event_codes = [event["code"] for event in inspect_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("discovery_revealed_npcs", inspect_event_codes)
+
+        context_after = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_after.status_code, 200)
+        after_payload = context_after.json()
+        after_npc_ids = [entry["ref_id"] for entry in after_payload["target_catalog"]["npcs"]]
+        self.assertIn("npc-hidden-lyra", after_npc_ids)
+
     def test_g25_descriptive_talk_reference_returns_clarify_and_does_not_create_fake_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
@@ -347,6 +399,48 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         ]
         self.assertEqual(fake_targets, [])
 
+    def test_g26_talk_to_unknown_name_requires_clarify_until_revealed(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g26-talk-hidden",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und unerkannten Akteuren.",
+                "character_description": "Eine Ermittlerin, die erst die Umgebung sondiert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-hidden-nyx",
+                "name": "Nyx",
+                "role": "magier",
+                "location_name": "Marktplatz",
+                "revealed_to_player": False,
+            },
+        )
+
+        hidden_talk_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Nyx."},
+        )
+        self.assertEqual(hidden_talk_response.status_code, 200)
+        hidden_payload = hidden_talk_response.json()
+        hidden_codes = [event["code"] for event in hidden_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("clarify_required", hidden_codes)
+
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich schau mich um."})
+        revealed_talk_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Nyx."},
+        )
+        self.assertEqual(revealed_talk_response.status_code, 200)
+        revealed_payload = revealed_talk_response.json()
+        applied_actions = [action["action_type"] for action in revealed_payload["turn"]["resolution"]["applied_actions"]]
+        self.assertIn("TALK", applied_actions)
+
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
@@ -359,10 +453,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200)
         world_id = create_response.json()["world_id"]
 
-        self.client.post(
-            f"/v1/worlds/{world_id}/turns/run",
-            json={"player_input": "Ich spreche mit Zorak ueber Schmuggler im Hafen."},
-        )
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich spreche mit Mira ueber Schmuggler im Hafen."})
         self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
             json={"player_input": "Ich gehe zum Hafen und schaue mich um."},
@@ -370,7 +461,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
 
         context_response = self.client.get(
             f"/v1/worlds/{world_id}/context",
-            params={"player_input": "Ich will mehr ueber Zorak und Schmuggler wissen."},
+            params={"player_input": "Ich will mehr ueber Mira und Schmuggler wissen."},
         )
         self.assertEqual(context_response.status_code, 200)
         payload = context_response.json()
@@ -382,7 +473,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("target_catalog", payload)
         self.assertGreaterEqual(len(payload["target_catalog"]["items"]), 1)
         self.assertGreaterEqual(len(payload["target_catalog"]["locations"]), 1)
-        self.assertEqual(payload["retrieval_player_input"], "Ich will mehr ueber Zorak und Schmuggler wissen.")
+        self.assertEqual(payload["retrieval_player_input"], "Ich will mehr ueber Mira und Schmuggler wissen.")
         self.assertTrue(payload["retrieval_notes"])
 
         top_bundle = payload["npc_memory"][0]
@@ -405,24 +496,24 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         for _ in range(2):
             run_response = self.client.post(
                 f"/v1/worlds/{world_id}/turns/run",
-                json={"player_input": "Ich spreche mit Zorak."},
+                json={"player_input": "Ich spreche mit Mira."},
             )
             self.assertEqual(run_response.status_code, 200)
             applied_actions = run_response.json()["turn"]["resolution"]["applied_actions"]
             talk_action = next(action for action in applied_actions if action["action_type"] == "TALK")
             self.assertTrue(
-                talk_action["target_ref"].startswith("npc-") or talk_action["target_ref"] == "Zorak",
+                talk_action["target_ref"].startswith("npc-") or talk_action["target_ref"] == "Mira",
                 msg=f"unexpected target_ref={talk_action['target_ref']}",
             )
 
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
         self.assertEqual(memory_response.status_code, 200)
         bundles = memory_response.json()
-        zorak = next(bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak")
-        summaries = [memory["summary"] for memory in zorak["recent_memories"]]
+        mira = next(bundle for bundle in bundles if bundle["profile"]["name"] == "Mira")
+        summaries = [memory["summary"] for memory in mira["recent_memories"]]
         self.assertEqual(len(summaries), len(set(summaries)))
         self.assertEqual(len(summaries), 1)
-        self.assertEqual(zorak["relationship"]["standing"], 2)
+        self.assertEqual(mira["relationship"]["standing"], 2)
 
     def test_g10_run_turn_accepts_structured_actions_override(self):
         create_response = self.client.post(
@@ -441,16 +532,16 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(context_response.status_code, 200)
         context_payload = context_response.json()
         zorak_ref = next(
-            (entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Zorak"),
+            (entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira"),
             None,
         )
         if zorak_ref is None:
-            self.skipTest("Kein Zorak im Target-Catalog vorhanden.")
+            self.skipTest("Kein Mira im Target-Catalog vorhanden.")
 
         run_response = self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
             json={
-                "player_input": "UI: Spreche mit Zorak",
+                "player_input": "UI: Spreche mit Mira",
                 "actions_override": [
                     {
                         "action_type": "TALK",
@@ -459,7 +550,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
                         "parameters": {
                             "intent": "talk",
                             "target_id": zorak_ref["ref_id"],
-                            "target_name": "Zorak",
+                            "target_name": "Mira",
                         },
                     }
                 ],

@@ -13,7 +13,14 @@ from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_f
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
-from ls_shared_schemas.turns import ActionType, NarrativeEnvelope, PersistedTurnRecord, TurnIntent, TurnResolution
+from ls_shared_schemas.turns import (
+    ActionType,
+    NarrativeEnvelope,
+    PersistedTurnRecord,
+    TurnIntent,
+    TurnResolution,
+    TurnSystemEvent,
+)
 from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
@@ -121,6 +128,14 @@ class WorldRepository:
                     profiles=world_seed.starter_npcs,
                     timestamp=created_at,
                 )
+                for starter_npc in world_seed.starter_npcs:
+                    self._upsert_npc_discovery(
+                        conn=conn,
+                        world_id=world_id,
+                        world_character_id=world_character_id,
+                        npc_id=starter_npc.npc_id,
+                        timestamp=created_at,
+                    )
                 self._insert_journal_entries(conn, journal_entries)
                 conn.commit()
             except Exception:
@@ -194,6 +209,23 @@ class WorldRepository:
                 character_row = self._get_primary_character_row(conn, world_id)
                 if character_row is None:
                     raise KeyError("world_character_not_found")
+
+                newly_revealed_npcs = self._apply_npc_discovery_updates(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                    intent=intent,
+                    resolution=resolution,
+                    timestamp=created_at,
+                )
+                if newly_revealed_npcs > 0:
+                    resolution.system_events.append(
+                        TurnSystemEvent(
+                            code="discovery_revealed_npcs",
+                            message=f"Du erkennst {newly_revealed_npcs} neue Praesenz(en) in der Umgebung.",
+                            severity="info",
+                        )
+                    )
 
                 conn.execute(
                     """
@@ -302,6 +334,13 @@ class WorldRepository:
                 """,
                 (world_id, world_character_id),
             ).fetchall()
+            discovery_rows = conn.execute(
+                """
+                SELECT npc_id FROM npc_discoveries
+                WHERE world_id = ? AND world_character_id = ?
+                """,
+                (world_id, world_character_id),
+            ).fetchall()
             memory_rows = conn.execute(
                 """
                 SELECT * FROM npc_memories
@@ -315,6 +354,7 @@ class WorldRepository:
             str(row["npc_id"]): self._npc_relationship_from_row(row)
             for row in relationship_rows
         }
+        discovered_npc_ids = {str(row["npc_id"]) for row in discovery_rows}
         memories_by_npc: dict[str, list[NPCMemoryEntry]] = {}
         for row in memory_rows:
             npc_id = str(row["npc_id"])
@@ -323,6 +363,8 @@ class WorldRepository:
         bundles: list[NPCMemoryBundle] = []
         for row in profile_rows:
             npc_id = str(row["npc_id"])
+            if npc_id not in discovered_npc_ids:
+                continue
             memories = memories_by_npc.get(npc_id, [])[:safe_limit]
             bundles.append(
                 NPCMemoryBundle(
@@ -340,6 +382,7 @@ class WorldRepository:
         world_id: str,
         profile: NPCProfile,
         standing_for_player: int | None = None,
+        revealed_to_player: bool = True,
     ) -> NPCProfile:
         session = self.get_world_session(world_id)
         if session is None:
@@ -363,8 +406,40 @@ class WorldRepository:
                     standing_delta=int(standing_for_player),
                     timestamp=timestamp,
                 )
+            if revealed_to_player:
+                self._upsert_npc_discovery(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=session.character_state.world_character_id,
+                    npc_id=normalized_profile.npc_id,
+                    timestamp=timestamp,
+                )
             conn.commit()
         return normalized_profile
+
+    def count_hidden_npcs_in_location(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+    ) -> int:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.npc_id
+                FROM npc_profiles p
+                LEFT JOIN npc_discoveries d
+                  ON d.world_id = p.world_id
+                 AND d.world_character_id = ?
+                 AND d.npc_id = p.npc_id
+                WHERE p.world_id = ?
+                  AND COALESCE(json_extract(p.stats_json, '$._location_name'), '') = ?
+                  AND d.npc_id IS NULL
+                """,
+                (world_character_id, world_id, location_name),
+            ).fetchall()
+        return len(rows)
 
     def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
         for entry in entries:
@@ -381,6 +456,106 @@ class WorldRepository:
                     entry.created_at.isoformat(),
                 ),
             )
+
+    def _apply_npc_discovery_updates(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        intent: TurnIntent,
+        resolution: TurnResolution,
+        timestamp: str,
+    ) -> int:
+        revealed = 0
+        applied_types = {action.action_type for action in resolution.applied_actions}
+        current_location = (resolution.resulting_character_state.location_name or "").strip()
+        if ActionType.inspect in applied_types and current_location:
+            revealed += self._reveal_npcs_in_location_for_character(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=current_location,
+                timestamp=timestamp,
+            )
+
+        for action in resolution.applied_actions:
+            if action.action_type not in {ActionType.talk, ActionType.attack, ActionType.approach, ActionType.retreat}:
+                continue
+            target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
+            if target_id.startswith("npc-"):
+                revealed += self._upsert_npc_discovery(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                    npc_id=target_id,
+                    timestamp=timestamp,
+                )
+        return revealed
+
+    def _reveal_npcs_in_location_for_character(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+        timestamp: str,
+    ) -> int:
+        rows = conn.execute(
+            """
+            SELECT npc_id
+            FROM npc_profiles
+            WHERE world_id = ?
+              AND COALESCE(json_extract(stats_json, '$._location_name'), '') = ?
+            """,
+            (world_id, location_name),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            count += self._upsert_npc_discovery(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+                npc_id=str(row["npc_id"]),
+                timestamp=timestamp,
+            )
+        return count
+
+    def _upsert_npc_discovery(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        npc_id: str,
+        timestamp: str,
+    ) -> int:
+        existing = conn.execute(
+            """
+            SELECT 1 FROM npc_discoveries
+            WHERE world_id = ? AND world_character_id = ? AND npc_id = ?
+            """,
+            (world_id, world_character_id, npc_id),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO npc_discoveries (world_id, world_character_id, npc_id, discovered_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (world_id, world_character_id, npc_id, timestamp, timestamp),
+            )
+            return 1
+        conn.execute(
+            """
+            UPDATE npc_discoveries
+            SET updated_at = ?
+            WHERE world_id = ? AND world_character_id = ? AND npc_id = ?
+            """,
+            (timestamp, world_id, world_character_id, npc_id),
+        )
+        return 0
 
     def _upsert_world_npc_profiles(
         self,
