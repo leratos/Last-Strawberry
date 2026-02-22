@@ -351,7 +351,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertNotIn("npc-hidden-lyra", before_npc_ids)
         self.assertTrue(any("unbekannte Praesenz" in note for note in before_payload["retrieval_notes"]))
         self.assertEqual(before_payload["target_catalog"]["scene_points"], [])
-        self.assertTrue(any("Interaktionspunkt" in note for note in before_payload["retrieval_notes"]))
+        self.assertTrue(any("Interaktions-/Objektpunkt" in note for note in before_payload["retrieval_notes"]))
 
         inspect_response = self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
@@ -369,7 +369,10 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         after_npc_ids = [entry["ref_id"] for entry in after_payload["target_catalog"]["npcs"]]
         self.assertIn("npc-hidden-lyra", after_npc_ids)
         self.assertGreaterEqual(len(after_payload["target_catalog"]["scene_points"]), 1)
-        self.assertFalse(any("Interaktionspunkt" in note for note in after_payload["retrieval_notes"]))
+        visible_scene_point_kinds = {entry["kind"] for entry in after_payload["target_catalog"]["scene_points"]}
+        self.assertIn("scene_point", visible_scene_point_kinds)
+        self.assertTrue({"container", "scene_object"} & visible_scene_point_kinds)
+        self.assertFalse(any("Interaktions-/Objektpunkt" in note for note in after_payload["retrieval_notes"]))
 
     def test_g25_descriptive_talk_reference_returns_clarify_and_does_not_create_fake_npc(self):
         create_response = self.client.post(
