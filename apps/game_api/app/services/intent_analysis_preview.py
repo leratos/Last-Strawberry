@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import re
+import unicodedata
 
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnIntentAction
@@ -16,7 +17,7 @@ _RETREAT_PATTERNS = [
     re.compile(r"\bweiche\s+([\w _-]+)\s+aus\b", re.I),
 ]
 _APPROACH_PATTERNS = [
-    re.compile(r"\bn(?:a|ä)here(?:\s+mich)?\s+(?:an\s+)?([\w _-]+)", re.I),
+    re.compile(r"\bn(?:ae|ä)her(?:e)?(?:\s+mich)?\s+(?:an\s+)?([\w _-]+)", re.I),
     re.compile(r"\bgehe\s+auf\s+([\w _-]+)\s+zu\b", re.I),
     re.compile(r"\bkomme\s+([\w _-]+)\s+n(?:a|ä)her\b", re.I),
 ]
@@ -43,7 +44,7 @@ def analyze_player_input_preview(
     known_npc_refs: list[dict[str, str]] | None = None,
     known_location_refs: list[dict[str, str]] | None = None,
 ) -> TurnIntent:
-    text = (player_input or "").strip()
+    text = unicodedata.normalize("NFC", (player_input or "").strip())
     lowered = text.lower()
     actions: list[TurnIntentAction] = []
     notes: list[str] = []
