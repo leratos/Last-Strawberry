@@ -34,6 +34,7 @@ type QueueMacro = {
   name: string;
   entries: QueuedStructuredAction[];
 };
+type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 
 const QUEUE_MACROS_STORAGE_KEY = "ls_web_queue_macros_v1";
 
@@ -77,6 +78,55 @@ function saveQueueMacrosToStorage(macros: QueueMacro[]): void {
     return;
   }
   window.localStorage.setItem(QUEUE_MACROS_STORAGE_KEY, JSON.stringify(macros));
+}
+
+function isApproachNotNeeded(distanceBand: DistanceBand): boolean {
+  return (distanceBand || "").toString().toLowerCase() === "adjacent";
+}
+
+function isRetreatNotNeeded(distanceBand: DistanceBand): boolean {
+  const normalized = (distanceBand || "").toString().toLowerCase();
+  return normalized === "far" || normalized === "unreachable";
+}
+
+function distanceBandDisplayLabel(distanceBand: DistanceBand): string {
+  const normalized = (distanceBand || "").toString().toLowerCase();
+  if (!normalized) {
+    return "?";
+  }
+  if (normalized === "adjacent") {
+    return "adjacent (direkt)";
+  }
+  if (normalized === "near") {
+    return "near (nah)";
+  }
+  if (normalized === "far") {
+    return "far (weit)";
+  }
+  if (normalized === "unreachable") {
+    return "unreachable";
+  }
+  return normalized;
+}
+
+function distanceActionHint(distanceBand: DistanceBand): string {
+  const normalized = (distanceBand || "").toString().toLowerCase();
+  if (!normalized) {
+    return "Distanz unbekannt: Annaehern/Abstand moeglich, Ergebnis haengt vom Kontext ab.";
+  }
+  if (normalized === "adjacent") {
+    return "Direkt daneben: Annaehern nicht noetig, Abstand sinnvoll.";
+  }
+  if (normalized === "near") {
+    return "Nah dran: Sowohl Annaehern als auch Abstand moeglich.";
+  }
+  if (normalized === "far") {
+    return "Bereits weit entfernt: Abstand bringt nichts mehr, Annaehern sinnvoll.";
+  }
+  if (normalized === "unreachable") {
+    return "Ziel derzeit nicht erreichbar: Abstand nicht relevant, ggf. Ort wechseln.";
+  }
+  return `Distanz: ${normalized}`;
 }
 
 function getStructuredTargets(
@@ -153,10 +203,28 @@ export function App() {
 
   const composerTargets = useMemo(() => {
     if (!context) {
-      return [] as Array<{ refId: string; name: string; kind: string; auxiliary?: string }>;
+      return [] as StructuredTarget[];
     }
     return getStructuredTargets(context, composerActionKind);
   }, [composerActionKind, context]);
+
+  const selectedComposerTarget = useMemo(
+    () => composerTargets.find((entry) => entry.refId === composerTargetRef) || composerTargets[0] || null,
+    [composerTargetRef, composerTargets],
+  );
+
+  const composerDistanceActionBlockedReason = useMemo(() => {
+    if (!selectedComposerTarget) {
+      return "";
+    }
+    if (composerActionKind === "APPROACH" && isApproachNotNeeded(selectedComposerTarget.distanceBandToPlayer)) {
+      return "Annaehern nicht noetig (bereits adjacent).";
+    }
+    if (composerActionKind === "RETREAT" && isRetreatNotNeeded(selectedComposerTarget.distanceBandToPlayer)) {
+      return "Abstand nicht noetig (bereits far/unreachable).";
+    }
+    return "";
+  }, [composerActionKind, selectedComposerTarget]);
 
   async function loadContext(targetWorldId: string, retrievalHint?: string): Promise<void> {
     setIsReloading(true);
@@ -645,7 +713,8 @@ export function App() {
                     type="button"
                     className="secondary-btn"
                     onClick={() => void handleStructuredTurnSubmit()}
-                    disabled={isRunningTurn || composerTargets.length === 0}
+                    disabled={isRunningTurn || composerTargets.length === 0 || Boolean(composerDistanceActionBlockedReason)}
+                    title={composerDistanceActionBlockedReason || undefined}
                   >
                     {isRunningTurn ? "Verarbeite..." : "Struktur-Turn senden"}
                   </button>
@@ -659,15 +728,29 @@ export function App() {
                         enqueueStructuredAction(composerActionKind, selected);
                       }
                     }}
-                    disabled={isRunningTurn || composerTargets.length === 0}
+                    disabled={isRunningTurn || composerTargets.length === 0 || Boolean(composerDistanceActionBlockedReason)}
+                    title={composerDistanceActionBlockedReason || undefined}
                   >
                     Zur Queue
                   </button>
                 </div>
                 {composerTargets[0] ? (
-                  <p className="list-subtle">
-                    ID-basierter Turn ueber `actions_override`. Freitext bleibt optional parallel nutzbar.
-                  </p>
+                  <>
+                    <p className="list-subtle">
+                      ID-basierter Turn ueber `actions_override`. Freitext bleibt optional parallel nutzbar.
+                    </p>
+                    {selectedComposerTarget &&
+                    (composerActionKind === "APPROACH" || composerActionKind === "RETREAT") ? (
+                      <p className="list-subtle">
+                        Distanzstatus {selectedComposerTarget.name}:{" "}
+                        {distanceBandDisplayLabel(selectedComposerTarget.distanceBandToPlayer)}.{" "}
+                        {distanceActionHint(selectedComposerTarget.distanceBandToPlayer)}
+                      </p>
+                    ) : null}
+                    {composerDistanceActionBlockedReason ? (
+                      <p className="list-subtle">{composerDistanceActionBlockedReason}</p>
+                    ) : null}
+                  </>
                 ) : null}
                 <div className="turn-actions">
                   <button
@@ -917,24 +1000,40 @@ export function App() {
               <ul className="list">
                 {context.npc_memory.length === 0 ? <li>Noch keine NPC-Erinnerungen.</li> : null}
                 {context.npc_memory.map((entry) => (
-                  <li key={entry.bundle.profile.npc_id}>
-                    <p className="list-title">
-                      {entry.bundle.profile.name} ({entry.bundle.profile.role})
-                    </p>
-                    <p className="list-subtle">
-                      ID: {entry.bundle.profile.npc_id} |{" "}
-                      Score: {entry.relevance_score.toFixed(2)}
-                      {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
-                    </p>
-                    <p className="list-subtle">
-                      Ort/Zone: {entry.bundle.profile.location_name || context.world.character_state.location_name} /{" "}
-                      {entry.bundle.profile.scene_zone_name || "Unbekannt"} | Distanz:{" "}
-                      {context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)?.distance_band_to_player || "?"}
-                    </p>
-                    {entry.bundle.recent_memories[0] ? (
-                      <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
-                    ) : null}
-                    <div className="turn-actions">
+                  (() => {
+                    const npcRef = context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id);
+                    const npcDistance = npcRef?.distance_band_to_player || undefined;
+                    const quickNpcTarget: StructuredTarget = {
+                      refId: entry.bundle.profile.npc_id,
+                      name: entry.bundle.profile.name,
+                      kind: "npc",
+                      locationName: entry.bundle.profile.location_name || context.world.character_state.location_name,
+                      sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                      sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                      distanceBandToPlayer: npcDistance,
+                    };
+                    const disableApproach = isRunningTurn || isApproachNotNeeded(npcDistance);
+                    const disableRetreat = isRunningTurn || isRetreatNotNeeded(npcDistance);
+                    return (
+                      <li key={entry.bundle.profile.npc_id}>
+                        <p className="list-title">
+                          {entry.bundle.profile.name} ({entry.bundle.profile.role})
+                        </p>
+                        <p className="list-subtle">
+                          ID: {entry.bundle.profile.npc_id} |{" "}
+                          Score: {entry.relevance_score.toFixed(2)}
+                          {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
+                        </p>
+                        <p className="list-subtle">
+                          Ort/Zone: {entry.bundle.profile.location_name || context.world.character_state.location_name} /{" "}
+                          {entry.bundle.profile.scene_zone_name || "Unbekannt"} | Distanz:{" "}
+                          {distanceBandDisplayLabel(npcDistance)}
+                        </p>
+                        <p className="list-subtle">{distanceActionHint(npcDistance)}</p>
+                        {entry.bundle.recent_memories[0] ? (
+                          <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
+                        ) : null}
+                        <div className="turn-actions">
                       <button
                         type="button"
                         className="secondary-btn"
@@ -944,15 +1043,9 @@ export function App() {
                             [
                               {
                                 label: buildStructuredActionLabel("TALK", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
+                                  ...quickNpcTarget,
                                 }),
-                                action: buildStructuredAction("TALK", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                }),
+                                action: buildStructuredAction("TALK", quickNpcTarget),
                               },
                             ],
                             "Quick Action",
@@ -970,18 +1063,7 @@ export function App() {
                             [
                               {
                                 label: `Gehe zu + rede mit ${entry.bundle.profile.name}`,
-                                action: buildStructuredAction("TALK", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                  locationName:
-                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
-                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
-                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
-                                  distanceBandToPlayer:
-                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                                      ?.distance_band_to_player || undefined,
-                                }),
+                                action: buildStructuredAction("TALK", quickNpcTarget),
                               },
                             ],
                             "Quick Action",
@@ -993,39 +1075,14 @@ export function App() {
                       <button
                         type="button"
                         className="secondary-btn"
-                        disabled={
-                          isRunningTurn ||
-                          (context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                            ?.distance_band_to_player || "near") === "adjacent"
-                        }
+                        disabled={disableApproach}
+                        title={disableApproach ? "Annaehern nicht noetig (bereits adjacent)." : undefined}
                         onClick={() =>
                           void executeStructuredActions(
                             [
                               {
-                                label: buildStructuredActionLabel("APPROACH", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                  locationName:
-                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
-                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
-                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
-                                  distanceBandToPlayer:
-                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                                      ?.distance_band_to_player || undefined,
-                                }),
-                                action: buildStructuredAction("APPROACH", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                  locationName:
-                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
-                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
-                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
-                                  distanceBandToPlayer:
-                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                                      ?.distance_band_to_player || undefined,
-                                }),
+                                label: buildStructuredActionLabel("APPROACH", quickNpcTarget),
+                                action: buildStructuredAction("APPROACH", quickNpcTarget),
                               },
                             ],
                             "Quick Action",
@@ -1037,35 +1094,14 @@ export function App() {
                       <button
                         type="button"
                         className="secondary-btn"
-                        disabled={isRunningTurn}
+                        disabled={disableRetreat}
+                        title={disableRetreat ? "Abstand nicht noetig (bereits far/unreachable)." : undefined}
                         onClick={() =>
                           void executeStructuredActions(
                             [
                               {
-                                label: buildStructuredActionLabel("RETREAT", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                  locationName:
-                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
-                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
-                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
-                                  distanceBandToPlayer:
-                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                                      ?.distance_band_to_player || undefined,
-                                }),
-                                action: buildStructuredAction("RETREAT", {
-                                  refId: entry.bundle.profile.npc_id,
-                                  name: entry.bundle.profile.name,
-                                  kind: "npc",
-                                  locationName:
-                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
-                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
-                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
-                                  distanceBandToPlayer:
-                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
-                                      ?.distance_band_to_player || undefined,
-                                }),
+                                label: buildStructuredActionLabel("RETREAT", quickNpcTarget),
+                                action: buildStructuredAction("RETREAT", quickNpcTarget),
                               },
                             ],
                             "Quick Action",
@@ -1080,16 +1116,16 @@ export function App() {
                         disabled={isRunningTurn}
                         onClick={() =>
                           enqueueStructuredAction("ATTACK", {
-                            refId: entry.bundle.profile.npc_id,
-                            name: entry.bundle.profile.name,
-                            kind: "npc",
+                            ...quickNpcTarget,
                           })
                         }
                       >
                         +Attack Queue
                       </button>
-                    </div>
-                  </li>
+                        </div>
+                      </li>
+                    );
+                  })()
                 ))}
               </ul>
 

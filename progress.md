@@ -54,3 +54,6 @@
 - G17: `APPROACH` ist gestuft: `far -> near -> adjacent`, `adjacent` liefert `approach_not_needed`.
 - G17: Web-UI hat Quick Action `Annaehern` bei NPCs; Distanzaktionen sind kontextsensitiv (z. B. `Annaehern` aus bei `adjacent`).
 - G17: Quickcheck-Script erweitert auf zwei APPROACHs nach `far` und prueft `distance_after_approach_second == adjacent`.
+- G17.1: Parser-Hotfix fuer umgangssprachliche Annaeherungs-Phrasen (`naeher/näher mich ...`) inkl. Unicode-NFC-Normalisierung und Regressionstests.
+- G18: Web-UI zeigt klarere Distanzhinweise im NPC-Panel und im Struktur-Composer (adjacent/near/far/unreachable mit Handlungs-Hinweis).
+- G18: `APPROACH`/`RETREAT` werden im UI kontextsensitiv deaktiviert (z. B. `Annaehern` bei `adjacent`, `Abstand` bei `far/unreachable`) statt unnötige `*_not_needed` Turns zu erzeugen.
