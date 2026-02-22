@@ -2,6 +2,15 @@
 
 Stand: 21. Februar 2026
 
+## Strategischer Hinweis (22.02.2026)
+- Ab diesem Punkt wird ein **Greenfield Web-only Neustart** als bevorzugter Produktpfad bewertet.
+- Die bisherigen Phasen 7-12 bleiben als Referenz fuer Betriebs-/Produktreife erhalten, werden aber fuer den Greenfield-Track neu zugeschnitten.
+- Das Spiel soll auf `last-strawberry.com` laufen (Frontend/API getrennt ueber Subdomains moeglich).
+- Grundlage fuer den Neustart:
+  - `docs/greenfield_web_only_concept_v1.md`
+  - `docs/ui_gameflow_blueprint_v2.md` (UI-/Spielflusslogik bleibt als Input wertvoll)
+  - `docs/greenfield_roadmap_web_v1.md`
+
 ## Zielbild
 - V2 als OpenRouter-first Plattform stabil ausrollen.
 - Legacy-Inferenzpfad (Google Cloud) schrittweise abloesen.
@@ -229,6 +238,120 @@ Zeitraum: 21.02.2026 - 28.02.2026
   - Release/Ops-Gate ist CI-automatisiert und reproduzierbar.
   - Ops-Schwellen sind zentralisierbar ueber `LS_OPS_*`.
   - Incident-Playbooks fuer `504`/`401`/`502` sind dokumentiert.
+
+---
+
+## Phase 7: Deployment-Readiness (Server/Staging)
+Zeitraum: 22.02.2026 - 07.03.2026
+
+### Deliverables
+- Server-Betrieb fuer `backend_v2` + `backend_server` reproduzierbar dokumentieren (Plesk/Linux).
+- Service-Start/Restart-Strategie (z. B. systemd oder Plesk-Tasking) inkl. Logging-Pfade.
+- Reverse-Proxy-/TLS-/Header-Konzept fuer Frontend + beide Backends.
+- Backup/Restore-Runbook fuer Datenbanken und `.env`-Secrets.
+- Deployment- und Rollback-Dry-Run (ohne Produktiv-Cutover erzwingen).
+
+### Meilenstein M7
+- Vollstaendiger Server-Dry-Run ist dokumentiert und wiederholbar.
+- Rollback auf funktionierende Version ist in < 15 Minuten durchfuehrbar.
+- Monitoring (Prometheus/Grafana) bleibt nach Restart/Deploy stabil.
+
+---
+
+## Phase 8: Performance und Lasttests
+Zeitraum: 08.03.2026 - 21.03.2026
+
+### Deliverables
+- Lastprofile definieren (single-user, parallel turns, burst, abuse-nahe Szenarien).
+- Reproduzierbare Lasttests fuer Bridge-Flow und direkten V2-Flow.
+- Bottleneck-Analyse (Provider, DB/SQLite, Locking, Netzwerk, Timeouts).
+- Tuning-Empfehlungen fuer Timeouts, Rate-Limits, Fallback-Ketten und Modellwahl.
+
+### Meilenstein M8
+- Belastbare Betriebsgrenzen dokumentiert (z. B. parallele Turns, Timeout-Wahrscheinlichkeit).
+- Konkrete Tuning-Defaults fuer Beta-Betrieb festgelegt.
+- Lasttest-Resultate als Vergleichsbasis fuer spaetere Releases archiviert.
+
+---
+
+## Phase 9: Security Hardening (Pre-Beta)
+Zeitraum: 22.03.2026 - 04.04.2026
+
+### Deliverables
+- Secret-Handling und Deployment-Configs haerten (keine Klartext-Leaks in Logs/Repo).
+- Auth/JWT/CORS/CSP Review fuer `backend_server` + `backend_v2`.
+- Abuse-Schutz und Audit-Logging auf reale Angriffspfade pruefen.
+- Security-Checkliste fuer Release-Freigabe.
+- Optional: Bedrohungsmodell (`Threat Model`) fuer V2 + Bridge + Monitoring.
+
+### Meilenstein M9
+- Kritische Security-Luecken geschlossen oder bewusst mit Risiko dokumentiert.
+- Release-Checkliste enthaelt verbindliche Security-Gates.
+- Log-Sanitization/Secret-Schutz gegenpruefbar.
+
+---
+
+## Phase 10: UI- und Spielfluss-Definition (Pre-Beta Product Design)
+Zeitraum: 05.04.2026 - 18.04.2026
+
+### Deliverables
+- Core-Loop definieren (Login -> Welt -> Turn -> State-Update -> Weiterer Turn).
+- UI-Blueprint fuer zentrale Screens:
+  - Weltliste / Welterstellung
+  - Spielansicht (Narrativ + Eingabe + Systemevents)
+  - Charaktersheet
+  - Inventar
+  - Verlauf / Journal / Log
+- Daten- und Zustandsmodell definieren:
+  - Welche Felder zeigt die UI?
+  - Welche Felder kommen aus welcher API?
+  - Loading-/Error-/Timeout-/Reconnect-Zustaende
+- API-Gap-Liste (was im V2-Backend fuer Inventar/Charaktersheet noch fehlt)
+- Umsetzungsreihenfolge fuer Frontend-MVP (must/should/could)
+
+### Meilenstein M10
+- UI/Spielfluss ist schriftlich definiert und fuer Umsetzung freigegeben.
+- Charaktersheet/Inventar-Datenvertraege sind festgelegt.
+- Closed-Beta-Feedback kann sich auf Spiel und Qualitaet konzentrieren (nicht auf fehlende Grundstruktur).
+
+### Referenz
+- UI/Gameflow-Blueprint: `docs/ui_gameflow_blueprint_v2.md`
+
+---
+
+## Phase 11: Frontend-MVP Umsetzung und E2E-Playtest
+Zeitraum: 19.04.2026 - 09.05.2026
+
+### Deliverables
+- UI gemaess Phase-10-Blueprint umsetzen (mindestens Core-Loop + Basisansichten).
+- Fehler-/Timeout-UX sichtbar und benutzbar machen.
+- E2E-Tests fuer Hauptfluss:
+  - Login
+  - Welt erstellen/oeffnen
+  - Mehrere Turns
+  - Verlauf neu laden
+- Quickcheck fuer UI-Flow (lokal + CI)
+
+### Meilenstein M11
+- "Kurzer Pen&Paper-Teststart" ist ueber UI reproduzierbar.
+- E2E-Smoke deckt Hauptfluss automatisiert ab.
+- Beta-kritische UX-Fehler (Blocker) sind behoben oder dokumentiert.
+
+---
+
+## Phase 12: Closed Beta und Feedback-Loop
+Zeitraum: 10.05.2026 - 31.05.2026
+
+### Deliverables
+- Closed-Beta-Rollout an kleine Nutzergruppe (kontrolliert).
+- Feedback-Kanal + Auswertung (Bug/UX/Content/Balance getrennt).
+- Produktmetriken und Betriebsmetriken gemeinsam betrachten.
+- Priorisierte Post-Beta-Liste fuer Phase 13+.
+
+### Meilenstein M12
+- Closed Beta laeuft mit echtem Nutzerfeedback.
+- Kritische Betriebs-/UX-Themen sind identifiziert und priorisiert.
+- Entscheidungsvorlage fuer Open Beta / weitere Produktisierung liegt vor.
 
 ---
 
