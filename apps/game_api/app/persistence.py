@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
+from apps.game_api.app.services.scene_point_catalog import build_scene_point_targets_for_location
 from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
@@ -21,6 +22,7 @@ from ls_shared_schemas.turns import (
     TurnResolution,
     TurnSystemEvent,
 )
+from ls_shared_schemas.game_context import GameTargetReference
 from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
@@ -210,7 +212,7 @@ class WorldRepository:
                 if character_row is None:
                     raise KeyError("world_character_not_found")
 
-                newly_revealed_npcs = self._apply_npc_discovery_updates(
+                newly_revealed_npcs, newly_revealed_scene_points = self._apply_npc_discovery_updates(
                     conn=conn,
                     world_id=world_id,
                     world_character_id=resolution.world_character_id,
@@ -223,6 +225,14 @@ class WorldRepository:
                         TurnSystemEvent(
                             code="discovery_revealed_npcs",
                             message=f"Du erkennst {newly_revealed_npcs} neue Praesenz(en) in der Umgebung.",
+                            severity="info",
+                        )
+                    )
+                if newly_revealed_scene_points > 0:
+                    resolution.system_events.append(
+                        TurnSystemEvent(
+                            code="discovery_revealed_scene_points",
+                            message=f"Du entdeckst {newly_revealed_scene_points} neue Interaktionspunkt(e) in der Umgebung.",
                             severity="info",
                         )
                     )
@@ -441,6 +451,68 @@ class WorldRepository:
             ).fetchall()
         return len(rows)
 
+    def count_hidden_scene_points_in_location(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+    ) -> int:
+        session = self.get_world_session(world_id)
+        if session is None:
+            return 0
+        points = build_scene_point_targets_for_location(world=session, location_name=location_name)
+        if not points:
+            return 0
+        discovered_ids = set(
+            self.list_discovered_scene_point_ids(
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=location_name,
+            )
+        )
+        return sum(1 for point in points if point.ref_id not in discovered_ids)
+
+    def list_visible_scene_points_in_location(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+    ) -> list[GameTargetReference]:
+        session = self.get_world_session(world_id)
+        if session is None:
+            return []
+        points = build_scene_point_targets_for_location(world=session, location_name=location_name)
+        discovered_ids = set(
+            self.list_discovered_scene_point_ids(
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=location_name,
+            )
+        )
+        return [point for point in points if point.ref_id in discovered_ids]
+
+    def list_discovered_scene_point_ids(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+    ) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT point_ref_id
+                FROM scene_point_discoveries
+                WHERE world_id = ?
+                  AND world_character_id = ?
+                  AND location_name = ?
+                """,
+                (world_id, world_character_id, location_name),
+            ).fetchall()
+        return [str(row["point_ref_id"]) for row in rows]
+
     def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
         for entry in entries:
             conn.execute(
@@ -466,12 +538,20 @@ class WorldRepository:
         intent: TurnIntent,
         resolution: TurnResolution,
         timestamp: str,
-    ) -> int:
-        revealed = 0
+    ) -> tuple[int, int]:
+        revealed_npcs = 0
+        revealed_scene_points = 0
         applied_types = {action.action_type for action in resolution.applied_actions}
         current_location = (resolution.resulting_character_state.location_name or "").strip()
         if ActionType.inspect in applied_types and current_location:
-            revealed += self._reveal_npcs_in_location_for_character(
+            revealed_npcs += self._reveal_npcs_in_location_for_character(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=current_location,
+                timestamp=timestamp,
+            )
+            revealed_scene_points += self._reveal_scene_points_in_location_for_character(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
@@ -484,14 +564,14 @@ class WorldRepository:
                 continue
             target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
             if target_id.startswith("npc-"):
-                revealed += self._upsert_npc_discovery(
+                revealed_npcs += self._upsert_npc_discovery(
                     conn=conn,
                     world_id=world_id,
                     world_character_id=world_character_id,
                     npc_id=target_id,
                     timestamp=timestamp,
                 )
-        return revealed
+        return revealed_npcs, revealed_scene_points
 
     def _reveal_npcs_in_location_for_character(
         self,
@@ -518,6 +598,35 @@ class WorldRepository:
                 world_id=world_id,
                 world_character_id=world_character_id,
                 npc_id=str(row["npc_id"]),
+                timestamp=timestamp,
+            )
+        return count
+
+    def _reveal_scene_points_in_location_for_character(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+        timestamp: str,
+    ) -> int:
+        world_row = conn.execute("SELECT * FROM worlds WHERE world_id = ?", (world_id,)).fetchone()
+        if world_row is None:
+            return 0
+        character_row = self._get_primary_character_row(conn, world_id)
+        if character_row is None:
+            return 0
+        session = self._build_world_session_from_rows(world_row, character_row, [])
+        points = build_scene_point_targets_for_location(world=session, location_name=location_name)
+        count = 0
+        for point in points:
+            count += self._upsert_scene_point_discovery(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=location_name,
+                point_ref_id=point.ref_id,
                 timestamp=timestamp,
             )
         return count
@@ -554,6 +663,50 @@ class WorldRepository:
             WHERE world_id = ? AND world_character_id = ? AND npc_id = ?
             """,
             (timestamp, world_id, world_character_id, npc_id),
+        )
+        return 0
+
+    def _upsert_scene_point_discovery(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+        point_ref_id: str,
+        timestamp: str,
+    ) -> int:
+        existing = conn.execute(
+            """
+            SELECT 1
+            FROM scene_point_discoveries
+            WHERE world_id = ?
+              AND world_character_id = ?
+              AND location_name = ?
+              AND point_ref_id = ?
+            """,
+            (world_id, world_character_id, location_name, point_ref_id),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO scene_point_discoveries (
+                    world_id, world_character_id, location_name, point_ref_id, discovered_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (world_id, world_character_id, location_name, point_ref_id, timestamp, timestamp),
+            )
+            return 1
+        conn.execute(
+            """
+            UPDATE scene_point_discoveries
+            SET updated_at = ?
+            WHERE world_id = ?
+              AND world_character_id = ?
+              AND location_name = ?
+              AND point_ref_id = ?
+            """,
+            (timestamp, world_id, world_character_id, location_name, point_ref_id),
         )
         return 0
 

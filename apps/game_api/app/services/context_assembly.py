@@ -14,6 +14,7 @@ def assemble_game_context(
     turns: list[PersistedTurnRecord],
     npc_memory: list[NPCMemoryBundle],
     retrieval_player_input: str | None = None,
+    scene_points: list[GameTargetReference] | None = None,
     journal_limit: int = 20,
     turn_limit: int = 10,
     memory_per_npc: int = 3,
@@ -30,7 +31,7 @@ def assemble_game_context(
 
     recent_journal = world.journal[-safe_journal_limit:]
     recent_turns = turns[-safe_turn_limit:]
-    target_catalog = _build_target_catalog(world=world, turns=recent_turns, npc_memory=npc_memory)
+    target_catalog = _build_target_catalog(world=world, turns=recent_turns, npc_memory=npc_memory, scene_points=scene_points or [])
 
     return GameContextResponse(
         world=world,
@@ -112,6 +113,7 @@ def _build_target_catalog(
     world: WorldSessionResponse,
     turns: list[PersistedTurnRecord],
     npc_memory: list[NPCMemoryBundle],
+    scene_points: list[GameTargetReference],
 ) -> GameTargetCatalog:
     npc_refs: dict[str, GameTargetReference] = {}
     item_refs: dict[str, GameTargetReference] = {}
@@ -215,6 +217,7 @@ def _build_target_catalog(
         npcs=sorted(npc_refs.values(), key=lambda ref: ref.name.lower()),
         items=sorted(item_refs.values(), key=lambda ref: ref.name.lower()),
         locations=sorted(location_refs.values(), key=lambda ref: ref.name.lower()),
+        scene_points=sorted(scene_points, key=lambda ref: ref.name.lower()),
     )
 
 

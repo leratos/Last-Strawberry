@@ -350,6 +350,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         before_npc_ids = [entry["ref_id"] for entry in before_payload["target_catalog"]["npcs"]]
         self.assertNotIn("npc-hidden-lyra", before_npc_ids)
         self.assertTrue(any("unbekannte Praesenz" in note for note in before_payload["retrieval_notes"]))
+        self.assertEqual(before_payload["target_catalog"]["scene_points"], [])
+        self.assertTrue(any("Interaktionspunkt" in note for note in before_payload["retrieval_notes"]))
 
         inspect_response = self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
@@ -359,12 +361,15 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         inspect_payload = inspect_response.json()
         inspect_event_codes = [event["code"] for event in inspect_payload["turn"]["resolution"]["system_events"]]
         self.assertIn("discovery_revealed_npcs", inspect_event_codes)
+        self.assertIn("discovery_revealed_scene_points", inspect_event_codes)
 
         context_after = self.client.get(f"/v1/worlds/{world_id}/context")
         self.assertEqual(context_after.status_code, 200)
         after_payload = context_after.json()
         after_npc_ids = [entry["ref_id"] for entry in after_payload["target_catalog"]["npcs"]]
         self.assertIn("npc-hidden-lyra", after_npc_ids)
+        self.assertGreaterEqual(len(after_payload["target_catalog"]["scene_points"]), 1)
+        self.assertFalse(any("Interaktionspunkt" in note for note in after_payload["retrieval_notes"]))
 
     def test_g25_descriptive_talk_reference_returns_clarify_and_does_not_create_fake_npc(self):
         create_response = self.client.post(
@@ -440,6 +445,52 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         revealed_payload = revealed_talk_response.json()
         applied_actions = [action["action_type"] for action in revealed_payload["turn"]["resolution"]["applied_actions"]]
         self.assertIn("TALK", applied_actions)
+
+    def test_g27_inspect_visible_scene_point_via_structured_action_succeeds(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g27-scenepoint",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und einem verstoerten Ritual am Marktplatz.",
+                "character_description": "Ein aufmerksamer Ermittler, der Spuren systematisch untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        payload = context_response.json()
+        point = next((entry for entry in payload["target_catalog"]["scene_points"]), None)
+        self.assertIsNotNone(point)
+
+        inspect_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": f"UI: Untersuche {point['name']}",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": point["ref_id"],
+                        "target_kind": "scene_point",
+                        "parameters": {
+                            "intent": "inspect",
+                            "target_id": point["ref_id"],
+                            "target_name": point["name"],
+                            "target_kind": "scene_point",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(inspect_response.status_code, 200)
+        inspect_payload = inspect_response.json()
+        event_codes = [event["code"] for event in inspect_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("inspect_focus_success", event_codes)
 
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(

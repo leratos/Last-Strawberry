@@ -1291,6 +1291,57 @@ export function App() {
                   </li>
                 ))}
               </ul>
+
+              <h3>Interaktionspunkte (sichtbar)</h3>
+              <ul className="list list-tight">
+                {context.target_catalog.scene_points.length === 0 ? (
+                  <li>
+                    <span className="list-subtle">
+                      Keine sichtbaren Interaktionspunkte. Umsehen/Untersuchen kann neue Punkte aufdecken.
+                    </span>
+                  </li>
+                ) : null}
+                {context.target_catalog.scene_points.map((point) => (
+                  <li key={point.ref_id}>
+                    <span className="list-title">{point.name}</span>
+                    <span className="list-subtle">
+                      {point.ref_id}
+                      {point.scene_zone_name ? ` | Zone: ${point.scene_zone_name}` : ""}
+                    </span>
+                    <div className="turn-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: `Untersuche ${point.name}`,
+                                action: {
+                                  action_type: "INSPECT",
+                                  target_ref: point.ref_id,
+                                  target_kind: "scene_point",
+                                  parameters: {
+                                    intent: "inspect",
+                                    target_id: point.ref_id,
+                                    target_name: point.name,
+                                    target_kind: "scene_point",
+                                  },
+                                  confidence: 0.99,
+                                },
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Inspect
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </article>
