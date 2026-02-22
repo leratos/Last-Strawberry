@@ -58,6 +58,8 @@ class RulesEngine:
     ) -> bool:
         if action.action_type == ActionType.move:
             return self._apply_move(action, state, delta, events)
+        if action.action_type == ActionType.retreat:
+            return self._apply_retreat(action, state, delta, events)
         if action.action_type == ActionType.inspect:
             return self._apply_inspect(action, inventory, events)
         if action.action_type == ActionType.talk:
@@ -118,6 +120,46 @@ class RulesEngine:
             events.append(TurnSystemEvent(code="inspect_item_missing", message=f"Item nicht gefunden: {target}", severity="warning"))
             return False
         events.append(TurnSystemEvent(code="inspect_item_success", message=f"{item.name} untersucht."))
+        return True
+
+    def _apply_retreat(
+        self,
+        action: TurnIntentAction,
+        state: CharacterState,
+        delta: StateDelta,
+        events: list[TurnSystemEvent],
+    ) -> bool:
+        target_id = str(action.parameters.get("target_id") or "").strip() or None
+        target_name = str(action.parameters.get("target_name") or "").strip()
+        target_display = target_name or (action.target_ref or "Bedrohung").strip()
+        target_distance_band = str(action.parameters.get("target_distance_band") or "").strip().lower()
+        target_zone_id = str(action.parameters.get("target_zone_id") or "").strip()
+        target_zone_name = str(action.parameters.get("target_zone_name") or "").strip()
+
+        if target_distance_band in {"far", "unreachable"}:
+            events.append(
+                TurnSystemEvent(
+                    code="retreat_not_needed",
+                    message=f"Zu {target_display} besteht bereits ausreichend Abstand.",
+                )
+            )
+            return True
+
+        if target_zone_id and (state.scene_zone_id or "").strip() == target_zone_id:
+            safe_suffix = (target_id or target_display.lower().replace(" ", "-"))[:24]
+            state.scene_zone_id = f"zone-retreat-{safe_suffix}"
+            state.scene_zone_name = f"Abstand zu {target_display}"
+        else:
+            state.scene_zone_id = "zone-step-back"
+            state.scene_zone_name = "Rueckzugsposition"
+
+        delta.scene_zone_changed_to_id = state.scene_zone_id
+        delta.scene_zone_changed_to_name = state.scene_zone_name
+
+        message = f"Du gewinnst Abstand zu {target_display}."
+        if target_zone_name:
+            message = f"Du weichst von {target_display} zurueck ({state.scene_zone_name})."
+        events.append(TurnSystemEvent(code="retreat_success", message=message))
         return True
 
     def _apply_talk(

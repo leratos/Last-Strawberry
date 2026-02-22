@@ -10,11 +10,17 @@ _MOVE_PATTERNS = [
     re.compile(r"\b(?:gehe|geh|laufe|reise|betrete)\s+(?:zum|zur|nach|in den|in die|ins)\s+([\w _-]+)", re.I),
     re.compile(r"\b(?:bewege(?:\s+mich)?|begib(?:\s+mich)?)\s+(?:zu|zum|zur)\s+([\w _-]+)", re.I),
 ]
+_RETREAT_PATTERNS = [
+    re.compile(r"\bentferne(?:\s+mich)?\s+von\s+([\w _-]+)", re.I),
+    re.compile(r"\bgehe\s+weg\s+von\s+([\w _-]+)", re.I),
+    re.compile(r"\bweiche\s+([\w _-]+)\s+aus\b", re.I),
+]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
+_RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg")
 
 
 RefMetaIndex = dict[str, dict[str, str]]
@@ -153,6 +159,33 @@ def analyze_player_input_preview(
         )
         notes.append(f"Gespraech erkannt: {target}")
 
+    retreat_target = _extract_retreat_target(text)
+    if retreat_target or _contains_any_verb(lowered, _RETREAT_VERBS):
+        canonical_retreat_target = _canonicalize_name(retreat_target or "", known_npc_names or [])
+        retreat_meta = _lookup_ref_entry(canonical_retreat_target, npc_ref_index) if canonical_retreat_target else None
+        retreat_id = str((retreat_meta or {}).get("ref_id") or "").strip() or None
+        actions.append(
+            TurnIntentAction(
+                action_type=ActionType.retreat,
+                target_ref=retreat_id or (canonical_retreat_target or None),
+                target_kind="npc" if (retreat_id or canonical_retreat_target) else "environment",
+                parameters={
+                    "intent": "retreat",
+                    "target_name": canonical_retreat_target or None,
+                    "target_id": retreat_id,
+                    "target_location_name": str((retreat_meta or {}).get("location_name") or "") or None,
+                    "target_zone_id": str((retreat_meta or {}).get("scene_zone_id") or "") or None,
+                    "target_zone_name": str((retreat_meta or {}).get("scene_zone_name") or "") or None,
+                    "target_distance_band": str((retreat_meta or {}).get("distance_band_to_player") or "") or None,
+                },
+                confidence=0.78 if retreat_target else 0.55,
+            )
+        )
+        if canonical_retreat_target:
+            notes.append(f"Rueckzug/Abstand erkannt: {canonical_retreat_target}")
+        else:
+            notes.append("Rueckzug/Abstand erkannt.")
+
     if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
         actions.append(
             TurnIntentAction(
@@ -193,6 +226,17 @@ def _extract_destination(text: str) -> str | None:
         destination = destination.strip(" .,!?:;")
         if destination:
             return destination
+    return None
+
+
+def _extract_retreat_target(text: str) -> str | None:
+    for pattern in _RETREAT_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        if target:
+            return target
     return None
 
 

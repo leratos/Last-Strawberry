@@ -128,7 +128,7 @@ export type TurnRunResponse = {
 };
 
 export type StructuredTurnAction = {
-  action_type: "MOVE" | "TALK" | "ATTACK" | "USE_ITEM" | "INSPECT";
+  action_type: "MOVE" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM" | "INSPECT";
   target_ref?: string | null;
   destination?: string | null;
   item_ref?: string | null;
