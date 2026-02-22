@@ -3,15 +3,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from apps.game_api.app.config import settings
 from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
+from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.intent_analysis_preview import analyze_player_input_preview
 from apps.game_api.app.services.narration_preview import build_narrative_from_resolution
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
+from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle
 from ls_shared_schemas.turns import (
@@ -47,6 +50,13 @@ async def lifespan(app_instance: FastAPI):
 
 
 app = FastAPI(title=settings.api_title, version=settings.api_version, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.cors_allowed_origins),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _get_world_repository(request: Request) -> WorldRepository:
@@ -64,6 +74,36 @@ def health() -> dict[str, str]:
         "environment": settings.environment,
         "public_game_domain": settings.public_game_domain,
     }
+
+
+@app.get("/v1/worlds/{world_id}/context", response_model=GameContextResponse)
+def get_world_context(
+    world_id: str,
+    fastapi_request: Request,
+    player_input: str | None = None,
+    journal_limit: int = 20,
+    turn_limit: int = 10,
+    memory_per_npc: int = 3,
+) -> GameContextResponse:
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+    turns = repository.list_turns(world_id=world_id, limit=max(1, turn_limit))
+    npc_memory = repository.list_npc_memory_bundles(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        limit_memories_per_npc=max(1, memory_per_npc),
+    )
+    return assemble_game_context(
+        world=session,
+        turns=turns,
+        npc_memory=npc_memory,
+        retrieval_player_input=player_input,
+        journal_limit=journal_limit,
+        turn_limit=turn_limit,
+        memory_per_npc=memory_per_npc,
+    )
 
 
 @app.post("/v1/worlds/bootstrap/preview", response_model=WorldBootstrapResult)

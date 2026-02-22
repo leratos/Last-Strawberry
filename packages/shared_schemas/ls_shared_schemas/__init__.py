@@ -1,4 +1,5 @@
 from .character import CharacterAttributes, CharacterResources, CharacterState, CharacterTemplateSeed, WorldCharacterSeed
+from .game_context import GameContextResponse, RetrievedNpcMemoryBundle
 from .inventory import InventoryItemInstance, ItemEffect, ItemUseMode
 from .npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
 from .turns import (
@@ -21,6 +22,7 @@ __all__ = [
     "CharacterResources",
     "CharacterState",
     "CharacterTemplateSeed",
+    "GameContextResponse",
     "InventoryItemInstance",
     "ItemEffect",
     "ItemUseMode",
@@ -30,6 +32,7 @@ __all__ = [
     "NPCMemoryEntry",
     "NPCProfile",
     "NPCRelationship",
+    "RetrievedNpcMemoryBundle",
     "PersistedTurnRecord",
     "StateDelta",
     "TurnIntent",

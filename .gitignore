@@ -89,6 +89,7 @@ wheels/
 *.egg
 MANIFEST
 Backup/
+*.tsbuildinfo
 
 # 5. Test- & Analyse-Artefakte
 htmlcov/
