@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib import error as urllib_error
@@ -34,7 +35,14 @@ class OpenRouterClient:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
-    def chat_completion(self, *, model: str, system_prompt: str, user_prompt: str) -> str:
+    def chat_completion(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: dict[str, Any] | None = None,
+    ) -> str:
         if not self.api_key:
             raise LlmRuntimeError("OpenRouter API key is not configured.")
         payload = {
@@ -43,7 +51,8 @@ class OpenRouterClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "response_format": {"type": "json_object"},
+            "response_format": response_format or {"type": "json_object"},
+            "provider": {"require_parameters": True},
         }
         req = urllib_request.Request(
             url=f"{self.base_url}/chat/completions",
@@ -65,7 +74,17 @@ class OpenRouterClient:
 
         try:
             parsed = json.loads(raw)
-            return str(parsed["choices"][0]["message"]["content"])
+            message_content = parsed["choices"][0]["message"]["content"]
+            if isinstance(message_content, str):
+                return message_content
+            if isinstance(message_content, list):
+                text_parts = []
+                for item in message_content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text_parts.append(str(item.get("text") or ""))
+                if text_parts:
+                    return "".join(text_parts)
+            raise LlmRuntimeError("OpenRouter response contained no text content.")
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise LlmRuntimeError("OpenRouter response format was unexpected.") from exc
 
@@ -76,6 +95,7 @@ class LlmRuntime:
         self._openrouter_client = OpenRouterClient(
             api_key=settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
+            timeout_seconds=settings.openrouter_timeout_seconds,
         )
 
     def status(self) -> LlmRuntimeStatus:
@@ -126,10 +146,10 @@ class LlmRuntime:
                 known_locations=known_locations or [],
                 context=context,
             )
-        except Exception:
+        except Exception as exc:
             if not self.settings.llm_fallback_to_preview:
                 raise
-            return self._analyze_preview(
+            preview_intent = self._analyze_preview(
                 world_id=world_id,
                 world_character_id=world_character_id,
                 player_input=player_input,
@@ -137,6 +157,10 @@ class LlmRuntime:
                 known_npc_names=known_npc_names,
                 known_locations=known_locations,
             )
+            preview_intent.analysis_notes.append(
+                f"OpenRouter-Fallback auf Preview-Analyzer wegen Fehler: {type(exc).__name__}"
+            )
+            return preview_intent
 
     def narrate(
         self,
@@ -189,15 +213,33 @@ class LlmRuntime:
             f"context={context_hint}\n"
             "Return JSON only."
         )
-        content = self._openrouter_client.chat_completion(
+        payload = self._request_openrouter_json(
             model=self.settings.openrouter_intent_model,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            purpose="intent_analysis",
         )
-        payload = json.loads(content)
         actions_raw = payload.get("actions") or []
-        actions = [TurnIntentAction.model_validate(action) for action in actions_raw]
+        if isinstance(actions_raw, dict):
+            actions_raw = [actions_raw]
+        actions = []
+        for action in actions_raw:
+            if not isinstance(action, dict):
+                continue
+            normalized_action = dict(action)
+            normalized_action.setdefault("analysis_source", "openrouter_llm")
+            actions.append(TurnIntentAction.model_validate(normalized_action))
         analysis_notes = [str(note) for note in (payload.get("analysis_notes") or [])]
+        if not actions:
+            actions = [
+                TurnIntentAction(
+                    action_type="CLARIFY",
+                    analysis_source="openrouter_llm",
+                    parameters={"intent": "clarify"},
+                    confidence=0.2,
+                )
+            ]
+            analysis_notes.append("OpenRouter lieferte keine validen Aktionen, Rueckfrage-Aktion erzeugt.")
         return TurnIntent(
             world_id=world_id,
             world_character_id=world_character_id,
@@ -230,18 +272,149 @@ class LlmRuntime:
             f"context_before={context_hint}\n"
             "Return JSON only in German narrative."
         )
-        content = self._openrouter_client.chat_completion(
+        payload = self._request_openrouter_json(
             model=self.settings.openrouter_narrator_model,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            purpose="narration",
         )
-        payload = json.loads(content)
+        fallback_narrative = build_narrative_from_resolution(resolution)
+        narrative_text = str(payload.get("narrative") or "").strip()
+        if not narrative_text:
+            narrative_text = fallback_narrative.narrative
         return NarrativeEnvelope(
             world_id=resolution.world_id,
             world_character_id=resolution.world_character_id,
-            narrative=str(payload.get("narrative") or "").strip() or build_narrative_from_resolution(resolution).narrative,
-            actionable_options=[str(item) for item in (payload.get("actionable_options") or [])][:5],
+            narrative=narrative_text,
+            actionable_options=self._normalize_actionable_options(payload.get("actionable_options")),
         )
+
+    def _request_openrouter_json(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        purpose: str,
+    ) -> dict[str, Any]:
+        content = self._openrouter_client.chat_completion(
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_format={"type": "json_object"},
+        )
+        try:
+            return self._parse_json_object_from_llm_text(content)
+        except LlmRuntimeError as first_error:
+            if self.settings.openrouter_json_repair_attempts <= 0:
+                raise
+            last_error: Exception = first_error
+            for _ in range(self.settings.openrouter_json_repair_attempts):
+                try:
+                    repaired_content = self._openrouter_client.chat_completion(
+                        model=model,
+                        system_prompt=(
+                            "You convert model output into a strict JSON object. "
+                            "Return JSON only. Do not add markdown fences or prose."
+                        ),
+                        user_prompt=(
+                            f"Purpose: {purpose}\n"
+                            "Convert the following content to a valid JSON object preserving meaning.\n"
+                            f"{content}"
+                        ),
+                        response_format={"type": "json_object"},
+                    )
+                    return self._parse_json_object_from_llm_text(repaired_content)
+                except Exception as exc:  # pragma: no cover - retry path exercised in tests
+                    last_error = exc
+            raise LlmRuntimeError(f"OpenRouter JSON parsing failed after repair attempts: {last_error}") from last_error
+
+    def _parse_json_object_from_llm_text(self, raw_text: str) -> dict[str, Any]:
+        text = (raw_text or "").strip()
+        if not text:
+            raise LlmRuntimeError("OpenRouter returned empty content.")
+
+        # Common success path.
+        direct = self._try_parse_json_object(text)
+        if direct is not None:
+            return direct
+
+        # Strip fenced code block if present.
+        fenced = self._strip_json_fences(text)
+        if fenced != text:
+            parsed = self._try_parse_json_object(fenced)
+            if parsed is not None:
+                return parsed
+
+        # Extract first balanced JSON object from mixed prose responses.
+        for candidate in self._extract_json_object_candidates(text):
+            parsed = self._try_parse_json_object(candidate)
+            if parsed is not None:
+                return parsed
+
+        raise LlmRuntimeError("OpenRouter response did not contain a valid JSON object.")
+
+    def _try_parse_json_object(self, text: str) -> dict[str, Any] | None:
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _strip_json_fences(self, text: str) -> str:
+        stripped = text.strip()
+        fenced_match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", stripped, flags=re.I | re.S)
+        if fenced_match:
+            return fenced_match.group(1).strip()
+        return text
+
+    def _extract_json_object_candidates(self, text: str) -> list[str]:
+        candidates: list[str] = []
+        depth = 0
+        start_index: int | None = None
+        in_string = False
+        escaped = False
+        for idx, char in enumerate(text):
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if char == "\\":
+                    escaped = True
+                    continue
+                if char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+                continue
+            if char == "{":
+                if depth == 0:
+                    start_index = idx
+                depth += 1
+            elif char == "}":
+                if depth <= 0:
+                    continue
+                depth -= 1
+                if depth == 0 and start_index is not None:
+                    candidates.append(text[start_index : idx + 1])
+                    if len(candidates) >= 3:
+                        break
+                    start_index = None
+        return candidates
+
+    def _normalize_actionable_options(self, raw_options: Any) -> list[str]:
+        if not isinstance(raw_options, list):
+            return []
+        normalized: list[str] = []
+        for item in raw_options:
+            text = str(item).strip()
+            if not text:
+                continue
+            normalized.append(text)
+            if len(normalized) >= 5:
+                break
+        return normalized
 
 
 def build_llm_runtime(settings: Settings) -> LlmRuntime:

@@ -14,7 +14,9 @@ class Settings:
     llm_fallback_to_preview: bool = True
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_intent_model: str = "meta-llama/llama-3.3-70b-instruct"
+    openrouter_timeout_seconds: float = 20.0
+    openrouter_json_repair_attempts: int = 1
+    openrouter_intent_model: str = "qwen/qwen3-next-80b-a3b-instruct"
     openrouter_narrator_model: str = "meta-llama/llama-3.3-70b-instruct"
     cors_allowed_origins: tuple[str, ...] = (
         "http://localhost:5173",
@@ -28,6 +30,10 @@ class Settings:
         db_path = (os.getenv("LS_GREENFIELD_DB_PATH") or "apps/game_api/data/greenfield_game.db").strip()
         normalized_db_path = str(Path(db_path))
         fallback_raw = (os.getenv("LS_GREENFIELD_LLM_FALLBACK_TO_PREVIEW") or "true").strip().lower()
+        openrouter_timeout_raw = (os.getenv("LS_GREENFIELD_OPENROUTER_TIMEOUT_SECONDS") or "20").strip()
+        openrouter_json_repair_attempts_raw = (
+            os.getenv("LS_GREENFIELD_OPENROUTER_JSON_REPAIR_ATTEMPTS") or "1"
+        ).strip()
         cors_raw = (os.getenv("LS_GREENFIELD_CORS_ORIGINS") or "").strip()
         cors_allowed_origins: tuple[str, ...]
         if cors_raw:
@@ -48,10 +54,12 @@ class Settings:
             openrouter_api_key=(os.getenv("OPENROUTER_API_KEY") or "").strip(),
             openrouter_base_url=(os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").strip()
             or "https://openrouter.ai/api/v1",
+            openrouter_timeout_seconds=max(1.0, float(openrouter_timeout_raw or "20")),
+            openrouter_json_repair_attempts=max(0, int(openrouter_json_repair_attempts_raw or "1")),
             openrouter_intent_model=(
-                os.getenv("LS_GREENFIELD_OPENROUTER_INTENT_MODEL") or "meta-llama/llama-3.3-70b-instruct"
+                os.getenv("LS_GREENFIELD_OPENROUTER_INTENT_MODEL") or "qwen/qwen3-next-80b-a3b-instruct"
             ).strip()
-            or "meta-llama/llama-3.3-70b-instruct",
+            or "qwen/qwen3-next-80b-a3b-instruct",
             openrouter_narrator_model=(
                 os.getenv("LS_GREENFIELD_OPENROUTER_NARRATOR_MODEL") or "meta-llama/llama-3.3-70b-instruct"
             ).strip()

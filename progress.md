@@ -12,3 +12,7 @@
 - G7: LLM-Runtime-Schicht (preview/openrouter) eingefuehrt; OpenRouter-Pfad mit Preview-Fallback vorbereitet.
 - G7: run_turn/analyze/narrate nutzen LLM-Runtime; Health zeigt aktive Provider/Fallback-Konfiguration.
 - G7: Intent-Analyzer bekommt bekannte NPC/Locations aus Context; Targets werden dadurch besser normalisiert.
+- G8: OpenRouter-JSON-Hardening eingebaut (Codefence-Parsing, JSON-Objekt-Extraktion aus Prosa, Repair-Retry).
+- G8: OpenRouter-Requests setzen provider.require_parameters=true; verhindert Provider-Routing ohne JSON-Parameter-Support.
+- G8: Default-Modellpaar angepasst (Intent=Qwen 80B, Narration=Llama 70B) und per ENV steuerbar.
+- G8: Tests erweitert fuer fenced JSON, Repair-Retry und Narration-Fallback bei invalidem OpenRouter-Output.
