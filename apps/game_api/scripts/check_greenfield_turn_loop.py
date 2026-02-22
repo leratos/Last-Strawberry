@@ -31,6 +31,32 @@ def _extract_event_codes(turn_run_payload: dict[str, Any]) -> list[str]:
     return [str(event.get("code")) for event in events if isinstance(event, dict)]
 
 
+def _find_npc_bundle(npc_memory_payload: list[dict[str, Any]], npc_id: str) -> dict[str, Any] | None:
+    for bundle in npc_memory_payload:
+        profile = bundle.get("profile", {})
+        if isinstance(profile, dict) and str(profile.get("npc_id")) == npc_id:
+            return bundle
+    return None
+
+
+def _build_structured_attack_action(target_ref: dict[str, Any], attack_mode: str = "melee") -> dict[str, Any]:
+    return {
+        "action_type": "ATTACK",
+        "target_ref": target_ref["ref_id"],
+        "target_kind": "npc",
+        "parameters": {
+            "intent": "attack",
+            "attack_mode": attack_mode,
+            "target_id": target_ref["ref_id"],
+            "target_name": target_ref["name"],
+            "target_location_name": target_ref.get("location_name"),
+            "target_zone_id": target_ref.get("scene_zone_id"),
+            "target_zone_name": target_ref.get("scene_zone_name"),
+            "target_distance_band": target_ref.get("distance_band_to_player"),
+        },
+    }
+
+
 def _request_json(  # pragma: no cover - exercised manually against running local API
     *,
     method: str,
@@ -78,7 +104,7 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         raise RuntimeError("Quickcheck konnte keinen NPC im target_catalog finden.")
     npc_ref = npc_refs[0]
 
-    turn_run = _request_json(
+    talk_turn_run = _request_json(
         method="POST",
         url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
         timeout=timeout,
@@ -87,18 +113,69 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
             "actions_override": [_build_structured_talk_action(npc_ref)],
         },
     )
-    codes = _extract_event_codes(turn_run)
-    if "talk_success" not in codes:
-        raise RuntimeError(f"Quickcheck erwartet talk_success, bekam: {codes}")
+    talk_codes = _extract_event_codes(talk_turn_run)
+    if "talk_success" not in talk_codes:
+        raise RuntimeError(f"Quickcheck erwartet talk_success, bekam: {talk_codes}")
+
+    npc_memory_after_talk = _request_json(
+        method="GET",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/npc-memory",
+        timeout=timeout,
+        payload=None,
+    )
+    talk_bundle = _find_npc_bundle(npc_memory_after_talk, str(npc_ref["ref_id"]))
+    if not talk_bundle:
+        raise RuntimeError("Quickcheck konnte NPC-Memory nach TALK nicht finden.")
+    talk_standing = int((talk_bundle.get("relationship") or {}).get("standing") or 0)
+
+    queue_turn_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck Queue: Rede mit {npc_ref.get('name', 'NPC')} und greife an",
+            "actions_override": [
+                _build_structured_talk_action(npc_ref),
+                _build_structured_attack_action(npc_ref, attack_mode="melee"),
+            ],
+        },
+    )
+    queue_codes = _extract_event_codes(queue_turn_run)
+    if "talk_success" not in queue_codes or "attack_resolved" not in queue_codes:
+        raise RuntimeError(f"Quickcheck erwartet talk_success + attack_resolved, bekam: {queue_codes}")
+
+    npc_memory_after_queue = _request_json(
+        method="GET",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/npc-memory",
+        timeout=timeout,
+        payload=None,
+    )
+    queue_bundle = _find_npc_bundle(npc_memory_after_queue, str(npc_ref["ref_id"]))
+    if not queue_bundle:
+        raise RuntimeError("Quickcheck konnte NPC-Memory nach Queue-Turn nicht finden.")
+    queue_standing = int((queue_bundle.get("relationship") or {}).get("standing") or 0)
+
+    context_after_queue = queue_turn_run.get("context_after_turn") or {}
+    queue_target_catalog = context_after_queue.get("target_catalog") or {}
+    queue_npc_refs = queue_target_catalog.get("npcs") or []
+    queue_target_ref = next((entry for entry in queue_npc_refs if entry.get("ref_id") == npc_ref["ref_id"]), None)
+    distance_after_queue = (queue_target_ref or {}).get("distance_band_to_player")
+    if distance_after_queue != "adjacent":
+        raise RuntimeError(f"Quickcheck erwartet Distanz 'adjacent' nach Queue-Turn, bekam: {distance_after_queue!r}")
 
     result = {
         "world_id": world_id,
         "npc_id": npc_ref.get("ref_id"),
         "npc_name": npc_ref.get("name"),
-        "event_codes": codes,
-        "had_auto_approach": "auto_approach_for_talk" in codes,
-        "had_auto_move_location": "auto_move_location_for_talk" in codes,
-        "context_after_turn_present": bool(turn_run.get("context_after_turn")),
+        "talk_event_codes": talk_codes,
+        "queue_event_codes": queue_codes,
+        "had_auto_approach_talk": "auto_approach_for_talk" in talk_codes,
+        "had_auto_move_location_talk": "auto_move_location_for_talk" in talk_codes,
+        "had_auto_approach_attack_queue": "auto_approach_for_attack" in queue_codes,
+        "standing_after_talk": talk_standing,
+        "standing_after_queue": queue_standing,
+        "distance_after_queue": distance_after_queue,
+        "context_after_turn_present": bool(queue_turn_run.get("context_after_turn")),
     }
     return result
 

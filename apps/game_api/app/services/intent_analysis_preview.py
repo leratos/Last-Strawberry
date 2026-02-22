@@ -12,6 +12,7 @@ _MOVE_PATTERNS = [
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
+_RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
 
@@ -100,8 +101,11 @@ def analyze_player_input_preview(
             )
             notes.append("Item-Verwendung erkannt, aber kein Inventar-Match gefunden.")
 
-    if _contains_any_verb(lowered, _ATTACK_VERBS):
-        target = _extract_target_after_verb(text, _ATTACK_VERBS) or "gegner"
+    has_melee_attack_verb = _contains_any_verb(lowered, _ATTACK_VERBS)
+    has_ranged_attack_verb = _contains_any_verb(lowered, _RANGED_ATTACK_VERBS)
+    if has_melee_attack_verb or has_ranged_attack_verb:
+        attack_mode = "ranged" if has_ranged_attack_verb else "melee"
+        target = _extract_target_after_verb(text, _ATTACK_VERBS + _RANGED_ATTACK_VERBS) or "gegner"
         target = _canonicalize_name(target, known_npc_names or [])
         target_meta = _lookup_ref_entry(target, npc_ref_index) or {}
         target_id = str(target_meta.get("ref_id") or "").strip() or None
@@ -112,6 +116,7 @@ def analyze_player_input_preview(
                 target_kind="npc_or_enemy",
                 parameters={
                     "intent": "attack",
+                    "attack_mode": attack_mode,
                     "target_name": target,
                     "target_id": target_id,
                     "target_location_name": str(target_meta.get("location_name") or "") or None,
@@ -122,7 +127,7 @@ def analyze_player_input_preview(
                 confidence=0.8,
             )
         )
-        notes.append(f"Angriff erkannt: {target}")
+        notes.append(f"{'Fernkampf' if attack_mode == 'ranged' else 'Nahkampf'} erkannt: {target}")
 
     if has_talk_verb:
         target = _extract_talk_target(text) or "npc"

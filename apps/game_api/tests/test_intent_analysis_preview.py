@@ -127,6 +127,29 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(talk_action.parameters.get("target_distance_band"), "near")
         self.assertIn("Auto-Approach", " ".join(intent.analysis_notes))
 
+    def test_detects_ranged_attack_mode_from_shoot_verb(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich schiesse auf Zorak.",
+            inventory=[],
+            known_npc_names=["Zorak"],
+            known_npc_refs=[
+                {
+                    "ref_id": "npc-zorak",
+                    "name": "Zorak",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-market-stalls",
+                    "scene_zone_name": "Marktstaende",
+                    "distance_band_to_player": "near",
+                }
+            ],
+        )
+        attack_action = next(action for action in intent.actions if action.action_type.value == "ATTACK")
+        self.assertEqual(attack_action.target_ref, "npc-zorak")
+        self.assertEqual(attack_action.parameters.get("attack_mode"), "ranged")
+        self.assertIn("Fernkampf erkannt", " ".join(intent.analysis_notes))
+
 
 if __name__ == "__main__":
     unittest.main()

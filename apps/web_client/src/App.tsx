@@ -30,6 +30,12 @@ type QueuedStructuredAction = {
   label: string;
   action: StructuredTurnAction;
 };
+type QueueMacro = {
+  name: string;
+  entries: QueuedStructuredAction[];
+};
+
+const QUEUE_MACROS_STORAGE_KEY = "ls_web_queue_macros_v1";
 
 const DEFAULT_BOOTSTRAP: BootstrapForm = {
   userId: "local-dev-user",
@@ -38,6 +44,40 @@ const DEFAULT_BOOTSTRAP: BootstrapForm = {
   characterDescription:
     "Eine ehemalige Kartografin, die ihre verschollene Schwester sucht und dafuer mit Informationen handelt.",
 };
+
+function loadQueueMacrosFromStorage(): QueueMacro[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(QUEUE_MACROS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => {
+        const candidate = entry as { name?: unknown; entries?: unknown };
+        const name = typeof candidate.name === "string" ? candidate.name.trim().slice(0, 80) : "";
+        const entries = Array.isArray(candidate.entries) ? (candidate.entries as QueuedStructuredAction[]) : [];
+        return { name, entries };
+      })
+      .filter((entry) => entry.name && entry.entries.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function saveQueueMacrosToStorage(macros: QueueMacro[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(QUEUE_MACROS_STORAGE_KEY, JSON.stringify(macros));
+}
 
 function getStructuredTargets(
   context: GameContextResponse,
@@ -86,8 +126,11 @@ export function App() {
   const [error, setError] = useState<string>("");
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
+  const [composerAttackMode, setComposerAttackMode] = useState<"melee" | "ranged">("melee");
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
   const [structuredQueue, setStructuredQueue] = useState<QueuedStructuredAction[]>([]);
+  const [queueMacros, setQueueMacros] = useState<QueueMacro[]>(() => loadQueueMacrosFromStorage());
+  const [queueMacroName, setQueueMacroName] = useState<string>("");
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -211,6 +254,50 @@ export function App() {
     setError("");
   }
 
+  function saveCurrentQueueAsMacro(): void {
+    const trimmedName = queueMacroName.trim();
+    if (!trimmedName) {
+      setError("Bitte einen Makro-Namen eingeben.");
+      return;
+    }
+    if (structuredQueue.length === 0) {
+      setError("Queue ist leer.");
+      return;
+    }
+    setQueueMacros((current) => {
+      const next = [
+        ...current.filter((macro) => macro.name.toLowerCase() !== trimmedName.toLowerCase()),
+        { name: trimmedName, entries: structuredQueue },
+      ].sort((a, b) => a.name.localeCompare(b.name));
+      saveQueueMacrosToStorage(next);
+      return next;
+    });
+    setLastActionMessage(`Queue-Makro gespeichert: ${trimmedName}`);
+    setError("");
+  }
+
+  function loadQueueMacro(name: string): void {
+    const macro = queueMacros.find((entry) => entry.name === name);
+    if (!macro) {
+      setError(`Queue-Makro nicht gefunden: ${name}`);
+      return;
+    }
+    setStructuredQueue(macro.entries);
+    setQueueMacroName(macro.name);
+    setLastActionMessage(`Queue-Makro geladen: ${macro.name}`);
+    setError("");
+  }
+
+  function deleteQueueMacro(name: string): void {
+    setQueueMacros((current) => {
+      const next = current.filter((entry) => entry.name !== name);
+      saveQueueMacrosToStorage(next);
+      return next;
+    });
+    setLastActionMessage(`Queue-Makro geloescht: ${name}`);
+    setError("");
+  }
+
   async function handleQueueSubmit(): Promise<void> {
     if (structuredQueue.length === 0) {
       setError("Queue ist leer.");
@@ -297,12 +384,14 @@ export function App() {
         confidence: 0.99,
       };
     }
+    const attackMode = actionKind === "ATTACK" ? composerAttackMode : "melee";
     return {
       action_type: actionKind,
       target_ref: target.refId,
       target_kind: "npc",
         parameters: {
           intent: actionKind === "TALK" ? "talk" : "attack",
+          attack_mode: actionKind === "ATTACK" ? attackMode : null,
           target_id: target.refId,
           target_name: target.name,
           target_location_name: target.locationName || null,
@@ -325,7 +414,7 @@ export function App() {
       return `UI: Benutze ${target.name}`;
     }
     if (actionKind === "ATTACK") {
-      return `UI: Greife ${target.name} an`;
+      return `UI: ${composerAttackMode === "ranged" ? "Fernkampf" : "Nahkampf"} gegen ${target.name}`;
     }
     return `UI: Spreche mit ${target.name}`;
   }
@@ -467,6 +556,20 @@ export function App() {
                       <option value="USE_ITEM">Use Item</option>
                     </select>
                   </label>
+                  {composerActionKind === "ATTACK" ? (
+                    <label className="compact-label">
+                      Angriffstyp
+                      <select
+                        className="compact-input"
+                        value={composerAttackMode}
+                        onChange={(event) => setComposerAttackMode(event.target.value as "melee" | "ranged")}
+                        disabled={isRunningTurn}
+                      >
+                        <option value="melee">Nahkampf</option>
+                        <option value="ranged">Fernkampf</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="compact-label" style={{ minWidth: 260 }}>
                     Ziel
                     <select
@@ -531,6 +634,55 @@ export function App() {
                     Queue leeren
                   </button>
                 </div>
+                <div className="turn-actions">
+                  <label className="compact-label">
+                    Queue-Makro
+                    <input
+                      className="compact-input"
+                      value={queueMacroName}
+                      onChange={(event) => setQueueMacroName(event.target.value)}
+                      placeholder="z.B. Marktgespraech"
+                      disabled={isRunningTurn}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => saveCurrentQueueAsMacro()}
+                    disabled={isRunningTurn || structuredQueue.length === 0}
+                  >
+                    Makro speichern
+                  </button>
+                </div>
+                {queueMacros.length > 0 ? (
+                  <ul className="list list-tight">
+                    {queueMacros.map((macro) => (
+                      <li key={macro.name}>
+                        <span className="list-title">
+                          {macro.name} ({macro.entries.length})
+                        </span>
+                        <div className="turn-actions">
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => loadQueueMacro(macro.name)}
+                            disabled={isRunningTurn}
+                          >
+                            Laden
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => deleteQueueMacro(macro.name)}
+                            disabled={isRunningTurn}
+                          >
+                            Loeschen
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {structuredQueue.length > 0 ? (
                   <ul className="list list-tight">
                     {structuredQueue.map((entry, index) => (

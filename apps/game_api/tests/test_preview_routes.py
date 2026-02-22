@@ -423,6 +423,86 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIsNotNone(updated_mira_ref)
         self.assertEqual(updated_mira_ref["distance_band_to_player"], "adjacent")
 
+    def test_g14_queue_talk_then_attack_updates_standing_and_keeps_adjacent_context(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g14-1",
+                "world_description": "Ein ueberfuellter Marktplatz mit Heilerin Mira und gereizten Stadtwachen.",
+                "character_description": "Ein direkter Abenteurer, der erst redet und dann zuschlaegt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        mira_ref = next(
+            (entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira"),
+            None,
+        )
+        if mira_ref is None:
+            self.skipTest("Mira nicht im Target-Catalog gefunden.")
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI Queue: Rede mit Mira und greife sie an",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": mira_ref["name"],
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    },
+                    {
+                        "action_type": "ATTACK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "attack",
+                            "attack_mode": "melee",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": mira_ref["name"],
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    },
+                ],
+            },
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("attack_resolved", event_codes)
+
+        after_context = payload["context_after_turn"]
+        self.assertIsNotNone(after_context)
+        updated_mira_ref = next(
+            (entry for entry in after_context["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"]),
+            None,
+        )
+        self.assertIsNotNone(updated_mira_ref)
+        self.assertEqual(updated_mira_ref["distance_band_to_player"], "adjacent")
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        mira_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_bundle["relationship"]["standing"], -4)
+
 
 if __name__ == "__main__":
     unittest.main()
