@@ -5,6 +5,7 @@ import {
   GameContextResponse,
   getWorldContext,
   runTurn,
+  StructuredTurnAction,
   TurnRunResponse,
 } from "./api";
 
@@ -14,6 +15,8 @@ type BootstrapForm = {
   characterDescription: string;
 };
 
+type StructuredActionKind = "MOVE" | "TALK" | "ATTACK" | "USE_ITEM";
+
 const DEFAULT_BOOTSTRAP: BootstrapForm = {
   userId: "local-dev-user",
   worldDescription:
@@ -21,6 +24,32 @@ const DEFAULT_BOOTSTRAP: BootstrapForm = {
   characterDescription:
     "Eine ehemalige Kartografin, die ihre verschollene Schwester sucht und dafuer mit Informationen handelt.",
 };
+
+function getStructuredTargets(
+  context: GameContextResponse,
+  composerActionKind: StructuredActionKind,
+): Array<{ refId: string; name: string; kind: string; auxiliary?: string }> {
+  if (composerActionKind === "MOVE") {
+    return context.target_catalog.locations.map((entry) => ({
+      refId: entry.ref_id,
+      name: entry.name,
+      kind: "location",
+    }));
+  }
+  if (composerActionKind === "USE_ITEM") {
+    return context.world.inventory.map((item) => ({
+      refId: item.inventory_item_id,
+      name: item.name,
+      kind: "item",
+      auxiliary: item.use_modes.join(", "),
+    }));
+  }
+  return context.target_catalog.npcs.map((entry) => ({
+    refId: entry.ref_id,
+    name: entry.name,
+    kind: "npc",
+  }));
+}
 
 export function App() {
   const [bootstrapForm, setBootstrapForm] = useState<BootstrapForm>(DEFAULT_BOOTSTRAP);
@@ -34,6 +63,8 @@ export function App() {
   const [lastActionMessage, setLastActionMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
+  const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
+  const [composerTargetRef, setComposerTargetRef] = useState<string>("");
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -42,6 +73,13 @@ export function App() {
     const latestTurn = context.recent_turns[context.recent_turns.length - 1];
     return latestTurn?.narrative?.narrative || context.world.initial_narrative;
   }, [context]);
+
+  const composerTargets = useMemo(() => {
+    if (!context) {
+      return [] as Array<{ refId: string; name: string; kind: string; auxiliary?: string }>;
+    }
+    return getStructuredTargets(context, composerActionKind);
+  }, [composerActionKind, context]);
 
   async function loadContext(targetWorldId: string, retrievalHint?: string): Promise<void> {
     setIsReloading(true);
@@ -98,22 +136,121 @@ export function App() {
     setLastActionMessage("");
     try {
       const runResult: TurnRunResponse = await runTurn(worldId.trim(), turnInput.trim());
-      setAnalysisNotes(runResult.analysis_context_notes || []);
-      if (runResult.context_after_turn) {
-        setContext(runResult.context_after_turn);
-        setWorldId(runResult.context_after_turn.world.world_id);
-        setWorldIdInput(runResult.context_after_turn.world.world_id);
-      } else {
-        await loadContext(worldId.trim(), turnInput.trim());
-      }
-      setLastActionMessage(
-        `Turn ausgefuehrt (${runResult.turn.turn_id}) und Context aktualisiert.`,
-      );
+      await applyTurnResult(runResult, worldId.trim(), turnInput.trim());
     } catch (turnError) {
       setError(turnError instanceof Error ? turnError.message : "Turn fehlgeschlagen.");
     } finally {
       setIsRunningTurn(false);
     }
+  }
+
+  async function handleStructuredTurnSubmit(): Promise<void> {
+    if (!context || !worldId.trim()) {
+      return;
+    }
+    const selected = composerTargets.find((entry) => entry.refId === composerTargetRef) || composerTargets[0];
+    if (!selected) {
+      setError("Bitte ein Ziel fuer die strukturierte Aktion waehlen.");
+      return;
+    }
+
+    const action = buildStructuredAction(composerActionKind, selected);
+    const label = buildStructuredActionLabel(composerActionKind, selected);
+
+    setIsRunningTurn(true);
+    setError("");
+    setLastActionMessage("");
+    try {
+      const runResult = await runTurn(worldId.trim(), label, { actionsOverride: [action] });
+      await applyTurnResult(runResult, worldId.trim(), label);
+      setLastActionMessage(`Struktur-Turn ausgefuehrt (${runResult.turn.turn_id}).`);
+    } catch (turnError) {
+      setError(turnError instanceof Error ? turnError.message : "Struktur-Turn fehlgeschlagen.");
+    } finally {
+      setIsRunningTurn(false);
+    }
+  }
+
+  async function applyTurnResult(runResult: TurnRunResponse, fallbackWorldId: string, retrievalHint: string): Promise<void> {
+    setAnalysisNotes(runResult.analysis_context_notes || []);
+    if (runResult.context_after_turn) {
+      setContext(runResult.context_after_turn);
+      setWorldId(runResult.context_after_turn.world.world_id);
+      setWorldIdInput(runResult.context_after_turn.world.world_id);
+    } else {
+      await loadContext(fallbackWorldId, retrievalHint);
+    }
+    if (runResult.context_after_turn && composerTargetRef) {
+      const stillExists = getStructuredTargets(runResult.context_after_turn, composerActionKind).some(
+        (entry) => entry.refId === composerTargetRef,
+      );
+      if (!stillExists) {
+        setComposerTargetRef("");
+      }
+    }
+    setLastActionMessage(`Turn ausgefuehrt (${runResult.turn.turn_id}) und Context aktualisiert.`);
+  }
+
+  function buildStructuredAction(
+    actionKind: StructuredActionKind,
+    target: { refId: string; name: string; kind: string },
+  ): StructuredTurnAction {
+    if (actionKind === "MOVE") {
+      return {
+        action_type: "MOVE",
+        target_ref: target.refId,
+        destination: target.name,
+        target_kind: "location",
+        parameters: {
+          intent: "move",
+          destination_id: target.refId,
+          destination_name: target.name,
+        },
+        confidence: 0.99,
+      };
+    }
+    if (actionKind === "USE_ITEM") {
+      return {
+        action_type: "USE_ITEM",
+        item_ref: target.refId,
+        target_ref: target.name,
+        target_kind: "item",
+        parameters: {
+          intent: "use_item",
+          item_id: target.refId,
+          item_name: target.name,
+          target_name: target.name,
+        },
+        confidence: 0.99,
+      };
+    }
+    return {
+      action_type: actionKind,
+      target_ref: target.refId,
+      target_kind: "npc",
+      parameters: {
+        intent: actionKind === "TALK" ? "talk" : "attack",
+        target_id: target.refId,
+        target_name: target.name,
+      },
+      confidence: 0.99,
+    };
+  }
+
+  function buildStructuredActionLabel(
+    actionKind: StructuredActionKind,
+    target: { refId: string; name: string; kind: string },
+  ): string {
+    if (actionKind === "MOVE") {
+      return `UI: Gehe zu ${target.name}`;
+    }
+    if (actionKind === "USE_ITEM") {
+      return `UI: Benutze ${target.name}`;
+    }
+    if (actionKind === "ATTACK") {
+      return `UI: Greife ${target.name} an`;
+    }
+    return `UI: Spreche mit ${target.name}`;
   }
 
   return (
@@ -231,6 +368,60 @@ export function App() {
                   </button>
                 </div>
               </form>
+
+              <section className="subpanel">
+                <h3>Struktur-Aktion (G10)</h3>
+                <div className="turn-actions">
+                  <label className="compact-label">
+                    Aktion
+                    <select
+                      className="compact-input"
+                      value={composerActionKind}
+                      onChange={(event) => {
+                        setComposerActionKind(event.target.value as StructuredActionKind);
+                        setComposerTargetRef("");
+                      }}
+                      disabled={isRunningTurn}
+                    >
+                      <option value="TALK">Talk</option>
+                      <option value="MOVE">Move</option>
+                      <option value="ATTACK">Attack</option>
+                      <option value="USE_ITEM">Use Item</option>
+                    </select>
+                  </label>
+                  <label className="compact-label" style={{ minWidth: 260 }}>
+                    Ziel
+                    <select
+                      className="compact-input"
+                      value={composerTargetRef}
+                      onChange={(event) => setComposerTargetRef(event.target.value)}
+                      disabled={isRunningTurn || composerTargets.length === 0}
+                    >
+                      <option value="">
+                        {composerTargets.length === 0 ? "Keine Ziele" : "Bitte waehlen (oder erstes auto)"}
+                      </option>
+                      {composerTargets.map((target) => (
+                        <option key={target.refId} value={target.refId}>
+                          {target.name} [{target.refId}]
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => void handleStructuredTurnSubmit()}
+                    disabled={isRunningTurn || composerTargets.length === 0}
+                  >
+                    {isRunningTurn ? "Verarbeite..." : "Struktur-Turn senden"}
+                  </button>
+                </div>
+                {composerTargets[0] ? (
+                  <p className="list-subtle">
+                    ID-basierter Turn ueber `actions_override`. Freitext bleibt optional parallel nutzbar.
+                  </p>
+                ) : null}
+              </section>
 
               <div className="split-columns">
                 <section className="subpanel">

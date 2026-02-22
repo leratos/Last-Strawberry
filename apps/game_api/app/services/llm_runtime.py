@@ -246,7 +246,14 @@ class LlmRuntime:
                 continue
             normalized_action = dict(action)
             normalized_action.setdefault("analysis_source", "openrouter_llm")
-            actions.append(TurnIntentAction.model_validate(normalized_action))
+            validated = TurnIntentAction.model_validate(normalized_action)
+            validated = self._normalize_openrouter_action_refs(
+                action=validated,
+                known_npc_refs=known_npc_refs,
+                known_location_refs=known_location_refs,
+                known_item_refs=known_item_refs,
+            )
+            actions.append(validated)
         analysis_notes = [str(note) for note in (payload.get("analysis_notes") or [])]
         if not actions:
             actions = [
@@ -433,6 +440,85 @@ class LlmRuntime:
             if len(normalized) >= 5:
                 break
         return normalized
+
+    def _normalize_openrouter_action_refs(
+        self,
+        *,
+        action: TurnIntentAction,
+        known_npc_refs: list[dict[str, str]],
+        known_location_refs: list[dict[str, str]],
+        known_item_refs: list[dict[str, str]],
+    ) -> TurnIntentAction:
+        params = dict(action.parameters)
+        updates: dict[str, object] = {}
+
+        npc_ref_index = self._build_ref_index(known_npc_refs)
+        location_ref_index = self._build_ref_index(known_location_refs)
+        item_ref_index = self._build_ref_index(known_item_refs)
+
+        if action.action_type.value in {"TALK", "ATTACK"}:
+            candidate_name = str(params.get("target_name") or "").strip()
+            candidate_ref = (action.target_ref or "").strip()
+            if not candidate_name and candidate_ref and not candidate_ref.startswith("npc-"):
+                candidate_name = candidate_ref
+            resolved_id = candidate_ref if candidate_ref.startswith("npc-") else self._lookup_ref_id(candidate_name, npc_ref_index)
+            if resolved_id:
+                updates["target_ref"] = resolved_id
+                params["target_id"] = resolved_id
+            if candidate_name:
+                params.setdefault("target_name", candidate_name)
+
+        if action.action_type.value == "MOVE":
+            destination_name = str(params.get("destination_name") or action.destination or "").strip()
+            candidate_ref = (action.target_ref or "").strip()
+            resolved_id = (
+                candidate_ref if candidate_ref.startswith("loc-") else self._lookup_ref_id(destination_name, location_ref_index)
+            )
+            if destination_name:
+                updates["destination"] = destination_name
+                params["destination_name"] = destination_name
+            if resolved_id:
+                updates["target_ref"] = resolved_id
+                params["destination_id"] = resolved_id
+
+        if action.action_type.value == "USE_ITEM":
+            item_name = str(params.get("item_name") or params.get("target_name") or "").strip()
+            item_ref = (action.item_ref or "").strip()
+            resolved_item_id = item_ref if item_ref.startswith("inv-") else self._lookup_ref_id(item_name, item_ref_index)
+            if resolved_item_id:
+                updates["item_ref"] = resolved_item_id
+                params["item_id"] = resolved_item_id
+            if item_name:
+                params.setdefault("item_name", item_name)
+                params.setdefault("target_name", item_name)
+                if not action.target_ref:
+                    updates["target_ref"] = item_name
+
+        updates["parameters"] = params
+        if not updates:
+            return action
+        return action.model_copy(update=updates)
+
+    def _build_ref_index(self, refs: list[dict[str, str]]) -> dict[str, str]:
+        index: dict[str, str] = {}
+        for entry in refs:
+            name = str(entry.get("name") or "").strip()
+            ref_id = str(entry.get("ref_id") or "").strip()
+            if not name or not ref_id:
+                continue
+            index[name.lower()] = ref_id
+        return index
+
+    def _lookup_ref_id(self, name: str, ref_index: dict[str, str]) -> str | None:
+        normalized = (name or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized in ref_index:
+            return ref_index[normalized]
+        for known_name, ref_id in ref_index.items():
+            if normalized in known_name or known_name in normalized:
+                return ref_id
+        return None
 
 
 def build_llm_runtime(settings: Settings) -> LlmRuntime:

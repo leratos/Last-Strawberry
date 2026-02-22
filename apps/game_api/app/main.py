@@ -20,6 +20,7 @@ from ls_shared_schemas.turns import (
     NarrativeEnvelope,
     PersistedTurnRecord,
     TurnIntent,
+    TurnIntentAction,
     TurnResolution,
     TurnRunRequest,
     TurnRunResponse,
@@ -220,18 +221,28 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
     known_location_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.locations]
     known_item_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.items]
 
-    intent = llm_runtime.analyze_intent(
-        world_id=world_id,
-        world_character_id=session.character_state.world_character_id,
-        player_input=request.player_input,
-        inventory=session.inventory,
-        known_npc_names=known_npc_names,
-        known_locations=known_locations,
-        known_npc_refs=known_npc_refs,
-        known_location_refs=known_location_refs,
-        known_item_refs=known_item_refs,
-        context=context_before,
-    )
+    if request.actions_override:
+        normalized_actions = _normalize_override_actions(request.actions_override)
+        intent = TurnIntent(
+            world_id=world_id,
+            world_character_id=session.character_state.world_character_id,
+            raw_player_input=request.player_input,
+            actions=normalized_actions,
+            analysis_notes=["UI structured action override verwendet."],
+        )
+    else:
+        intent = llm_runtime.analyze_intent(
+            world_id=world_id,
+            world_character_id=session.character_state.world_character_id,
+            player_input=request.player_input,
+            inventory=session.inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_item_refs=known_item_refs,
+            context=context_before,
+        )
     resolution = engine.resolve(
         intent=intent,
         character_state=session.character_state,
@@ -265,6 +276,41 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         context_before_turn=context_before.model_dump(mode="json") if request.include_context_before_turn else None,
         context_after_turn=context_after.model_dump(mode="json") if context_after is not None else None,
     )
+
+
+def _normalize_override_actions(actions: list[TurnIntentAction]) -> list[TurnIntentAction]:
+    normalized: list[TurnIntentAction] = []
+    for action in actions:
+        updates: dict[str, object] = {"analysis_source": "ui_structured_override"}
+        params = dict(action.parameters)
+        if action.action_type.value == "MOVE":
+            destination_name = str(params.get("destination_name") or action.destination or "").strip()
+            destination_id = str(params.get("destination_id") or action.target_ref or "").strip()
+            if destination_name:
+                updates["destination"] = destination_name
+            if destination_id:
+                updates["target_ref"] = destination_id
+            params.setdefault("destination_name", destination_name or None)
+            params.setdefault("destination_id", destination_id or None)
+        if action.action_type.value in {"TALK", "ATTACK"}:
+            target_name = str(params.get("target_name") or "").strip()
+            target_id = str(params.get("target_id") or action.target_ref or "").strip()
+            if target_id:
+                updates["target_ref"] = target_id
+            params.setdefault("target_name", target_name or None)
+            params.setdefault("target_id", target_id or None)
+        if action.action_type.value == "USE_ITEM":
+            item_id = str(params.get("item_id") or action.item_ref or "").strip()
+            item_name = str(params.get("item_name") or params.get("target_name") or "").strip()
+            if item_id:
+                updates["item_ref"] = item_id
+            if item_name and not action.target_ref:
+                updates["target_ref"] = item_name
+            params.setdefault("item_id", item_id or None)
+            params.setdefault("item_name", item_name or None)
+        updates["parameters"] = params
+        normalized.append(action.model_copy(update=updates))
+    return normalized
 
 
 @app.get("/v1/worlds/{world_id}/turns", response_model=list[PersistedTurnRecord])

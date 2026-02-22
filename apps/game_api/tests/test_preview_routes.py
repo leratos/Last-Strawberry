@@ -245,6 +245,62 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(len(summaries), 1)
         self.assertEqual(zorak["relationship"]["standing"], 2)
 
+    def test_g10_run_turn_accepts_structured_actions_override(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g10-1",
+                "world_description": "Eine Hafenstadt mit Markt, Taverne und mehreren Informanten.",
+                "character_description": "Eine Beobachterin, die gezielt mit Leuten spricht und Orte ansteuert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        created = create_response.json()
+        world_id = created["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        zorak_ref = next(
+            (entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Zorak"),
+            None,
+        )
+        if zorak_ref is None:
+            self.skipTest("Kein Zorak im Target-Catalog vorhanden.")
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Zorak",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": zorak_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": zorak_ref["ref_id"],
+                            "target_name": "Zorak",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(run_response.status_code, 200)
+        run_payload = run_response.json()
+        self.assertIn("UI structured action override", " ".join(run_payload["turn"]["intent"]["analysis_notes"]))
+
+        talk_action = next(
+            action for action in run_payload["turn"]["resolution"]["applied_actions"] if action["action_type"] == "TALK"
+        )
+        self.assertEqual(talk_action["target_ref"], zorak_ref["ref_id"])
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        zorak_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == zorak_ref["ref_id"])
+        self.assertEqual(zorak_bundle["relationship"]["standing"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

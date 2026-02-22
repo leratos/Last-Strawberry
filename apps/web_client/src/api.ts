@@ -95,6 +95,16 @@ export type TurnRunResponse = {
   context_after_turn: GameContextResponse | null;
 };
 
+export type StructuredTurnAction = {
+  action_type: "MOVE" | "TALK" | "ATTACK" | "USE_ITEM" | "INSPECT";
+  target_ref?: string | null;
+  destination?: string | null;
+  item_ref?: string | null;
+  target_kind?: string | null;
+  parameters?: Record<string, string | number | boolean | null>;
+  confidence?: number;
+};
+
 export type WorldBootstrapRequest = {
   user_id: string;
   world_description: string;
@@ -140,9 +150,17 @@ export async function getWorldContext(worldId: string, playerInputHint?: string)
   return (await response.json()) as GameContextResponse;
 }
 
-export async function runTurn(worldId: string, playerInput: string): Promise<TurnRunResponse> {
+export async function runTurn(
+  worldId: string,
+  playerInput: string,
+  options?: { actionsOverride?: StructuredTurnAction[] },
+): Promise<TurnRunResponse> {
   return apiFetch<TurnRunResponse>(`/v1/worlds/${worldId}/turns/run`, {
     method: "POST",
-    body: JSON.stringify({ player_input: playerInput, include_context_after_turn: true }),
+    body: JSON.stringify({
+      player_input: playerInput,
+      include_context_after_turn: true,
+      actions_override: options?.actionsOverride || [],
+    }),
   });
 }
