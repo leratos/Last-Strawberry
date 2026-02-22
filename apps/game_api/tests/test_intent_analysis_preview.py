@@ -88,6 +88,17 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertNotIn("ATTACK", action_types)
         self.assertIn("INSPECT", action_types)
 
+    def test_detects_move_phrase_bewege_mich_zu(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich bewege mich zu Sera und frage sie was sie macht.",
+            inventory=[],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("MOVE", action_types)
+        self.assertIn("TALK", action_types)
+
 
 if __name__ == "__main__":
     unittest.main()

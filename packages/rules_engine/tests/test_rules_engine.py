@@ -77,6 +77,47 @@ class TestRulesEngine(unittest.TestCase):
         self.assertEqual(result.state_delta.relationship_changes[0]["npc"], "Zorak")
         self.assertEqual(result.state_delta.relationship_changes[0]["standing_delta"], -5)
 
+    def test_talk_auto_approaches_when_target_is_far(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
+            attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich frage Mira was sie macht.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.talk,
+                    target_ref="npc-mira",
+                    target_kind="npc",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_location_name": "Marktplatz",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "far",
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(result.resulting_character_state.scene_zone_id, "zone-market-stalls")
+        self.assertEqual(result.resulting_character_state.scene_zone_name, "Marktstaende")
+        self.assertEqual(result.state_delta.scene_zone_changed_to_id, "zone-market-stalls")
+        codes = [event.code for event in result.system_events]
+        self.assertIn("auto_approach_for_talk", codes)
+        self.assertIn("talk_success", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

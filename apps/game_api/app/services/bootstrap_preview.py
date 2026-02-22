@@ -37,6 +37,9 @@ def build_world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootst
             name="Mira",
             role="healer",
             faction="locals",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-stalls",
+            scene_zone_name="Marktstaende",
             personality_tags=["ruhig", "beobachtend", "hilfsbereit"],
             stats={"trust_seed": 10, "competence": 12},
         )
