@@ -88,6 +88,16 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertNotIn("ATTACK", action_types)
         self.assertIn("INSPECT", action_types)
 
+    def test_schau_short_form_maps_to_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich schau mich um.",
+            inventory=[],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("INSPECT", action_types)
+
     def test_detects_move_phrase_bewege_mich_zu(self):
         intent = analyze_player_input_preview(
             world_id="w1",
@@ -97,7 +107,7 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         )
         action_types = [action.action_type.value for action in intent.actions]
         self.assertIn("MOVE", action_types)
-        self.assertIn("TALK", action_types)
+        self.assertIn("CLARIFY", action_types)
 
     def test_skips_location_move_when_phrase_targets_known_npc_for_talk(self):
         intent = analyze_player_input_preview(
