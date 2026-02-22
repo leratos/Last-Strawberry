@@ -110,6 +110,7 @@ class TestIntentAnalysisPreview(unittest.TestCase):
                 {
                     "ref_id": "npc-mira",
                     "name": "Mira",
+                    "role": "healer",
                     "location_name": "Marktplatz",
                     "scene_zone_id": "zone-market-stalls",
                     "scene_zone_name": "Marktstaende",
@@ -161,6 +162,7 @@ class TestIntentAnalysisPreview(unittest.TestCase):
                 {
                     "ref_id": "npc-mira",
                     "name": "Mira",
+                    "role": "healer",
                     "location_name": "Marktplatz",
                     "scene_zone_id": "zone-market-stalls",
                     "scene_zone_name": "Marktstaende",
@@ -186,6 +188,18 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(retreat_action.target_ref, "npc-mira")
         self.assertEqual(retreat_action.parameters.get("target_name"), "Mira")
 
+    def test_detects_retreat_phrase_halte_mich_fern_von(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich halte mich von Mira fern.",
+            inventory=[],
+            known_npc_names=["Mira"],
+            known_npc_refs=[{"ref_id": "npc-mira", "name": "Mira"}],
+        )
+        retreat_action = next(action for action in intent.actions if action.action_type.value == "RETREAT")
+        self.assertEqual(retreat_action.target_ref, "npc-mira")
+
     def test_detects_approach_to_known_npc(self):
         intent = analyze_player_input_preview(
             world_id="w1",
@@ -197,6 +211,7 @@ class TestIntentAnalysisPreview(unittest.TestCase):
                 {
                     "ref_id": "npc-mira",
                     "name": "Mira",
+                    "role": "healer",
                     "location_name": "Marktplatz",
                     "scene_zone_id": "zone-market-stalls",
                     "scene_zone_name": "Marktstaende",
@@ -206,6 +221,7 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         )
         approach_action = next(action for action in intent.actions if action.action_type.value == "APPROACH")
         self.assertEqual(approach_action.target_ref, "npc-mira")
+        self.assertEqual(approach_action.parameters.get("target_role"), "healer")
         self.assertEqual(approach_action.parameters.get("target_distance_band"), "far")
         self.assertIn("Annaehern erkannt", " ".join(intent.analysis_notes))
 

@@ -374,7 +374,7 @@ class TestRulesEngine(unittest.TestCase):
         self.assertEqual(result.state_delta.scene_zone_changed_to_id, "zone-market-stalls")
         self.assertIn("approach_success", [event.code for event in result.system_events])
 
-    def test_approach_emits_wary_reaction_for_hostile_target(self):
+    def test_approach_emits_aggressive_reaction_for_hostile_target(self):
         engine = RulesEngine()
         state = CharacterState(
             world_character_id="wc-1",
@@ -407,9 +407,9 @@ class TestRulesEngine(unittest.TestCase):
         result = engine.resolve(intent=intent, character_state=state, inventory=[])
         codes = [event.code for event in result.system_events]
         self.assertIn("approach_success", codes)
-        self.assertIn("npc_reacts_wary_to_approach", codes)
+        self.assertIn("npc_reacts_aggressive_to_approach", codes)
 
-    def test_retreat_emits_hostile_reaction_note_for_hostile_target(self):
+    def test_retreat_emits_aggressive_reaction_note_for_hostile_target(self):
         engine = RulesEngine()
         state = CharacterState(
             world_character_id="wc-1",
@@ -442,7 +442,77 @@ class TestRulesEngine(unittest.TestCase):
         result = engine.resolve(intent=intent, character_state=state, inventory=[])
         codes = [event.code for event in result.system_events]
         self.assertIn("retreat_success", codes)
-        self.assertIn("npc_reacts_hostile_hold_distance", codes)
+        self.assertIn("npc_reacts_aggressive_to_retreat", codes)
+
+    def test_approach_emits_friendly_reaction_for_positive_standing(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-distance-near",
+            scene_zone_name="Naeher an Mira",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich trete naeher an Mira.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.approach,
+                    target_ref="npc-mira",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "near",
+                        "target_standing": 4,
+                        "target_role": "healer",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        codes = [event.code for event in result.system_events]
+        self.assertIn("approach_success", codes)
+        self.assertIn("npc_reacts_friendly_to_approach", codes)
+
+    def test_retreat_emits_cautious_reaction_for_neutral_negative_standing(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-stalls",
+            scene_zone_name="Marktstaende",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich halte Abstand zu Mira.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.retreat,
+                    target_ref="npc-mira",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "adjacent",
+                        "target_standing": -1,
+                        "target_role": "healer",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        self.assertIn("npc_reacts_cautious_to_retreat", [event.code for event in result.system_events])
 
 
 if __name__ == "__main__":
