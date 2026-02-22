@@ -334,6 +334,38 @@ class WorldRepository:
             )
         return bundles
 
+    def spawn_npc_for_devtest(
+        self,
+        *,
+        world_id: str,
+        profile: NPCProfile,
+        standing_for_player: int | None = None,
+    ) -> NPCProfile:
+        session = self.get_world_session(world_id)
+        if session is None:
+            raise ValueError("World session not found.")
+
+        timestamp = _utc_iso_now()
+        normalized_profile = self._normalize_npc_profile(profile)
+        with self._connect() as conn:
+            self._upsert_world_npc_profiles(
+                conn=conn,
+                world_id=world_id,
+                profiles=[normalized_profile],
+                timestamp=timestamp,
+            )
+            if standing_for_player is not None:
+                self._upsert_npc_relationship(
+                    conn=conn,
+                    world_id=world_id,
+                    npc_id=normalized_profile.npc_id,
+                    world_character_id=session.character_state.world_character_id,
+                    standing_delta=int(standing_for_player),
+                    timestamp=timestamp,
+                )
+            conn.commit()
+        return normalized_profile
+
     def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
         for entry in entries:
             conn.execute(
@@ -456,13 +488,16 @@ class WorldRepository:
                     world_id=world_id,
                     npc_id=preferred_npc_id,
                 ) or preferred_npc_id
-            npc_id = self._find_or_create_npc_profile(
-                conn=conn,
-                world_id=world_id,
-                npc_name=npc_name,
-                timestamp=timestamp,
-                preferred_npc_id=preferred_npc_id,
-            )
+            try:
+                npc_id = self._find_or_create_npc_profile(
+                    conn=conn,
+                    world_id=world_id,
+                    npc_name=npc_name,
+                    timestamp=timestamp,
+                    preferred_npc_id=preferred_npc_id,
+                )
+            except ValueError:
+                continue
             standing_delta = standing_changes_by_id.get(npc_id, 0)
             if standing_delta == 0 and npc_name:
                 standing_delta = standing_changes_by_name.get(npc_name, 0)
@@ -521,6 +556,8 @@ class WorldRepository:
         timestamp: str,
         preferred_npc_id: str | None = None,
     ) -> str:
+        if self._is_disallowed_generic_npc_name(npc_name):
+            raise ValueError("Refusing to auto-create generic NPC target.")
         if preferred_npc_id:
             preferred_row = conn.execute(
                 """
@@ -564,6 +601,11 @@ class WorldRepository:
             timestamp=timestamp,
         )
         return npc_id
+
+    @staticmethod
+    def _is_disallowed_generic_npc_name(npc_name: str) -> bool:
+        normalized = (npc_name or "").strip().lower()
+        return normalized in {"npc", "char", "charakter", "figur", "person", "gegner", "ziel"}
 
     def _upsert_npc_relationship(
         self,

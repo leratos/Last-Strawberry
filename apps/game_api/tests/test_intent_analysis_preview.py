@@ -327,6 +327,22 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertIn("Kael", str(clarify_action.parameters.get("message") or ""))
         self.assertIn("Liora", str(clarify_action.parameters.get("message") or ""))
 
+    def test_returns_clarify_for_descriptive_unresolved_npc_reference(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich spreche den zweiten Beschwoerer an.",
+            inventory=[],
+            known_npc_names=["Kael", "Mira"],
+            known_npc_refs=[
+                {"ref_id": "npc-kael", "name": "Kael", "role": "beschwoerer"},
+                {"ref_id": "npc-mira", "name": "Mira", "role": "heiler"},
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertNotIn("TALK", action_types)
+        self.assertIn("CLARIFY", action_types)
+
 
 if __name__ == "__main__":
     unittest.main()

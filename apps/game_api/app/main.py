@@ -15,7 +15,7 @@ from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.inventory import InventoryItemInstance
-from ls_shared_schemas.npc_memory import NPCMemoryBundle
+from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCProfile
 from ls_shared_schemas.turns import (
     NarrativeEnvelope,
     PersistedTurnRecord,
@@ -36,6 +36,19 @@ class TurnResolvePreviewRequest(BaseModel):
 
 class TurnAnalyzePreviewRequest(BaseModel):
     player_input: str = Field(min_length=1, max_length=2000)
+
+
+class DevSpawnNpcRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: str = Field(default="npc", min_length=1, max_length=120)
+    faction: str | None = Field(default=None, max_length=120)
+    location_name: str | None = Field(default=None, max_length=120)
+    scene_zone_id: str | None = Field(default=None, max_length=120)
+    scene_zone_name: str | None = Field(default=None, max_length=120)
+    personality_tags: list[str] = Field(default_factory=list)
+    stats: dict[str, int | float | str] = Field(default_factory=dict)
+    npc_id: str | None = Field(default=None, max_length=120)
+    standing_for_player: int | None = Field(default=None, ge=-100, le=100)
 
 
 engine = RulesEngine()
@@ -154,6 +167,41 @@ def get_world_session(world_id: str, fastapi_request: Request) -> WorldSessionRe
     if session is None:
         raise HTTPException(status_code=404, detail="World session not found.")
     return session
+
+
+@app.post("/v1/devtest/worlds/{world_id}/npcs/spawn", response_model=NPCProfile)
+def devtest_spawn_npc(world_id: str, request: DevSpawnNpcRequest, fastapi_request: Request) -> NPCProfile:
+    if settings.environment.lower() == "production":
+        raise HTTPException(status_code=403, detail="Dev/Test NPC spawn endpoint is disabled in production.")
+
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+
+    raw_name = request.name.strip()
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in raw_name)
+    slug = "-".join(part for part in slug.split("-") if part)[:40] or "npc"
+    npc_id = (request.npc_id or f"npc-dev-{slug}").strip()
+    profile = NPCProfile(
+        npc_id=npc_id,
+        name=raw_name,
+        role=request.role.strip(),
+        faction=request.faction.strip() if request.faction else None,
+        location_name=(request.location_name or session.character_state.location_name).strip(),
+        scene_zone_id=request.scene_zone_id.strip() if request.scene_zone_id else None,
+        scene_zone_name=request.scene_zone_name.strip() if request.scene_zone_name else None,
+        personality_tags=[tag.strip() for tag in request.personality_tags if str(tag).strip()],
+        stats=dict(request.stats),
+    )
+    try:
+        return repository.spawn_npc_for_devtest(
+            world_id=world_id,
+            profile=profile,
+            standing_for_player=request.standing_for_player,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/v1/worlds/{world_id}/turns/analyze/preview", response_model=TurnIntent)

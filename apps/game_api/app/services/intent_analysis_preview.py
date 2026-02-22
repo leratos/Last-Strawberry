@@ -32,6 +32,32 @@ _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
 _RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg", "abstand", "fern")
 _APPROACH_VERBS = ("naehere", "nähere", "annaehern", "annähern", "naeher", "näher", "trete")
+_GENERIC_NPC_TARGET_WORDS = {
+    "npc",
+    "char",
+    "charakter",
+    "figur",
+    "person",
+    "mann",
+    "frau",
+    "gegner",
+    "ziel",
+}
+_DESCRIPTIVE_NPC_REFERENCE_HINTS = (
+    "zweite",
+    "zweiten",
+    "zweiter",
+    "dritte",
+    "dritten",
+    "ander",
+    "kollege",
+    "kollegin",
+    "freund",
+    "begleiter",
+    "typ",
+    "person",
+    "von ",
+)
 
 
 RefMetaIndex = dict[str, dict[str, str]]
@@ -165,6 +191,16 @@ def analyze_player_input_preview(
             known_npc_refs or [],
             npc_ref_index,
         )
+        if not clarify_message and _requires_existing_npc_resolution(target=target, target_meta=target_meta):
+            clarify_message = (
+                "Die angesprochene Person ist nicht eindeutig bekannt. "
+                "Bitte nenne einen bekannten Namen oder waehle ein Ziel aus der Liste."
+            )
+        if not clarify_message and _looks_like_descriptive_unresolved_npc_reference(target=target, target_meta=target_meta):
+            clarify_message = (
+                "Die beschriebene Person ist nicht eindeutig zuordenbar. "
+                "Bitte waehle einen sichtbaren NPC aus der Liste oder nenne einen bekannten Namen."
+            )
         if clarify_message:
             actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
             notes.append(clarify_message)
@@ -458,3 +494,21 @@ def _clarify_action_for_ambiguous_npc_target(message: str) -> TurnIntentAction:
         },
         confidence=0.35,
     )
+
+
+def _requires_existing_npc_resolution(*, target: str, target_meta: dict[str, str]) -> bool:
+    if target_meta:
+        return False
+    normalized = (target or "").strip().lower()
+    if not normalized:
+        return True
+    return normalized in _GENERIC_NPC_TARGET_WORDS
+
+
+def _looks_like_descriptive_unresolved_npc_reference(*, target: str, target_meta: dict[str, str]) -> bool:
+    if target_meta:
+        return False
+    normalized = (target or "").strip().lower()
+    if not normalized:
+        return False
+    return any(hint in normalized for hint in _DESCRIPTIVE_NPC_REFERENCE_HINTS)

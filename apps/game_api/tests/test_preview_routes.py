@@ -278,6 +278,75 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         ]
         self.assertEqual(auto_plain_beschwoerer, [])
 
+    def test_devtest_spawn_npc_endpoint_creates_visible_npc_profile(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-devspawn-1",
+                "world_description": "Eine Stadt mit geheimer Magie, Markt und Fraktionen im Schatten.",
+                "character_description": "Ein Beobachter, der neue Kontakte im Verborgenen sucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spawn_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-test-lyra",
+                "name": "Lyra",
+                "role": "beschwoerer",
+                "faction": "binder_konklave",
+                "location_name": "Marktplatz",
+                "scene_zone_id": "zone-fountain-ring",
+                "scene_zone_name": "Brunnenplatz",
+                "standing_for_player": 2,
+            },
+        )
+        self.assertEqual(spawn_response.status_code, 200)
+        self.assertEqual(spawn_response.json()["npc_id"], "npc-test-lyra")
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        lyra_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == "npc-test-lyra")
+        self.assertEqual(lyra_bundle["profile"]["name"], "Lyra")
+        self.assertEqual(lyra_bundle["profile"]["role"], "beschwoerer")
+        self.assertEqual(lyra_bundle["relationship"]["standing"], 2)
+
+    def test_g25_descriptive_talk_reference_returns_clarify_and_does_not_create_fake_npc(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g25-desc",
+                "world_description": "Eine moderne Stadt mit geheimer Magie, Ritualen und rivalisierenden Zirkeln.",
+                "character_description": "Eine Beobachterin, die Binder und Champions im Blick behaelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich spreche den zweiten Beschwoerer an."},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("clarify_required", event_codes)
+        applied_action_types = [action["action_type"] for action in payload["turn"]["resolution"]["applied_actions"]]
+        self.assertEqual(applied_action_types, [])
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        bundles = memory_response.json()
+        fake_targets = [
+            bundle
+            for bundle in bundles
+            if bundle["profile"]["npc_id"].startswith("npc-auto-")
+            and ("zweiten" in bundle["profile"]["name"].lower() or bundle["profile"]["name"].lower() == "npc")
+        ]
+        self.assertEqual(fake_targets, [])
+
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
