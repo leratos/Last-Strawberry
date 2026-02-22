@@ -118,7 +118,7 @@ def _extract_target_after_verb(text: str, verbs: tuple[str, ...]) -> str | None:
     for verb in verbs:
         match = re.search(rf"\b{verb}\b\s+(?:den|die|das|einen|eine)?\s*([a-zA-Z0-9äöüÄÖÜß _-]+)", text, re.I)
         if match:
-            target = match.group(1).strip(" .,!?:;")
+            target = _trim_entity_phrase(match.group(1))
             if target:
                 return target
     return None
@@ -128,5 +128,16 @@ def _extract_talk_target(text: str) -> str | None:
     match = re.search(r"\b(?:mit|zu)\s+(?:dem|der|den|einem|einer)?\s*([a-zA-Z0-9äöüÄÖÜß _-]+)", text, re.I)
     if not match:
         return None
-    target = match.group(1).strip(" .,!?:;")
+    target = _trim_entity_phrase(match.group(1))
     return target or None
+
+
+def _trim_entity_phrase(value: str) -> str:
+    target = value.strip(" .,!?:;")
+    target = re.split(
+        r"\b(?:und|ueber|über|wegen|beziehungsweise|danach|anschlie(?:ss|ß)end)\b",
+        target,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    return target.strip(" .,!?:;")

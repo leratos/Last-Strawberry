@@ -53,6 +53,30 @@ class TestRulesEngine(unittest.TestCase):
         self.assertEqual(len(result.applied_actions), 2)
         self.assertEqual(len(result.rejected_actions), 0)
 
+    def test_attack_applies_negative_relationship_change(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Gasse",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=3, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich greife Zorak an.",
+            actions=[TurnIntentAction(action_type=ActionType.attack, target_ref="Zorak")],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(result.resulting_character_state.resources.stamina, 2)
+        self.assertEqual(result.state_delta.stamina_delta, -1)
+        self.assertTrue(result.state_delta.relationship_changes)
+        self.assertEqual(result.state_delta.relationship_changes[0]["npc"], "Zorak")
+        self.assertEqual(result.state_delta.relationship_changes[0]["standing_delta"], -5)
+
 
 if __name__ == "__main__":
     unittest.main()

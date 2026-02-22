@@ -13,6 +13,7 @@ from apps.game_api.app.services.narration_preview import build_narrative_from_re
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
+from ls_shared_schemas.npc_memory import NPCMemoryBundle
 from ls_shared_schemas.turns import (
     NarrativeEnvelope,
     PersistedTurnRecord,
@@ -150,3 +151,20 @@ def list_world_turns(world_id: str, fastapi_request: Request, limit: int = 50) -
     if session is None:
         raise HTTPException(status_code=404, detail="World session not found.")
     return repository.list_turns(world_id=world_id, limit=limit)
+
+
+@app.get("/v1/worlds/{world_id}/npc-memory", response_model=list[NPCMemoryBundle])
+def list_world_npc_memory(
+    world_id: str,
+    fastapi_request: Request,
+    limit_memories_per_npc: int = 5,
+) -> list[NPCMemoryBundle]:
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+    return repository.list_npc_memory_bundles(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        limit_memories_per_npc=limit_memories_per_npc,
+    )

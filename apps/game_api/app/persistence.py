@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, UTC
@@ -10,8 +11,8 @@ from uuid import uuid4
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
-from ls_shared_schemas.npc_memory import NPCProfile
-from ls_shared_schemas.turns import NarrativeEnvelope, PersistedTurnRecord, TurnIntent, TurnResolution
+from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
+from ls_shared_schemas.turns import ActionType, NarrativeEnvelope, PersistedTurnRecord, TurnIntent, TurnResolution
 from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
@@ -110,6 +111,12 @@ class WorldRepository:
                         json.dumps([item.model_dump(mode="json") for item in world_seed.starter_inventory], ensure_ascii=True),
                         created_at,
                     ),
+                )
+                self._upsert_world_npc_profiles(
+                    conn=conn,
+                    world_id=world_id,
+                    profiles=world_seed.starter_npcs,
+                    timestamp=created_at,
                 )
                 self._insert_journal_entries(conn, journal_entries)
                 conn.commit()
@@ -222,6 +229,15 @@ class WorldRepository:
                 )
 
                 self._insert_journal_entries(conn, journal_entries)
+                self._apply_npc_memory_updates(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                    turn_id=turn_id,
+                    intent=intent,
+                    resolution=resolution,
+                    timestamp=created_at,
+                )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -259,6 +275,62 @@ class WorldRepository:
             return None, None, []
         return session, session.character_state, list(session.inventory)
 
+    def list_npc_memory_bundles(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        limit_memories_per_npc: int = 5,
+    ) -> list[NPCMemoryBundle]:
+        safe_limit = max(1, min(limit_memories_per_npc, 20))
+        with self._connect() as conn:
+            profile_rows = conn.execute(
+                """
+                SELECT * FROM npc_profiles
+                WHERE world_id = ?
+                ORDER BY name ASC
+                """,
+                (world_id,),
+            ).fetchall()
+            relationship_rows = conn.execute(
+                """
+                SELECT * FROM npc_relationships
+                WHERE world_id = ? AND world_character_id = ?
+                """,
+                (world_id, world_character_id),
+            ).fetchall()
+            memory_rows = conn.execute(
+                """
+                SELECT * FROM npc_memories
+                WHERE world_id = ? AND world_character_id = ?
+                ORDER BY created_at DESC
+                """,
+                (world_id, world_character_id),
+            ).fetchall()
+
+        relationships_by_npc = {
+            str(row["npc_id"]): self._npc_relationship_from_row(row)
+            for row in relationship_rows
+        }
+        memories_by_npc: dict[str, list[NPCMemoryEntry]] = {}
+        for row in memory_rows:
+            npc_id = str(row["npc_id"])
+            memories_by_npc.setdefault(npc_id, []).append(self._npc_memory_from_row(row))
+
+        bundles: list[NPCMemoryBundle] = []
+        for row in profile_rows:
+            npc_id = str(row["npc_id"])
+            memories = memories_by_npc.get(npc_id, [])[:safe_limit]
+            bundles.append(
+                NPCMemoryBundle(
+                    profile=self._npc_profile_from_row(row),
+                    relationship=relationships_by_npc.get(npc_id),
+                    recent_memories=memories,
+                    canonical_facts=[],
+                )
+            )
+        return bundles
+
     def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
         for entry in entries:
             conn.execute(
@@ -274,6 +346,244 @@ class WorldRepository:
                     entry.created_at.isoformat(),
                 ),
             )
+
+    def _upsert_world_npc_profiles(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        profiles: list[NPCProfile],
+        timestamp: str,
+    ) -> None:
+        for profile in profiles:
+            existing = conn.execute(
+                "SELECT 1 FROM npc_profiles WHERE world_id = ? AND npc_id = ?",
+                (world_id, profile.npc_id),
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    """
+                    INSERT INTO npc_profiles (
+                        world_id, npc_id, name, role, faction, personality_tags_json,
+                        stats_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        world_id,
+                        profile.npc_id,
+                        profile.name,
+                        profile.role,
+                        profile.faction,
+                        json.dumps(profile.personality_tags, ensure_ascii=True),
+                        json.dumps(profile.stats, ensure_ascii=True),
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                continue
+
+            conn.execute(
+                """
+                UPDATE npc_profiles
+                SET name = ?, role = ?, faction = ?, personality_tags_json = ?, stats_json = ?, updated_at = ?
+                WHERE world_id = ? AND npc_id = ?
+                """,
+                (
+                    profile.name,
+                    profile.role,
+                    profile.faction,
+                    json.dumps(profile.personality_tags, ensure_ascii=True),
+                    json.dumps(profile.stats, ensure_ascii=True),
+                    timestamp,
+                    world_id,
+                    profile.npc_id,
+                ),
+            )
+
+    def _apply_npc_memory_updates(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        turn_id: str,
+        intent: TurnIntent,
+        resolution: TurnResolution,
+        timestamp: str,
+    ) -> None:
+        standing_changes: dict[str, int] = {}
+        for change in resolution.state_delta.relationship_changes:
+            npc_name = str(change.get("npc") or "").strip()
+            if not npc_name:
+                continue
+            standing_delta = int(change.get("standing_delta") or 0)
+            standing_changes[npc_name] = standing_changes.get(npc_name, 0) + standing_delta
+
+        interaction_targets: dict[str, str] = {}
+        for action in resolution.applied_actions:
+            if action.action_type not in {ActionType.talk, ActionType.attack}:
+                continue
+            target_name = (action.target_ref or "").strip()
+            if not target_name:
+                continue
+            interaction_targets[target_name] = action.action_type.value.lower()
+
+        for npc_name, interaction_kind in interaction_targets.items():
+            npc_id = self._find_or_create_npc_profile(
+                conn=conn,
+                world_id=world_id,
+                npc_name=npc_name,
+                timestamp=timestamp,
+            )
+            standing_delta = standing_changes.get(npc_name, 0)
+            if standing_delta != 0:
+                self._upsert_npc_relationship(
+                    conn=conn,
+                    world_id=world_id,
+                    npc_id=npc_id,
+                    world_character_id=world_character_id,
+                    standing_delta=standing_delta,
+                    timestamp=timestamp,
+                )
+            self._insert_npc_memory_entry(
+                conn=conn,
+                memory=NPCMemoryEntry(
+                    memory_id=f"mem-{uuid4().hex[:12]}",
+                    npc_id=npc_id,
+                    world_id=world_id,
+                    summary=self._build_npc_memory_summary(
+                        npc_name=npc_name,
+                        interaction_kind=interaction_kind,
+                        player_input=intent.raw_player_input,
+                    ),
+                    importance=0.7 if interaction_kind == "attack" else 0.55,
+                    tags=["interaction", interaction_kind],
+                    source_turn_id=turn_id,
+                ),
+                world_character_id=world_character_id,
+            )
+
+    def _find_or_create_npc_profile(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        npc_name: str,
+        timestamp: str,
+    ) -> str:
+        row = conn.execute(
+            """
+            SELECT npc_id FROM npc_profiles
+            WHERE world_id = ? AND LOWER(name) = LOWER(?)
+            LIMIT 1
+            """,
+            (world_id, npc_name),
+        ).fetchone()
+        if row is not None:
+            return str(row["npc_id"])
+
+        npc_id = self._stable_npc_id_from_name(npc_name)
+        profile = NPCProfile(npc_id=npc_id, name=npc_name, role="unknown")
+        self._upsert_world_npc_profiles(
+            conn=conn,
+            world_id=world_id,
+            profiles=[profile],
+            timestamp=timestamp,
+        )
+        return npc_id
+
+    def _upsert_npc_relationship(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        npc_id: str,
+        world_character_id: str,
+        standing_delta: int,
+        timestamp: str,
+    ) -> None:
+        row = conn.execute(
+            """
+            SELECT standing, tags_json, notes FROM npc_relationships
+            WHERE world_id = ? AND npc_id = ? AND world_character_id = ?
+            """,
+            (world_id, npc_id, world_character_id),
+        ).fetchone()
+
+        if row is None:
+            standing = max(-100, min(100, standing_delta))
+            conn.execute(
+                """
+                INSERT INTO npc_relationships (
+                    world_id, npc_id, world_character_id, standing, tags_json, notes, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    world_id,
+                    npc_id,
+                    world_character_id,
+                    standing,
+                    json.dumps([], ensure_ascii=True),
+                    "",
+                    timestamp,
+                ),
+            )
+            return
+
+        new_standing = max(-100, min(100, int(row["standing"]) + standing_delta))
+        conn.execute(
+            """
+            UPDATE npc_relationships
+            SET standing = ?, updated_at = ?
+            WHERE world_id = ? AND npc_id = ? AND world_character_id = ?
+            """,
+            (
+                new_standing,
+                timestamp,
+                world_id,
+                npc_id,
+                world_character_id,
+            ),
+        )
+
+    def _insert_npc_memory_entry(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        memory: NPCMemoryEntry,
+        world_character_id: str,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO npc_memories (
+                memory_id, world_id, npc_id, world_character_id, summary, importance,
+                tags_json, source_turn_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                memory.memory_id,
+                memory.world_id,
+                memory.npc_id,
+                world_character_id,
+                memory.summary,
+                float(memory.importance),
+                json.dumps(memory.tags, ensure_ascii=True),
+                memory.source_turn_id,
+                memory.created_at.isoformat(),
+            ),
+        )
+
+    @staticmethod
+    def _build_npc_memory_summary(*, npc_name: str, interaction_kind: str, player_input: str) -> str:
+        verb = "sprach mit" if interaction_kind == "talk" else "griff an"
+        summary = f"Spieler {verb} {npc_name}. Eingabe: {player_input}"
+        return summary[:2000]
+
+    @staticmethod
+    def _stable_npc_id_from_name(npc_name: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", npc_name.lower()).strip("-")
+        slug = slug or "unknown"
+        return f"npc-auto-{slug[:48]}"
 
     @staticmethod
     def _get_primary_character_row(conn: sqlite3.Connection, world_id: str) -> sqlite3.Row | None:
@@ -353,5 +663,40 @@ class WorldRepository:
             intent=TurnIntent.model_validate_json(str(row["intent_json"])),
             resolution=TurnResolution.model_validate_json(str(row["resolution_json"])),
             narrative=NarrativeEnvelope.model_validate_json(str(row["narrative_json"])),
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    @staticmethod
+    def _npc_profile_from_row(row: sqlite3.Row) -> NPCProfile:
+        return NPCProfile(
+            npc_id=str(row["npc_id"]),
+            name=str(row["name"]),
+            role=str(row["role"]),
+            faction=str(row["faction"]) if row["faction"] is not None else None,
+            personality_tags=json.loads(str(row["personality_tags_json"])),
+            stats=json.loads(str(row["stats_json"])),
+        )
+
+    @staticmethod
+    def _npc_relationship_from_row(row: sqlite3.Row) -> NPCRelationship:
+        return NPCRelationship(
+            npc_id=str(row["npc_id"]),
+            world_character_id=str(row["world_character_id"]),
+            standing=int(row["standing"]),
+            tags=json.loads(str(row["tags_json"])),
+            notes=str(row["notes"]),
+            updated_at=datetime.fromisoformat(str(row["updated_at"])),
+        )
+
+    @staticmethod
+    def _npc_memory_from_row(row: sqlite3.Row) -> NPCMemoryEntry:
+        return NPCMemoryEntry(
+            memory_id=str(row["memory_id"]),
+            npc_id=str(row["npc_id"]),
+            world_id=str(row["world_id"]),
+            summary=str(row["summary"]),
+            importance=float(row["importance"]),
+            tags=json.loads(str(row["tags_json"])),
+            source_turn_id=str(row["source_turn_id"]) if row["source_turn_id"] is not None else None,
             created_at=datetime.fromisoformat(str(row["created_at"])),
         )

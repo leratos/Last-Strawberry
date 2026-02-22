@@ -142,6 +142,7 @@ class RulesEngine:
             return False
         state.resources.stamina = max(0, state.resources.stamina - stamina_cost)
         delta.stamina_delta -= stamina_cost
+        delta.relationship_changes.append({"npc": target, "standing_delta": -5})
         events.append(
             TurnSystemEvent(code="attack_resolved", message=f"Angriff gegen {target} ausgefuehrt (MVP-Schaden: {base_damage}).")
         )
