@@ -30,6 +30,9 @@ lora_adapter_output_temp/
 adapter/
 tools/
 installer/
+archive_work/
+archive_tmp/
+archive_exports/
 
 # Test und Debug Dateien
 backup_test_files/
