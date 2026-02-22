@@ -20,6 +20,7 @@ type StructuredTarget = {
   refId: string;
   name: string;
   kind: string;
+  role?: string;
   auxiliary?: string;
   locationName?: string;
   sceneZoneId?: string;
@@ -136,6 +137,49 @@ function approachButtonLabel(distanceBand: DistanceBand): string {
 
 function retreatButtonLabel(distanceBand: DistanceBand): string {
   return isRetreatNotNeeded(distanceBand) ? "Abstand (max)" : "Abstand";
+}
+
+function eventGroupLabel(eventCode: string): string {
+  if (eventCode.startsWith("npc_reacts_")) {
+    return "Reaktion";
+  }
+  if (
+    eventCode.includes("approach") ||
+    eventCode.includes("retreat") ||
+    eventCode.includes("move_")
+  ) {
+    return "Bewegung";
+  }
+  if (eventCode.includes("attack") || eventCode.includes("ranged_")) {
+    return "Kampf";
+  }
+  if (eventCode.includes("talk")) {
+    return "Dialog";
+  }
+  if (eventCode.includes("item_") || eventCode === "item_used") {
+    return "Item";
+  }
+  return "System";
+}
+
+function eventGroupClass(eventCode: string): string {
+  if (eventCode.startsWith("npc_reacts_")) {
+    return "event-group-reaction";
+  }
+  if (
+    eventCode.includes("approach") ||
+    eventCode.includes("retreat") ||
+    eventCode.includes("move_")
+  ) {
+    return "event-group-movement";
+  }
+  if (eventCode.includes("attack") || eventCode.includes("ranged_")) {
+    return "event-group-combat";
+  }
+  if (eventCode.includes("talk")) {
+    return "event-group-dialog";
+  }
+  return "event-group-system";
 }
 
 function getStructuredTargets(
@@ -481,6 +525,7 @@ export function App() {
           intent: "approach",
           target_id: target.refId,
           target_name: target.name,
+          target_role: target.role ?? null,
           target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
@@ -499,6 +544,7 @@ export function App() {
           intent: "retreat",
           target_id: target.refId,
           target_name: target.name,
+          target_role: target.role ?? null,
           target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
@@ -518,6 +564,7 @@ export function App() {
           attack_mode: actionKind === "ATTACK" ? attackMode : null,
           target_id: target.refId,
           target_name: target.name,
+          target_role: target.role ?? null,
           target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
@@ -883,8 +930,11 @@ export function App() {
                             <p className="list-subtle">Keine Events</p>
                           ) : (
                             <div className="event-list">
-                              {turn.resolution.system_events.map((event, index) => (
+                                  {turn.resolution.system_events.map((event, index) => (
                                 <div key={`${turn.turn_id}-${event.code}-${index}`} className="event-row">
+                                  <span className={`event-group-badge ${eventGroupClass(event.code)}`}>
+                                    {eventGroupLabel(event.code)}
+                                  </span>
                                   <span className={`event-badge event-${event.severity}`}>{event.code}</span>
                                   <span className="event-message">{event.message}</span>
                                 </div>
@@ -1019,6 +1069,7 @@ export function App() {
                       refId: entry.bundle.profile.npc_id,
                       name: entry.bundle.profile.name,
                       kind: "npc",
+                      role: entry.bundle.profile.role,
                       locationName: entry.bundle.profile.location_name || context.world.character_state.location_name,
                       sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
                       sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,

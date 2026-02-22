@@ -95,36 +95,79 @@ class RulesEngine:
         events: list[TurnSystemEvent],
         phase: str,
     ) -> None:
+        target_role = str(action.parameters.get("target_role") or "").strip().lower()
         try:
             standing = int(action.parameters.get("target_standing"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return
+        aggressive_roles = {"guard", "soldier", "mercenary", "bandit", "raider", "thug"}
+        friendly_roles = {"healer", "merchant", "innkeeper", "guide", "ally"}
+
+        if standing >= 3:
+            style = "friendly"
+        elif standing <= -4:
+            style = "aggressive"
+        elif standing <= -2 and target_role in aggressive_roles:
+            style = "aggressive"
+        elif standing <= 0:
+            style = "cautious"
+        elif target_role in friendly_roles:
+            style = "friendly"
+        else:
+            style = "cautious"
 
         if phase == "approach":
-            if standing <= -3:
+            if style == "aggressive":
                 events.append(
                     TurnSystemEvent(
-                        code="npc_reacts_wary_to_approach",
-                        message=f"{target_display} reagiert angespannt auf deine Annaeherung.",
+                        code="npc_reacts_aggressive_to_approach",
+                        message=f"{target_display} reagiert aggressiv auf deine Annaeherung.",
                         severity="warning",
                     )
                 )
-            elif standing >= 3:
+            elif style == "friendly":
                 events.append(
                     TurnSystemEvent(
-                        code="npc_reacts_open_to_approach",
-                        message=f"{target_display} wirkt offen, waehrend du naeherkommst.",
+                        code="npc_reacts_friendly_to_approach",
+                        message=f"{target_display} reagiert freundlich auf deine Annaeherung.",
                         severity="info",
                     )
                 )
-        elif phase == "retreat" and standing <= -3:
-            events.append(
-                TurnSystemEvent(
-                    code="npc_reacts_hostile_hold_distance",
-                    message=f"{target_display} beobachtet deinen Rueckzug misstrauisch.",
-                    severity="info",
+            else:
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_cautious_to_approach",
+                        message=f"{target_display} reagiert vorsichtig auf deine Annaeherung.",
+                        severity="info",
+                    )
                 )
-            )
+            return
+
+        if phase == "retreat":
+            if style == "aggressive":
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_aggressive_to_retreat",
+                        message=f"{target_display} beobachtet deinen Rueckzug aggressiv.",
+                        severity="warning",
+                    )
+                )
+            elif style == "friendly":
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_friendly_to_retreat",
+                        message=f"{target_display} laesst dir freundlich Raum.",
+                        severity="info",
+                    )
+                )
+            else:
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_cautious_to_retreat",
+                        message=f"{target_display} haelt vorsichtig Distanz, waehrend du dich zurueckziehst.",
+                        severity="info",
+                    )
+                )
 
     def _apply_move(
         self,

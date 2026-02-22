@@ -60,3 +60,6 @@
 - G19: Parser erweitert fuer weitere Distanzphrasen (`halte Abstand zu ...`, `halte mich von ... fern`, `trete einen Schritt naeher an ...`).
 - G19: Erste optionale NPC-Reaktions-Events auf Distanzaktionen (standing-basiert via `target_standing` in `APPROACH`/`RETREAT`-Actions).
 - G19: Distanz-Quick-Buttons zeigen sichtbare Statuslabels (`Annaehern (direkt dran)`, `Abstand (max)`) statt nur disabled.
+- G20: NPC-Reaktionslogik unterscheidet jetzt `vorsichtig/aggressiv/freundlich` (standing-basiert, optional role-gestuetzt via `target_role`).
+- G20: Preview-Parser gibt `target_role` aus `known_npc_refs` an Actions weiter (TALK/ATTACK/APPROACH/RETREAT).
+- G20: Turn-Verlauf zeigt Event-Gruppenbadges (Bewegung/Reaktion/Kampf/Dialog/System) fuer bessere Lesbarkeit.
