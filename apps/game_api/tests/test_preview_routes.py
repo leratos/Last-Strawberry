@@ -580,6 +580,110 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         updated_mira_ref = next(entry for entry in retreat_after["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
         self.assertEqual(updated_mira_ref["distance_band_to_player"], "near")
 
+    def test_g16_second_retreat_advances_distance_from_near_to_far(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g16-1",
+                "world_description": "Ein enger Marktplatz mit Mira und wenig Platz zwischen den Staenden.",
+                "character_description": "Ein vorsichtiger Schuetze, der Distanz kontrolliert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        mira_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+
+        # Become adjacent.
+        talk_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": mira_ref["name"],
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_response.status_code, 200)
+        ctx_adjacent = talk_response.json()["context_after_turn"]
+        mira_adjacent = next(entry for entry in ctx_adjacent["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_adjacent["distance_band_to_player"], "adjacent")
+
+        # First retreat => near.
+        retreat_1 = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Abstand zu Mira",
+                "actions_override": [
+                    {
+                        "action_type": "RETREAT",
+                        "target_ref": mira_adjacent["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "retreat",
+                            "target_id": mira_adjacent["ref_id"],
+                            "target_name": mira_adjacent["name"],
+                            "target_location_name": mira_adjacent.get("location_name"),
+                            "target_zone_id": mira_adjacent.get("scene_zone_id"),
+                            "target_zone_name": mira_adjacent.get("scene_zone_name"),
+                            "target_distance_band": mira_adjacent.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(retreat_1.status_code, 200)
+        ctx_near = retreat_1.json()["context_after_turn"]
+        mira_near = next(entry for entry in ctx_near["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_near["distance_band_to_player"], "near")
+
+        # Second retreat => far.
+        retreat_2 = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Mehr Abstand zu Mira",
+                "actions_override": [
+                    {
+                        "action_type": "RETREAT",
+                        "target_ref": mira_near["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "retreat",
+                            "target_id": mira_near["ref_id"],
+                            "target_name": mira_near["name"],
+                            "target_location_name": mira_near.get("location_name"),
+                            "target_zone_id": mira_near.get("scene_zone_id"),
+                            "target_zone_name": mira_near.get("scene_zone_name"),
+                            "target_distance_band": mira_near.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(retreat_2.status_code, 200)
+        retreat_2_payload = retreat_2.json()
+        codes = [event["code"] for event in retreat_2_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("retreat_success", codes)
+        ctx_far = retreat_2_payload["context_after_turn"]
+        mira_far = next(entry for entry in ctx_far["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_far["distance_band_to_player"], "far")
+
 
 if __name__ == "__main__":
     unittest.main()

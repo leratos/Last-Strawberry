@@ -145,12 +145,14 @@ class RulesEngine:
             )
             return True
 
-        if target_zone_id and (state.scene_zone_id or "").strip() == target_zone_id:
-            safe_suffix = (target_id or target_display.lower().replace(" ", "-"))[:24]
-            state.scene_zone_id = f"zone-retreat-{safe_suffix}"
+        if target_distance_band == "near":
+            state.scene_zone_id = "zone-distance-far"
+            state.scene_zone_name = f"Weit weg von {target_display}"
+        elif target_zone_id and (state.scene_zone_id or "").strip() == target_zone_id:
+            state.scene_zone_id = "zone-distance-near"
             state.scene_zone_name = f"Abstand zu {target_display}"
         else:
-            state.scene_zone_id = "zone-step-back"
+            state.scene_zone_id = "zone-distance-near"
             state.scene_zone_name = "Rueckzugsposition"
 
         delta.scene_zone_changed_to_id = state.scene_zone_id

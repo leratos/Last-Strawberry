@@ -199,6 +199,27 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     if distance_after_retreat != "near":
         raise RuntimeError(f"Quickcheck erwartet Distanz 'near' nach RETREAT, bekam: {distance_after_retreat!r}")
 
+    retreat_turn_run_2 = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Mehr Abstand zu {npc_ref.get('name', 'NPC')}",
+            "actions_override": [_build_structured_retreat_action(retreat_target_ref or npc_ref)],
+        },
+    )
+    retreat_codes_2 = _extract_event_codes(retreat_turn_run_2)
+    if "retreat_success" not in retreat_codes_2:
+        raise RuntimeError(f"Quickcheck erwartet retreat_success im zweiten RETREAT, bekam: {retreat_codes_2}")
+    retreat_context_2 = retreat_turn_run_2.get("context_after_turn") or {}
+    retreat_npcs_2 = (retreat_context_2.get("target_catalog") or {}).get("npcs") or []
+    retreat_target_ref_2 = next((entry for entry in retreat_npcs_2 if entry.get("ref_id") == npc_ref["ref_id"]), None)
+    distance_after_retreat_2 = (retreat_target_ref_2 or {}).get("distance_band_to_player")
+    if distance_after_retreat_2 != "far":
+        raise RuntimeError(
+            f"Quickcheck erwartet Distanz 'far' nach zweitem RETREAT, bekam: {distance_after_retreat_2!r}"
+        )
+
     result = {
         "world_id": world_id,
         "npc_id": npc_ref.get("ref_id"),
@@ -213,7 +234,9 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "distance_after_queue": distance_after_queue,
         "retreat_event_codes": retreat_codes,
         "distance_after_retreat": distance_after_retreat,
-        "context_after_turn_present": bool(retreat_turn_run.get("context_after_turn")),
+        "retreat_event_codes_second": retreat_codes_2,
+        "distance_after_retreat_second": distance_after_retreat_2,
+        "context_after_turn_present": bool(retreat_turn_run_2.get("context_after_turn")),
     }
     return result
 
