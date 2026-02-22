@@ -165,6 +165,46 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertGreaterEqual(len(zorak["recent_memories"]), 1)
         self.assertIn("talk", zorak["recent_memories"][0]["tags"])
 
+    def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g4-1",
+                "world_description": "Eine Hafenstadt voller Schmuggler, Nachtmaerkte und korrupten Zollbeamten.",
+                "character_description": "Eine ehemalige Kartografin, die ueber Kontakte und Wissen handelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich spreche mit Zorak ueber Schmuggler im Hafen."},
+        )
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich gehe zum Hafen und schaue mich um."},
+        )
+
+        context_response = self.client.get(
+            f"/v1/worlds/{world_id}/context",
+            params={"player_input": "Ich will mehr ueber Zorak und Schmuggler wissen."},
+        )
+        self.assertEqual(context_response.status_code, 200)
+        payload = context_response.json()
+
+        self.assertEqual(payload["world"]["world_id"], world_id)
+        self.assertGreaterEqual(len(payload["recent_turns"]), 2)
+        self.assertGreaterEqual(len(payload["recent_journal"]), 3)
+        self.assertGreaterEqual(len(payload["npc_memory"]), 1)
+        self.assertEqual(payload["retrieval_player_input"], "Ich will mehr ueber Zorak und Schmuggler wissen.")
+        self.assertTrue(payload["retrieval_notes"])
+
+        top_bundle = payload["npc_memory"][0]
+        self.assertIn("bundle", top_bundle)
+        self.assertIn("relevance_score", top_bundle)
+        self.assertIn("retrieval_reasons", top_bundle)
+
 
 if __name__ == "__main__":
     unittest.main()
