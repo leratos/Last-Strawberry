@@ -86,6 +86,7 @@ export type GameContextResponse = {
       ref_id: string;
       kind: string;
       name: string;
+      role?: string | null;
       source: string;
       location_name?: string | null;
       scene_zone_id?: string | null;

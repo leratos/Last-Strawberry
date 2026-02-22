@@ -139,6 +139,45 @@ function retreatButtonLabel(distanceBand: DistanceBand): string {
   return isRetreatNotNeeded(distanceBand) ? "Abstand (max)" : "Abstand";
 }
 
+function reactionStyleKey(role: string | undefined, standing: number | undefined): "freundlich" | "vorsichtig" | "aggressiv" {
+  const normalizedRole = (role || "").trim().toLowerCase();
+  const aggressiveRoles = new Set(["guard", "soldier", "mercenary", "bandit", "raider", "thug", "warrior", "krieger", "tank"]);
+  const friendlyRoles = new Set(["healer", "heiler", "merchant", "innkeeper", "guide", "ally"]);
+  const safeStanding = typeof standing === "number" ? standing : 0;
+
+  if (safeStanding >= 3) {
+    return "freundlich";
+  }
+  if (safeStanding <= -4) {
+    return "aggressiv";
+  }
+  if (safeStanding <= -2 && aggressiveRoles.has(normalizedRole)) {
+    return "aggressiv";
+  }
+  if (safeStanding <= 0) {
+    return "vorsichtig";
+  }
+  if (friendlyRoles.has(normalizedRole)) {
+    return "freundlich";
+  }
+  return "vorsichtig";
+}
+
+function reactionStyleLabel(role: string | undefined, standing: number | undefined): string {
+  return `Reaktion: ${reactionStyleKey(role, standing)}`;
+}
+
+function reactionStyleBadgeClass(role: string | undefined, standing: number | undefined): string {
+  const style = reactionStyleKey(role, standing);
+  if (style === "aggressiv") {
+    return "npc-badge-aggressiv";
+  }
+  if (style === "freundlich") {
+    return "npc-badge-freundlich";
+  }
+  return "npc-badge-vorsichtig";
+}
+
 function eventGroupLabel(eventCode: string): string {
   if (eventCode.startsWith("npc_reacts_")) {
     return "Reaktion";
@@ -210,6 +249,7 @@ function getStructuredTargets(
       refId: entry.ref_id,
       name: entry.name,
       kind: "npc",
+      role: entry.role || undefined,
       locationName: entry.location_name || undefined,
       sceneZoneId: entry.scene_zone_id || undefined,
       sceneZoneName: entry.scene_zone_name || undefined,
@@ -220,6 +260,7 @@ function getStructuredTargets(
     refId: entry.ref_id,
     name: entry.name,
     kind: "npc",
+    role: entry.role || undefined,
     locationName: entry.location_name || undefined,
     sceneZoneId: entry.scene_zone_id || undefined,
     sceneZoneName: entry.scene_zone_name || undefined,
@@ -1093,6 +1134,19 @@ export function App() {
                           {entry.bundle.profile.scene_zone_name || "Unbekannt"} | Distanz:{" "}
                           {distanceBandDisplayLabel(npcDistance)}
                         </p>
+                        <div className="npc-badge-row">
+                          <span
+                            className={`npc-badge ${reactionStyleBadgeClass(
+                              entry.bundle.profile.role,
+                              entry.bundle.relationship?.standing,
+                            )}`}
+                          >
+                            {reactionStyleLabel(entry.bundle.profile.role, entry.bundle.relationship?.standing)}
+                          </span>
+                          <span className="npc-badge npc-badge-distance">
+                            Distanz: {distanceBandDisplayLabel(npcDistance)}
+                          </span>
+                        </div>
                         <p className="list-subtle">{distanceActionHint(npcDistance)}</p>
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>

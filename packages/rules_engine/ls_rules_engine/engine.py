@@ -100,8 +100,8 @@ class RulesEngine:
             standing = int(action.parameters.get("target_standing"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return
-        aggressive_roles = {"guard", "soldier", "mercenary", "bandit", "raider", "thug"}
-        friendly_roles = {"healer", "merchant", "innkeeper", "guide", "ally"}
+        aggressive_roles = {"guard", "soldier", "mercenary", "bandit", "raider", "thug", "warrior", "krieger", "tank"}
+        friendly_roles = {"healer", "heiler", "merchant", "innkeeper", "guide", "ally"}
 
         if standing >= 3:
             style = "friendly"
@@ -118,26 +118,37 @@ class RulesEngine:
 
         if phase == "approach":
             if style == "aggressive":
+                message = f"{target_display} reagiert aggressiv auf deine Annaeherung."
+                if target_role in {"tank"}:
+                    message = f"{target_display} stemmt sich wie ein Tank gegen deine Annaeherung und wirkt kampfbereit."
+                elif target_role in {"warrior", "krieger"}:
+                    message = f"{target_display} reagiert aggressiv auf deine Annaeherung und geht in Kampfhaltung."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_aggressive_to_approach",
-                        message=f"{target_display} reagiert aggressiv auf deine Annaeherung.",
+                        message=message,
                         severity="warning",
                     )
                 )
             elif style == "friendly":
+                message = f"{target_display} reagiert freundlich auf deine Annaeherung."
+                if target_role in {"healer", "heiler"}:
+                    message = f"{target_display} reagiert freundlich auf deine Annaeherung und beobachtet dich aufmerksam wie ein Heiler."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_friendly_to_approach",
-                        message=f"{target_display} reagiert freundlich auf deine Annaeherung.",
+                        message=message,
                         severity="info",
                     )
                 )
             else:
+                message = f"{target_display} reagiert vorsichtig auf deine Annaeherung."
+                if target_role in {"warrior", "krieger", "tank"}:
+                    message = f"{target_display} reagiert vorsichtig auf deine Annaeherung und mustert deine Bewegungen."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_cautious_to_approach",
-                        message=f"{target_display} reagiert vorsichtig auf deine Annaeherung.",
+                        message=message,
                         severity="info",
                     )
                 )
@@ -145,18 +156,26 @@ class RulesEngine:
 
         if phase == "retreat":
             if style == "aggressive":
+                message = f"{target_display} beobachtet deinen Rueckzug aggressiv."
+                if target_role in {"tank"}:
+                    message = f"{target_display} haelt die Front wie ein Tank und verfolgt deinen Rueckzug mit Druck."
+                elif target_role in {"warrior", "krieger"}:
+                    message = f"{target_display} verfolgt deinen Rueckzug mit aggressiver Kampfbereitschaft."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_aggressive_to_retreat",
-                        message=f"{target_display} beobachtet deinen Rueckzug aggressiv.",
+                        message=message,
                         severity="warning",
                     )
                 )
             elif style == "friendly":
+                message = f"{target_display} laesst dir freundlich Raum."
+                if target_role in {"healer", "heiler"}:
+                    message = f"{target_display} laesst dir freundlich Raum und senkt sichtbar die Anspannung."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_friendly_to_retreat",
-                        message=f"{target_display} laesst dir freundlich Raum.",
+                        message=message,
                         severity="info",
                     )
                 )
