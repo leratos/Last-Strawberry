@@ -42,3 +42,7 @@
 - G14: Preview-Analyzer erkennt Fernkampf-Verben (`schiesse`, `feuere`, `werfe`) und setzt `parameters.attack_mode = ranged`.
 - G14: Web-MVP Queue-Makros via LocalStorage (speichern/laden/loeschen) sowie Attack-Mode-Auswahl im Struktur-Composer.
 - G14: Quickcheck-Script erweitert auf Queue-Turn (`TALK + ATTACK`), Standing-Pruefung und Distanz-Validierung (`adjacent` nach Turn).
+- G15: Neuer Action-Typ `RETREAT` (zonenbasierter Rueckzug/Abstand gewinnen) in Shared Schemas, Parser, Rules Engine und Web-UI (Quick Action + Composer).
+- G15: Freitext erkennt jetzt `entferne mich von ...` / `gehe weg von ...` als `RETREAT` statt `clarify_required`.
+- G15: Rules Engine setzt bei `RETREAT` die Spieler-Zone auf Rueckzugszone und macht Distanzwechsel `adjacent -> near` im Zonenmodell sichtbar.
+- G15: Quickcheck-Script erweitert um RETREAT-Turn und prueft `retreat_success` sowie Distanz `near` nach Rueckzug.

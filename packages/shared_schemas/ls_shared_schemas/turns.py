@@ -12,6 +12,7 @@ from .inventory import InventoryItemInstance
 
 class ActionType(str, Enum):
     move = "MOVE"
+    retreat = "RETREAT"
     inspect = "INSPECT"
     talk = "TALK"
     attack = "ATTACK"

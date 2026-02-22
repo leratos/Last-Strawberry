@@ -150,6 +150,29 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(attack_action.parameters.get("attack_mode"), "ranged")
         self.assertIn("Fernkampf erkannt", " ".join(intent.analysis_notes))
 
+    def test_detects_retreat_away_from_known_npc(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich entferne mich von Mira.",
+            inventory=[],
+            known_npc_names=["Mira"],
+            known_npc_refs=[
+                {
+                    "ref_id": "npc-mira",
+                    "name": "Mira",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-market-stalls",
+                    "scene_zone_name": "Marktstaende",
+                    "distance_band_to_player": "adjacent",
+                }
+            ],
+        )
+        retreat_action = next(action for action in intent.actions if action.action_type.value == "RETREAT")
+        self.assertEqual(retreat_action.target_ref, "npc-mira")
+        self.assertEqual(retreat_action.parameters.get("target_name"), "Mira")
+        self.assertEqual(retreat_action.parameters.get("target_distance_band"), "adjacent")
+
 
 if __name__ == "__main__":
     unittest.main()

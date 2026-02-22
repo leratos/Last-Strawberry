@@ -231,6 +231,43 @@ class TestRulesEngine(unittest.TestCase):
         attack_event = next(event for event in result.system_events if event.code == "attack_resolved")
         self.assertIn("Fernkampf", attack_event.message)
 
+    def test_retreat_from_adjacent_target_changes_zone_and_emits_retreat_success(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-stalls",
+            scene_zone_name="Marktstaende",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich entferne mich von Mira.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.retreat,
+                    target_ref="npc-mira",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "adjacent",
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertNotEqual(result.resulting_character_state.scene_zone_id, "zone-market-stalls")
+        self.assertEqual(result.state_delta.scene_zone_changed_to_id, result.resulting_character_state.scene_zone_id)
+        codes = [event.code for event in result.system_events]
+        self.assertIn("retreat_success", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,23 @@ def _build_structured_attack_action(target_ref: dict[str, Any], attack_mode: str
     }
 
 
+def _build_structured_retreat_action(target_ref: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action_type": "RETREAT",
+        "target_ref": target_ref["ref_id"],
+        "target_kind": "npc",
+        "parameters": {
+            "intent": "retreat",
+            "target_id": target_ref["ref_id"],
+            "target_name": target_ref["name"],
+            "target_location_name": target_ref.get("location_name"),
+            "target_zone_id": target_ref.get("scene_zone_id"),
+            "target_zone_name": target_ref.get("scene_zone_name"),
+            "target_distance_band": target_ref.get("distance_band_to_player"),
+        },
+    }
+
+
 def _request_json(  # pragma: no cover - exercised manually against running local API
     *,
     method: str,
@@ -163,6 +180,25 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     if distance_after_queue != "adjacent":
         raise RuntimeError(f"Quickcheck erwartet Distanz 'adjacent' nach Queue-Turn, bekam: {distance_after_queue!r}")
 
+    retreat_turn_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Gewinne Abstand zu {npc_ref.get('name', 'NPC')}",
+            "actions_override": [_build_structured_retreat_action(queue_target_ref or npc_ref)],
+        },
+    )
+    retreat_codes = _extract_event_codes(retreat_turn_run)
+    if "retreat_success" not in retreat_codes:
+        raise RuntimeError(f"Quickcheck erwartet retreat_success, bekam: {retreat_codes}")
+    retreat_context = retreat_turn_run.get("context_after_turn") or {}
+    retreat_npcs = (retreat_context.get("target_catalog") or {}).get("npcs") or []
+    retreat_target_ref = next((entry for entry in retreat_npcs if entry.get("ref_id") == npc_ref["ref_id"]), None)
+    distance_after_retreat = (retreat_target_ref or {}).get("distance_band_to_player")
+    if distance_after_retreat != "near":
+        raise RuntimeError(f"Quickcheck erwartet Distanz 'near' nach RETREAT, bekam: {distance_after_retreat!r}")
+
     result = {
         "world_id": world_id,
         "npc_id": npc_ref.get("ref_id"),
@@ -175,7 +211,9 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "standing_after_talk": talk_standing,
         "standing_after_queue": queue_standing,
         "distance_after_queue": distance_after_queue,
-        "context_after_turn_present": bool(queue_turn_run.get("context_after_turn")),
+        "retreat_event_codes": retreat_codes,
+        "distance_after_retreat": distance_after_retreat,
+        "context_after_turn_present": bool(retreat_turn_run.get("context_after_turn")),
     }
     return result
 

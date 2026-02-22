@@ -15,7 +15,7 @@ type BootstrapForm = {
   characterDescription: string;
 };
 
-type StructuredActionKind = "MOVE" | "TALK" | "ATTACK" | "USE_ITEM";
+type StructuredActionKind = "MOVE" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM";
 type StructuredTarget = {
   refId: string;
   name: string;
@@ -100,6 +100,17 @@ function getStructuredTargets(
       name: item.name,
       kind: "item",
       auxiliary: item.use_modes.join(", "),
+    }));
+  }
+  if (composerActionKind === "RETREAT") {
+    return context.target_catalog.npcs.map((entry) => ({
+      refId: entry.ref_id,
+      name: entry.name,
+      kind: "npc",
+      locationName: entry.location_name || undefined,
+      sceneZoneId: entry.scene_zone_id || undefined,
+      sceneZoneName: entry.scene_zone_name || undefined,
+      distanceBandToPlayer: entry.distance_band_to_player || undefined,
     }));
   }
   return context.target_catalog.npcs.map((entry) => ({
@@ -384,6 +395,23 @@ export function App() {
         confidence: 0.99,
       };
     }
+    if (actionKind === "RETREAT") {
+      return {
+        action_type: "RETREAT",
+        target_ref: target.refId,
+        target_kind: "npc",
+        parameters: {
+          intent: "retreat",
+          target_id: target.refId,
+          target_name: target.name,
+          target_location_name: target.locationName || null,
+          target_zone_id: target.sceneZoneId || null,
+          target_zone_name: target.sceneZoneName || null,
+          target_distance_band: target.distanceBandToPlayer || null,
+        },
+        confidence: 0.99,
+      };
+    }
     const attackMode = actionKind === "ATTACK" ? composerAttackMode : "melee";
     return {
       action_type: actionKind,
@@ -412,6 +440,9 @@ export function App() {
     }
     if (actionKind === "USE_ITEM") {
       return `UI: Benutze ${target.name}`;
+    }
+    if (actionKind === "RETREAT") {
+      return `UI: Gewinne Abstand zu ${target.name}`;
     }
     if (actionKind === "ATTACK") {
       return `UI: ${composerAttackMode === "ranged" ? "Fernkampf" : "Nahkampf"} gegen ${target.name}`;
@@ -552,6 +583,7 @@ export function App() {
                     >
                       <option value="TALK">Talk</option>
                       <option value="MOVE">Move</option>
+                      <option value="RETREAT">Retreat</option>
                       <option value="ATTACK">Attack</option>
                       <option value="USE_ITEM">Use Item</option>
                     </select>
@@ -936,6 +968,46 @@ export function App() {
                         }
                       >
                         Gehe+Rede
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: buildStructuredActionLabel("RETREAT", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                  locationName:
+                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
+                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                                  distanceBandToPlayer:
+                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                                      ?.distance_band_to_player || undefined,
+                                }),
+                                action: buildStructuredAction("RETREAT", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                  locationName:
+                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
+                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                                  distanceBandToPlayer:
+                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                                      ?.distance_band_to_player || undefined,
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Abstand
                       </button>
                       <button
                         type="button"

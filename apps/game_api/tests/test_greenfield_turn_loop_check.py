@@ -8,6 +8,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from apps.game_api.scripts.check_greenfield_turn_loop import (  # noqa: E402
     _build_structured_attack_action,
+    _build_structured_retreat_action,
     _build_structured_talk_action,
     _extract_event_codes,
     _find_npc_bundle,
@@ -62,6 +63,21 @@ class TestGreenfieldTurnLoopQuickcheckHelpers(unittest.TestCase):
         self.assertEqual(action["action_type"], "ATTACK")
         self.assertEqual(action["parameters"]["attack_mode"], "ranged")
         self.assertEqual(action["parameters"]["target_zone_name"], "Marktstaende")
+
+    def test_build_structured_retreat_action_includes_target_metadata(self):
+        action = _build_structured_retreat_action(
+            {
+                "ref_id": "npc-mira",
+                "name": "Mira",
+                "location_name": "Marktplatz",
+                "scene_zone_id": "zone-market-stalls",
+                "scene_zone_name": "Marktstaende",
+                "distance_band_to_player": "adjacent",
+            }
+        )
+        self.assertEqual(action["action_type"], "RETREAT")
+        self.assertEqual(action["parameters"]["target_name"], "Mira")
+        self.assertEqual(action["parameters"]["target_distance_band"], "adjacent")
 
     def test_find_npc_bundle_selects_by_npc_id(self):
         bundles = [

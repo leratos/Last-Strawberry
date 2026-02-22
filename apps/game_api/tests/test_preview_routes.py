@@ -503,6 +503,83 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         mira_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == mira_ref["ref_id"])
         self.assertEqual(mira_bundle["relationship"]["standing"], -4)
 
+    def test_g15_retreat_from_adjacent_npc_changes_distance_to_near(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g15-1",
+                "world_description": "Ein dichter Marktplatz mit Mira an den Marktstaenden.",
+                "character_description": "Ein vorsichtiger Abenteurer, der Abstand halten will.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        mira_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+
+        # First become adjacent via TALK auto-approach.
+        talk_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": mira_ref["name"],
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_response.status_code, 200)
+
+        talk_after = talk_response.json()["context_after_turn"]
+        adjacent_mira_ref = next(entry for entry in talk_after["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(adjacent_mira_ref["distance_band_to_player"], "adjacent")
+
+        retreat_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Abstand zu Mira",
+                "actions_override": [
+                    {
+                        "action_type": "RETREAT",
+                        "target_ref": adjacent_mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "retreat",
+                            "target_id": adjacent_mira_ref["ref_id"],
+                            "target_name": adjacent_mira_ref["name"],
+                            "target_location_name": adjacent_mira_ref.get("location_name"),
+                            "target_zone_id": adjacent_mira_ref.get("scene_zone_id"),
+                            "target_zone_name": adjacent_mira_ref.get("scene_zone_name"),
+                            "target_distance_band": adjacent_mira_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(retreat_response.status_code, 200)
+        retreat_payload = retreat_response.json()
+        retreat_codes = [event["code"] for event in retreat_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("retreat_success", retreat_codes)
+
+        retreat_after = retreat_payload["context_after_turn"]
+        updated_mira_ref = next(entry for entry in retreat_after["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(updated_mira_ref["distance_band_to_player"], "near")
+
 
 if __name__ == "__main__":
     unittest.main()
