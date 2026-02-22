@@ -16,7 +16,16 @@ type BootstrapForm = {
 };
 
 type StructuredActionKind = "MOVE" | "TALK" | "ATTACK" | "USE_ITEM";
-type StructuredTarget = { refId: string; name: string; kind: string; auxiliary?: string };
+type StructuredTarget = {
+  refId: string;
+  name: string;
+  kind: string;
+  auxiliary?: string;
+  locationName?: string;
+  sceneZoneId?: string;
+  sceneZoneName?: string;
+  distanceBandToPlayer?: string;
+};
 type QueuedStructuredAction = {
   label: string;
   action: StructuredTurnAction;
@@ -39,6 +48,10 @@ function getStructuredTargets(
       refId: entry.ref_id,
       name: entry.name,
       kind: "location",
+      locationName: entry.location_name || undefined,
+      sceneZoneId: entry.scene_zone_id || undefined,
+      sceneZoneName: entry.scene_zone_name || undefined,
+      distanceBandToPlayer: entry.distance_band_to_player || undefined,
     }));
   }
   if (composerActionKind === "USE_ITEM") {
@@ -53,6 +66,10 @@ function getStructuredTargets(
     refId: entry.ref_id,
     name: entry.name,
     kind: "npc",
+    locationName: entry.location_name || undefined,
+    sceneZoneId: entry.scene_zone_id || undefined,
+    sceneZoneName: entry.scene_zone_name || undefined,
+    distanceBandToPlayer: entry.distance_band_to_player || undefined,
   }));
 }
 
@@ -263,13 +280,17 @@ export function App() {
       action_type: actionKind,
       target_ref: target.refId,
       target_kind: "npc",
-      parameters: {
-        intent: actionKind === "TALK" ? "talk" : "attack",
-        target_id: target.refId,
-        target_name: target.name,
-      },
-      confidence: 0.99,
-    };
+        parameters: {
+          intent: actionKind === "TALK" ? "talk" : "attack",
+          target_id: target.refId,
+          target_name: target.name,
+          target_location_name: target.locationName || null,
+          target_zone_id: target.sceneZoneId || null,
+          target_zone_name: target.sceneZoneName || null,
+          target_distance_band: target.distanceBandToPlayer || null,
+        },
+        confidence: 0.99,
+      };
   }
 
   function buildStructuredActionLabel(
@@ -368,6 +389,7 @@ export function App() {
                 <div className="story-meta">
                   <span>{context.world.world_seed.name}</span>
                   <span>Ort: {context.world.character_state.location_name}</span>
+                  <span>Zone: {context.world.character_state.scene_zone_name}</span>
                   <span>Turns: {context.recent_turns.length}</span>
                   <span>Refs: {context.target_catalog.npcs.length}/{context.target_catalog.items.length}/{context.target_catalog.locations.length}</span>
                 </div>
@@ -560,6 +582,7 @@ export function App() {
                 <li>Level: {context.world.character_state.level}</li>
                 <li>XP: {context.world.character_state.xp}</li>
                 <li>Ort: {context.world.character_state.location_name}</li>
+                <li>Zone: {context.world.character_state.scene_zone_name}</li>
                 <li>
                   HP: {context.world.character_state.resources.hp}/{context.world.character_state.resources.max_hp}
                 </li>
@@ -651,6 +674,11 @@ export function App() {
                       Score: {entry.relevance_score.toFixed(2)}
                       {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
                     </p>
+                    <p className="list-subtle">
+                      Ort/Zone: {entry.bundle.profile.location_name || context.world.character_state.location_name} /{" "}
+                      {entry.bundle.profile.scene_zone_name || "Unbekannt"} | Distanz:{" "}
+                      {context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)?.distance_band_to_player || "?"}
+                    </p>
                     {entry.bundle.recent_memories[0] ? (
                       <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                     ) : null}
@@ -686,6 +714,35 @@ export function App() {
                         className="secondary-btn"
                         disabled={isRunningTurn}
                         onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: `Gehe zu + rede mit ${entry.bundle.profile.name}`,
+                                action: buildStructuredAction("TALK", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                  locationName:
+                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
+                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                                  distanceBandToPlayer:
+                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                                      ?.distance_band_to_player || undefined,
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Gehe+Rede
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
                           enqueueStructuredAction("ATTACK", {
                             refId: entry.bundle.profile.npc_id,
                             name: entry.bundle.profile.name,
@@ -705,7 +762,10 @@ export function App() {
                 {context.target_catalog.locations.slice(0, 5).map((location) => (
                   <li key={location.ref_id}>
                     <span className="list-title">{location.name}</span>
-                    <span className="list-subtle">{location.ref_id}</span>
+                    <span className="list-subtle">
+                      {location.ref_id}
+                      {location.scene_zone_name ? ` | Zone: ${location.scene_zone_name}` : ""}
+                    </span>
                     <div className="turn-actions">
                       <button
                         type="button"

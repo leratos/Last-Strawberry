@@ -12,6 +12,9 @@ class NPCProfile(LSBaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = Field(default="npc", min_length=1, max_length=120)
     faction: str | None = Field(default=None, max_length=120)
+    location_name: str | None = Field(default=None, max_length=120)
+    scene_zone_id: str | None = Field(default=None, max_length=120)
+    scene_zone_name: str | None = Field(default=None, max_length=120)
     personality_tags: list[str] = Field(default_factory=list)
     stats: dict[str, int | float | str] = Field(default_factory=dict)
 

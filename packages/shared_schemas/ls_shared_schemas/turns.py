@@ -56,6 +56,8 @@ class TurnSystemEvent(LSBaseModel):
 
 class StateDelta(LSBaseModel):
     location_changed_to: str | None = Field(default=None, max_length=120)
+    scene_zone_changed_to_id: str | None = Field(default=None, max_length=120)
+    scene_zone_changed_to_name: str | None = Field(default=None, max_length=120)
     hp_delta: int = 0
     stamina_delta: int = 0
     focus_delta: int = 0

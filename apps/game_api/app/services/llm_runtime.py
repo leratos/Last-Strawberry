@@ -529,6 +529,11 @@ class LlmRuntime:
                 params["target_id"] = resolved_id
             if candidate_name:
                 params.setdefault("target_name", candidate_name)
+            target_meta = self._lookup_ref_entry(candidate_name, npc_ref_index) or {}
+            params.setdefault("target_location_name", str(target_meta.get("location_name") or "") or None)
+            params.setdefault("target_zone_id", str(target_meta.get("scene_zone_id") or "") or None)
+            params.setdefault("target_zone_name", str(target_meta.get("scene_zone_name") or "") or None)
+            params.setdefault("target_distance_band", str(target_meta.get("distance_band_to_player") or "") or None)
 
         if action.action_type.value == "MOVE":
             destination_name = str(params.get("destination_name") or action.destination or "").strip()
@@ -536,12 +541,16 @@ class LlmRuntime:
             resolved_id = (
                 candidate_ref if candidate_ref.startswith("loc-") else self._lookup_ref_id(destination_name, location_ref_index)
             )
+            location_meta = self._lookup_ref_entry(destination_name, location_ref_index) or {}
             if destination_name:
                 updates["destination"] = destination_name
                 params["destination_name"] = destination_name
             if resolved_id:
                 updates["target_ref"] = resolved_id
                 params["destination_id"] = resolved_id
+            params.setdefault("target_location_name", str(location_meta.get("location_name") or destination_name) or None)
+            params.setdefault("target_zone_id", str(location_meta.get("scene_zone_id") or "") or None)
+            params.setdefault("target_zone_name", str(location_meta.get("scene_zone_name") or "") or None)
 
         if action.action_type.value == "USE_ITEM":
             item_name = str(params.get("item_name") or params.get("target_name") or "").strip()
@@ -561,25 +570,36 @@ class LlmRuntime:
             return action
         return action.model_copy(update=updates)
 
-    def _build_ref_index(self, refs: list[dict[str, str]]) -> dict[str, str]:
-        index: dict[str, str] = {}
+    def _build_ref_index(self, refs: list[dict[str, str]]) -> dict[str, dict[str, str]]:
+        index: dict[str, dict[str, str]] = {}
         for entry in refs:
             name = str(entry.get("name") or "").strip()
             ref_id = str(entry.get("ref_id") or "").strip()
             if not name or not ref_id:
                 continue
-            index[name.lower()] = ref_id
+            index[name.lower()] = {str(k): str(v) for k, v in entry.items() if v is not None}
         return index
 
-    def _lookup_ref_id(self, name: str, ref_index: dict[str, str]) -> str | None:
+    def _lookup_ref_id(self, name: str, ref_index: dict[str, dict[str, str]]) -> str | None:
         normalized = (name or "").strip().lower()
         if not normalized:
             return None
         if normalized in ref_index:
-            return ref_index[normalized]
-        for known_name, ref_id in ref_index.items():
+            return str(ref_index[normalized].get("ref_id") or "")
+        for known_name, ref_meta in ref_index.items():
             if normalized in known_name or known_name in normalized:
-                return ref_id
+                return str(ref_meta.get("ref_id") or "")
+        return None
+
+    def _lookup_ref_entry(self, name: str, refs: dict[str, dict[str, str]]) -> dict[str, str] | None:
+        normalized = (name or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized in refs:
+            return refs[normalized]
+        for known_name, ref_meta in refs.items():
+            if normalized in known_name or known_name in normalized:
+                return ref_meta
         return None
 
 

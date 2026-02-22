@@ -168,11 +168,25 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
     )
     session = context.world
     npc_refs = [
-        {"ref_id": entry.ref_id, "name": entry.name}
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+            "distance_band_to_player": entry.distance_band_to_player,
+        }
         for entry in context.target_catalog.npcs
     ]
     location_refs = [
-        {"ref_id": entry.ref_id, "name": entry.name}
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+            "distance_band_to_player": entry.distance_band_to_player,
+        }
         for entry in context.target_catalog.locations
     ]
     item_refs = [
@@ -217,8 +231,28 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
 
     known_npc_names = [entry.bundle.profile.name for entry in context_before.npc_memory]
     known_locations = [session.character_state.location_name, session.world_seed.start_location_name]
-    known_npc_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.npcs]
-    known_location_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.locations]
+    known_npc_refs = [
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+            "distance_band_to_player": entry.distance_band_to_player,
+        }
+        for entry in context_before.target_catalog.npcs
+    ]
+    known_location_refs = [
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+            "distance_band_to_player": entry.distance_band_to_player,
+        }
+        for entry in context_before.target_catalog.locations
+    ]
     known_item_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.items]
 
     if request.actions_override:

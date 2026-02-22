@@ -61,7 +61,7 @@ class RulesEngine:
         if action.action_type == ActionType.inspect:
             return self._apply_inspect(action, inventory, events)
         if action.action_type == ActionType.talk:
-            return self._apply_talk(action, delta, events)
+            return self._apply_talk(action, state, delta, events)
         if action.action_type == ActionType.attack:
             return self._apply_attack(action, state, delta, events)
         if action.action_type == ActionType.use_item:
@@ -95,7 +95,11 @@ class RulesEngine:
             events.append(TurnSystemEvent(code="move_missing_destination", message="Kein Ziel fuer Bewegung angegeben.", severity="warning"))
             return False
         state.location_name = destination
+        state.scene_zone_id = "zone-center"
+        state.scene_zone_name = "Zentrum"
         delta.location_changed_to = destination
+        delta.scene_zone_changed_to_id = state.scene_zone_id
+        delta.scene_zone_changed_to_name = state.scene_zone_name
         events.append(TurnSystemEvent(code="move_success", message=f"Bewegung nach {destination}."))
         return True
 
@@ -119,12 +123,41 @@ class RulesEngine:
     def _apply_talk(
         self,
         action: TurnIntentAction,
+        state: CharacterState,
         delta: StateDelta,
         events: list[TurnSystemEvent],
     ) -> bool:
         target_id = str(action.parameters.get("target_id") or "").strip() or None
         target_name = str(action.parameters.get("target_name") or "").strip()
         target_display = target_name or (action.target_ref or "NPC").strip()
+        target_distance_band = str(action.parameters.get("target_distance_band") or "").strip().lower()
+        target_zone_id = str(action.parameters.get("target_zone_id") or "").strip()
+        target_zone_name = str(action.parameters.get("target_zone_name") or "").strip()
+        target_location_name = str(action.parameters.get("target_location_name") or "").strip()
+
+        if target_location_name and target_location_name != state.location_name:
+            state.location_name = target_location_name
+            delta.location_changed_to = target_location_name
+            events.append(
+                TurnSystemEvent(
+                    code="auto_move_location_for_talk",
+                    message=f"Automatisch zu {target_location_name} bewegt, um {target_display} zu erreichen.",
+                )
+            )
+
+        if target_distance_band in {"far", "unreachable"} and target_zone_id:
+            state.scene_zone_id = target_zone_id
+            if target_zone_name:
+                state.scene_zone_name = target_zone_name
+            delta.scene_zone_changed_to_id = target_zone_id
+            if target_zone_name:
+                delta.scene_zone_changed_to_name = target_zone_name
+            events.append(
+                TurnSystemEvent(
+                    code="auto_approach_for_talk",
+                    message=f"Du naeherst dich {target_display} an ({target_zone_name or target_zone_id}).",
+                )
+            )
         relationship_change = {"npc": target_display, "standing_delta": 1}
         if target_id:
             relationship_change["npc_id"] = target_id

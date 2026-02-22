@@ -28,3 +28,7 @@
 - G11: Quick Actions in Panels (NPC Talk / Location Move / Item Use) triggern strukturierte ID-basierte Aktionen direkt oder legen sie in die Queue.
 - G11: OpenRouter-Intent bevorzugt `response_format=json_schema` fuer Intent (Fallback auf `json_object` bleibt aktiv).
 - G11: Route-Test fuer Multi-Action-Override-Queue und Runtime-Test fuer `json_schema`-Call abgesichert.
+- G12: Zonenmodell eingefuehrt (CharacterState.scene_zone_*, NPCProfile.scene_zone_* / location_name) mit Distanzband im target_catalog.
+- G12: Rules Engine `TALK` auto-approacht bei `far` (Zone-Wechsel + Event `auto_approach_for_talk`) statt stiller Fehlinterpretation.
+- G12: Preview-Analyzer erkennt zusaetzlich `bewege mich zu ...` und fuellt Ziel-Metadaten (Zone/Distanz) fuer TALK/ATTACK/MOVE.
+- G12: UI zeigt Spieler-Zone + NPC Ort/Zone/Distanz und hat Quick Action `Gehe+Rede` (TALK mit Auto-Approach).

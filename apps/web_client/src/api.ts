@@ -14,6 +14,8 @@ export type GameContextResponse = {
       world_character_id: string;
       name: string;
       location_name: string;
+      scene_zone_id: string;
+      scene_zone_name: string;
       level: number;
       xp: number;
       resources: {
@@ -62,6 +64,9 @@ export type GameContextResponse = {
         npc_id: string;
         name: string;
         role: string;
+        location_name?: string | null;
+        scene_zone_id?: string | null;
+        scene_zone_name?: string | null;
       };
       relationship: null | {
         standing: number;
@@ -77,9 +82,36 @@ export type GameContextResponse = {
     };
   }>;
   target_catalog: {
-    npcs: Array<{ ref_id: string; kind: string; name: string; source: string }>;
-    items: Array<{ ref_id: string; kind: string; name: string; source: string }>;
-    locations: Array<{ ref_id: string; kind: string; name: string; source: string }>;
+    npcs: Array<{
+      ref_id: string;
+      kind: string;
+      name: string;
+      source: string;
+      location_name?: string | null;
+      scene_zone_id?: string | null;
+      scene_zone_name?: string | null;
+      distance_band_to_player?: string | null;
+    }>;
+    items: Array<{
+      ref_id: string;
+      kind: string;
+      name: string;
+      source: string;
+      location_name?: string | null;
+      scene_zone_id?: string | null;
+      scene_zone_name?: string | null;
+      distance_band_to_player?: string | null;
+    }>;
+    locations: Array<{
+      ref_id: string;
+      kind: string;
+      name: string;
+      source: string;
+      location_name?: string | null;
+      scene_zone_id?: string | null;
+      scene_zone_name?: string | null;
+      distance_band_to_player?: string | null;
+    }>;
   };
   retrieval_player_input: string | null;
   retrieval_notes: string[];

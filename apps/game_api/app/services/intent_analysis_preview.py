@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
@@ -7,12 +7,16 @@ from ls_shared_schemas.turns import ActionType, TurnIntent, TurnIntentAction
 
 
 _MOVE_PATTERNS = [
-    re.compile(r"\b(?:gehe|geh|laufe|reise|betrete)\s+(?:zum|zur|nach|in den|in die|ins)\s+([a-zA-Z0-9äöüÄÖÜß _-]+)", re.I),
+    re.compile(r"\b(?:gehe|geh|laufe|reise|betrete)\s+(?:zum|zur|nach|in den|in die|ins)\s+([\w _-]+)", re.I),
+    re.compile(r"\b(?:bewege(?:\s+mich)?|begib(?:\s+mich)?)\s+(?:zu|zum|zur)\s+([\w _-]+)", re.I),
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
+
+
+RefMetaIndex = dict[str, dict[str, str]]
 
 
 def analyze_player_input_preview(
@@ -37,7 +41,8 @@ def analyze_player_input_preview(
     destination = _extract_destination(text)
     if destination:
         canonical_destination = _canonicalize_name(destination, known_locations or [])
-        resolved_location_id = _lookup_ref_id(canonical_destination, location_ref_index)
+        location_meta = _lookup_ref_entry(canonical_destination, location_ref_index) or {}
+        resolved_location_id = str(location_meta.get("ref_id") or "").strip() or None
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.move,
@@ -48,6 +53,9 @@ def analyze_player_input_preview(
                     "intent": "move",
                     "destination_name": canonical_destination,
                     "destination_id": resolved_location_id,
+                    "target_location_name": str(location_meta.get("location_name") or canonical_destination),
+                    "target_zone_id": str(location_meta.get("scene_zone_id") or "") or None,
+                    "target_zone_name": str(location_meta.get("scene_zone_name") or "") or None,
                 },
                 confidence=0.85,
             )
@@ -87,7 +95,8 @@ def analyze_player_input_preview(
     if _contains_any_verb(lowered, _ATTACK_VERBS):
         target = _extract_target_after_verb(text, _ATTACK_VERBS) or "gegner"
         target = _canonicalize_name(target, known_npc_names or [])
-        target_id = _lookup_ref_id(target, npc_ref_index)
+        target_meta = _lookup_ref_entry(target, npc_ref_index) or {}
+        target_id = str(target_meta.get("ref_id") or "").strip() or None
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.attack,
@@ -97,6 +106,10 @@ def analyze_player_input_preview(
                     "intent": "attack",
                     "target_name": target,
                     "target_id": target_id,
+                    "target_location_name": str(target_meta.get("location_name") or "") or None,
+                    "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
+                    "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
+                    "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
                 },
                 confidence=0.8,
             )
@@ -106,7 +119,8 @@ def analyze_player_input_preview(
     if _contains_any_verb(lowered, _TALK_VERBS):
         target = _extract_talk_target(text) or "npc"
         target = _canonicalize_name(target, known_npc_names or [])
-        target_id = _lookup_ref_id(target, npc_ref_index)
+        target_meta = _lookup_ref_entry(target, npc_ref_index) or {}
+        target_id = str(target_meta.get("ref_id") or "").strip() or None
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.talk,
@@ -116,6 +130,10 @@ def analyze_player_input_preview(
                     "intent": "talk",
                     "target_name": target,
                     "target_id": target_id,
+                    "target_location_name": str(target_meta.get("location_name") or "") or None,
+                    "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
+                    "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
+                    "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
                 },
                 confidence=0.75,
             )
@@ -176,7 +194,6 @@ def _match_inventory_item(text_lower: str, inventory: list[InventoryItemInstance
     for item in inventory:
         if item.name.lower() in text_lower:
             return item
-    # fallback: token overlap
     for item in inventory:
         item_tokens = [token for token in re.split(r"\W+", item.name.lower()) if len(token) >= 4]
         if item_tokens and any(token in text_lower for token in item_tokens):
@@ -186,7 +203,7 @@ def _match_inventory_item(text_lower: str, inventory: list[InventoryItemInstance
 
 def _extract_target_after_verb(text: str, verbs: tuple[str, ...]) -> str | None:
     for verb in verbs:
-        match = re.search(rf"\b{verb}\b\s+(?:den|die|das|einen|eine)?\s*([a-zA-Z0-9äöüÄÖÜß _-]+)", text, re.I)
+        match = re.search(rf"\b{verb}\b\s+(?:den|die|das|einen|eine)?\s*([\w _-]+)", text, re.I)
         if match:
             target = _trim_entity_phrase(match.group(1))
             if target:
@@ -195,7 +212,7 @@ def _extract_target_after_verb(text: str, verbs: tuple[str, ...]) -> str | None:
 
 
 def _extract_talk_target(text: str) -> str | None:
-    match = re.search(r"\b(?:mit|zu)\s+(?:dem|der|den|einem|einer)?\s*([a-zA-Z0-9äöüÄÖÜß _-]+)", text, re.I)
+    match = re.search(r"\b(?:mit|zu)\s+(?:dem|der|den|einem|einer)?\s*([\w _-]+)", text, re.I)
     if not match:
         return None
     target = _trim_entity_phrase(match.group(1))
@@ -227,24 +244,24 @@ def _canonicalize_name(candidate: str, known_names: list[str]) -> str:
     return normalized_candidate
 
 
-def _build_ref_index(entries: list[dict[str, str]]) -> dict[str, str]:
-    index: dict[str, str] = {}
+def _build_ref_index(entries: list[dict[str, str]]) -> RefMetaIndex:
+    index: RefMetaIndex = {}
     for entry in entries:
         name = str(entry.get("name") or "").strip()
         ref_id = str(entry.get("ref_id") or "").strip()
         if not name or not ref_id:
             continue
-        index[name.lower()] = ref_id
+        index[name.lower()] = {str(k): str(v) for k, v in entry.items() if v is not None}
     return index
 
 
-def _lookup_ref_id(name: str, ref_index: dict[str, str]) -> str | None:
+def _lookup_ref_entry(name: str, ref_index: RefMetaIndex) -> dict[str, str] | None:
     normalized = name.strip().lower()
     if not normalized:
         return None
     if normalized in ref_index:
         return ref_index[normalized]
-    for known_name, ref_id in ref_index.items():
+    for known_name, ref_entry in ref_index.items():
         if normalized in known_name or known_name in normalized:
-            return ref_id
+            return ref_entry
     return None

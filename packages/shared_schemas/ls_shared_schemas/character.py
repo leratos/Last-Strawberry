@@ -43,6 +43,8 @@ class CharacterState(LSBaseModel):
     level: int = Field(default=1, ge=1)
     xp: int = Field(default=0, ge=0)
     location_name: str = Field(default="Unknown", min_length=1, max_length=120)
+    scene_zone_id: str = Field(default="zone-center", min_length=1, max_length=120)
+    scene_zone_name: str = Field(default="Zentrum", min_length=1, max_length=120)
     attributes: CharacterAttributes = Field(default_factory=CharacterAttributes)
     resources: CharacterResources = Field(default_factory=CharacterResources)
     status_effects: list[str] = Field(default_factory=list)

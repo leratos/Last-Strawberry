@@ -14,6 +14,10 @@ class GameTargetReference(LSBaseModel):
     name: str = Field(min_length=1, max_length=120)
     aliases: list[str] = Field(default_factory=list)
     source: str = Field(default="derived", min_length=1, max_length=80)
+    location_name: str | None = Field(default=None, max_length=120)
+    scene_zone_id: str | None = Field(default=None, max_length=120)
+    scene_zone_name: str | None = Field(default=None, max_length=120)
+    distance_band_to_player: str | None = Field(default=None, max_length=40)
 
 
 class GameTargetCatalog(LSBaseModel):

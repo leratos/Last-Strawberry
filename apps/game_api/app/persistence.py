@@ -63,6 +63,8 @@ class WorldRepository:
             level=1,
             xp=0,
             location_name=world_seed.start_location_name,
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
             attributes=template.attributes.model_copy(deep=True),
             resources=CharacterResources(hp=10, max_hp=10, stamina=10, max_stamina=10, focus=3, max_focus=3),
             status_effects=[],
@@ -375,7 +377,7 @@ class WorldRepository:
                         profile.role,
                         profile.faction,
                         json.dumps(profile.personality_tags, ensure_ascii=True),
-                        json.dumps(profile.stats, ensure_ascii=True),
+                        json.dumps(self._npc_profile_stats_payload(profile), ensure_ascii=True),
                         timestamp,
                         timestamp,
                     ),
@@ -393,7 +395,7 @@ class WorldRepository:
                     profile.role,
                     profile.faction,
                     json.dumps(profile.personality_tags, ensure_ascii=True),
-                    json.dumps(profile.stats, ensure_ascii=True),
+                    json.dumps(self._npc_profile_stats_payload(profile), ensure_ascii=True),
                     timestamp,
                     world_id,
                     profile.npc_id,
@@ -760,14 +762,32 @@ class WorldRepository:
 
     @staticmethod
     def _npc_profile_from_row(row: sqlite3.Row) -> NPCProfile:
+        stats_payload = json.loads(str(row["stats_json"]))
+        scene_zone_id = str(stats_payload.pop("_scene_zone_id", "") or "") or None
+        scene_zone_name = str(stats_payload.pop("_scene_zone_name", "") or "") or None
+        location_name = str(stats_payload.pop("_location_name", "") or "") or None
         return NPCProfile(
             npc_id=str(row["npc_id"]),
             name=str(row["name"]),
             role=str(row["role"]),
             faction=str(row["faction"]) if row["faction"] is not None else None,
+            location_name=location_name,
+            scene_zone_id=scene_zone_id,
+            scene_zone_name=scene_zone_name,
             personality_tags=json.loads(str(row["personality_tags_json"])),
-            stats=json.loads(str(row["stats_json"])),
+            stats=stats_payload,
         )
+
+    @staticmethod
+    def _npc_profile_stats_payload(profile: NPCProfile) -> dict[str, int | float | str]:
+        payload = dict(profile.stats)
+        if profile.location_name:
+            payload["_location_name"] = profile.location_name
+        if profile.scene_zone_id:
+            payload["_scene_zone_id"] = profile.scene_zone_id
+        if profile.scene_zone_name:
+            payload["_scene_zone_name"] = profile.scene_zone_name
+        return payload
 
     @staticmethod
     def _npc_relationship_from_row(row: sqlite3.Row) -> NPCRelationship:
