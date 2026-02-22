@@ -63,3 +63,6 @@
 - G20: NPC-Reaktionslogik unterscheidet jetzt `vorsichtig/aggressiv/freundlich` (standing-basiert, optional role-gestuetzt via `target_role`).
 - G20: Preview-Parser gibt `target_role` aus `known_npc_refs` an Actions weiter (TALK/ATTACK/APPROACH/RETREAT).
 - G20: Turn-Verlauf zeigt Event-Gruppenbadges (Bewegung/Reaktion/Kampf/Dialog/System) fuer bessere Lesbarkeit.
+- G21: Rollenfokus erweitert/abgesichert fuer Heiler/Krieger/Tank mit rollenspezifischen Reaktionsmeldungen bei Distanzaktionen.
+- G21: `target_catalog.npcs` traegt jetzt optional `role`; Struktur-Composer uebernimmt Rolleninfos fuer Distanz-/Talk-/Attack-Actions.
+- G21: NPC-Panel zeigt Badges fuer Distanz und abgeleiteten Reaktionsstil (`freundlich/vorsichtig/aggressiv`).

@@ -285,6 +285,47 @@ textarea:focus {
   line-height: 1.35;
 }
 
+.npc-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+}
+
+.npc-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.7rem;
+  border: 1px solid rgba(180, 205, 227, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #d5e3ef;
+}
+
+.npc-badge-distance {
+  border-color: rgba(98, 188, 255, 0.18);
+  background: rgba(98, 188, 255, 0.06);
+  color: #c5e9ff;
+}
+
+.npc-badge-freundlich {
+  border-color: rgba(137, 209, 133, 0.24);
+  background: rgba(137, 209, 133, 0.08);
+  color: #c7f3c3;
+}
+
+.npc-badge-vorsichtig {
+  border-color: rgba(241, 188, 103, 0.24);
+  background: rgba(241, 188, 103, 0.08);
+  color: #ffd79b;
+}
+
+.npc-badge-aggressiv {
+  border-color: rgba(255, 107, 107, 0.24);
+  background: rgba(255, 107, 107, 0.08);
+  color: #ffc0c0;
+}
+
 .event-list {
   display: grid;
   gap: 0.35rem;

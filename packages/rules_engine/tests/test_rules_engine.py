@@ -400,6 +400,7 @@ class TestRulesEngine(unittest.TestCase):
                         "target_zone_name": "Marktstaende",
                         "target_distance_band": "far",
                         "target_standing": -5,
+                        "target_role": "tank",
                     },
                 )
             ],
@@ -408,6 +409,8 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("approach_success", codes)
         self.assertIn("npc_reacts_aggressive_to_approach", codes)
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_aggressive_to_approach")
+        self.assertIn("Tank", reaction_event.message)
 
     def test_retreat_emits_aggressive_reaction_note_for_hostile_target(self):
         engine = RulesEngine()
@@ -435,6 +438,7 @@ class TestRulesEngine(unittest.TestCase):
                         "target_zone_name": "Marktstaende",
                         "target_distance_band": "adjacent",
                         "target_standing": -4,
+                        "target_role": "krieger",
                     },
                 )
             ],
@@ -443,6 +447,8 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("retreat_success", codes)
         self.assertIn("npc_reacts_aggressive_to_retreat", codes)
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_aggressive_to_retreat")
+        self.assertIn("Kampfbereitschaft", reaction_event.message)
 
     def test_approach_emits_friendly_reaction_for_positive_standing(self):
         engine = RulesEngine()
@@ -479,6 +485,8 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("approach_success", codes)
         self.assertIn("npc_reacts_friendly_to_approach", codes)
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_friendly_to_approach")
+        self.assertIn("Heiler", reaction_event.message)
 
     def test_retreat_emits_cautious_reaction_for_neutral_negative_standing(self):
         engine = RulesEngine()
