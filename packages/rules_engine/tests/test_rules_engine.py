@@ -189,6 +189,48 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("attack_out_of_range", codes)
 
+    def test_ranged_attack_does_not_auto_approach_for_far_target(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich schiesse auf Mira.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.attack,
+                    target_ref="npc-mira",
+                    target_kind="npc_or_enemy",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_location_name": "Marktplatz",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "near",
+                        "attack_mode": "ranged",
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(result.resulting_character_state.scene_zone_id, "zone-market-center")
+        codes = [event.code for event in result.system_events]
+        self.assertNotIn("auto_approach_for_attack", codes)
+        self.assertIn("attack_resolved", codes)
+        attack_event = next(event for event in result.system_events if event.code == "attack_resolved")
+        self.assertIn("Fernkampf", attack_event.message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -175,40 +175,56 @@ class RulesEngine:
         target_id = str(action.parameters.get("target_id") or "").strip() or None
         target_name = str(action.parameters.get("target_name") or "").strip()
         target = target_name or (action.target_ref or "Ziel").strip()
+        attack_mode = str(action.parameters.get("attack_mode") or "melee").strip().lower()
+        if attack_mode not in {"melee", "ranged"}:
+            attack_mode = "melee"
         target_distance_band = str(action.parameters.get("target_distance_band") or "").strip().lower()
         target_zone_id = str(action.parameters.get("target_zone_id") or "").strip()
         target_zone_name = str(action.parameters.get("target_zone_name") or "").strip()
         target_location_name = str(action.parameters.get("target_location_name") or "").strip()
 
-        if target_location_name and target_location_name != state.location_name:
-            state.location_name = target_location_name
-            delta.location_changed_to = target_location_name
-            events.append(
-                TurnSystemEvent(
-                    code="auto_move_location_for_attack",
-                    message=f"Automatisch zu {target_location_name} bewegt, um {target} zu erreichen.",
-                )
-            )
-
-        if target_distance_band in {"near", "far", "unreachable"}:
-            if target_zone_id:
-                state.scene_zone_id = target_zone_id
-                if target_zone_name:
-                    state.scene_zone_name = target_zone_name
-                delta.scene_zone_changed_to_id = target_zone_id
-                if target_zone_name:
-                    delta.scene_zone_changed_to_name = target_zone_name
+        if attack_mode == "melee":
+            if target_location_name and target_location_name != state.location_name:
+                state.location_name = target_location_name
+                delta.location_changed_to = target_location_name
                 events.append(
                     TurnSystemEvent(
-                        code="auto_approach_for_attack",
-                        message=f"Du naeherst dich {target} an ({target_zone_name or target_zone_id}).",
+                        code="auto_move_location_for_attack",
+                        message=f"Automatisch zu {target_location_name} bewegt, um {target} zu erreichen.",
                     )
                 )
-            else:
+
+            if target_distance_band in {"near", "far", "unreachable"}:
+                if target_zone_id:
+                    current_zone_id = (state.scene_zone_id or "").strip()
+                    if current_zone_id != target_zone_id:
+                        state.scene_zone_id = target_zone_id
+                        if target_zone_name:
+                            state.scene_zone_name = target_zone_name
+                        delta.scene_zone_changed_to_id = target_zone_id
+                        if target_zone_name:
+                            delta.scene_zone_changed_to_name = target_zone_name
+                        events.append(
+                            TurnSystemEvent(
+                                code="auto_approach_for_attack",
+                                message=f"Du naeherst dich {target} an ({target_zone_name or target_zone_id}).",
+                            )
+                        )
+                else:
+                    events.append(
+                        TurnSystemEvent(
+                            code="attack_out_of_range",
+                            message=f"{target} ist ausser Reichweite fuer einen Nahkampfangriff.",
+                            severity="warning",
+                        )
+                    )
+                    return False
+        elif attack_mode == "ranged":
+            if target_distance_band == "unreachable":
                 events.append(
                     TurnSystemEvent(
-                        code="attack_out_of_range",
-                        message=f"{target} ist ausser Reichweite fuer einen Nahkampfangriff.",
+                        code="ranged_attack_out_of_range",
+                        message=f"{target} ist ausser Reichweite fuer einen Fernkampfangriff.",
                         severity="warning",
                     )
                 )
@@ -226,7 +242,13 @@ class RulesEngine:
             relationship_change["npc_id"] = target_id
         delta.relationship_changes.append(relationship_change)
         events.append(
-            TurnSystemEvent(code="attack_resolved", message=f"Angriff gegen {target} ausgefuehrt (MVP-Schaden: {base_damage}).")
+            TurnSystemEvent(
+                code="attack_resolved",
+                message=(
+                    f"{'Fernkampf' if attack_mode == 'ranged' else 'Nahkampf'} gegen {target} ausgefuehrt "
+                    f"(MVP-Schaden: {base_damage})."
+                ),
+            )
         )
         return True
 

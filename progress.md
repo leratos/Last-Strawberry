@@ -37,3 +37,8 @@
 - G13: Preview-Analyzer ueberspringt falschen Orts-MOVE bei Formulierungen wie `bewege mich zu Mira und frage ...` (bekannter NPC + TALK -> TALK Auto-Approach).
 - G13: Web-MVP Queue-UX verbessert (Eintrag hoch/runter/entfernen).
 - G13: Neues lokales API-Script `apps/game_api/scripts/check_greenfield_turn_loop.py` fuer schnellen Turn-Loop-Sanity-Check (TALK via `actions_override`).
+- G14: `ATTACK` unterstuetzt jetzt `attack_mode` (`melee`/`ranged`) mit unterschiedlichem Distanzverhalten; Nahkampf auto-approacht, Fernkampf greift ohne Annahern an.
+- G14: Rules Engine vermeidet redundantes `auto_approach_for_attack`, wenn der Spieler bereits in der Zielzone steht.
+- G14: Preview-Analyzer erkennt Fernkampf-Verben (`schiesse`, `feuere`, `werfe`) und setzt `parameters.attack_mode = ranged`.
+- G14: Web-MVP Queue-Makros via LocalStorage (speichern/laden/loeschen) sowie Attack-Mode-Auswahl im Struktur-Composer.
+- G14: Quickcheck-Script erweitert auf Queue-Turn (`TALK + ATTACK`), Standing-Pruefung und Distanz-Validierung (`adjacent` nach Turn).
