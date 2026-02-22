@@ -25,6 +25,7 @@ type StructuredTarget = {
   sceneZoneId?: string;
   sceneZoneName?: string;
   distanceBandToPlayer?: string;
+  standing?: number;
 };
 type QueuedStructuredAction = {
   label: string;
@@ -127,6 +128,14 @@ function distanceActionHint(distanceBand: DistanceBand): string {
     return "Ziel derzeit nicht erreichbar: Abstand nicht relevant, ggf. Ort wechseln.";
   }
   return `Distanz: ${normalized}`;
+}
+
+function approachButtonLabel(distanceBand: DistanceBand): string {
+  return isApproachNotNeeded(distanceBand) ? "Annaehern (direkt dran)" : "Annaehern";
+}
+
+function retreatButtonLabel(distanceBand: DistanceBand): string {
+  return isRetreatNotNeeded(distanceBand) ? "Abstand (max)" : "Abstand";
 }
 
 function getStructuredTargets(
@@ -472,6 +481,7 @@ export function App() {
           intent: "approach",
           target_id: target.refId,
           target_name: target.name,
+          target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
           target_zone_name: target.sceneZoneName || null,
@@ -489,6 +499,7 @@ export function App() {
           intent: "retreat",
           target_id: target.refId,
           target_name: target.name,
+          target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
           target_zone_name: target.sceneZoneName || null,
@@ -507,6 +518,7 @@ export function App() {
           attack_mode: actionKind === "ATTACK" ? attackMode : null,
           target_id: target.refId,
           target_name: target.name,
+          target_standing: target.standing ?? null,
           target_location_name: target.locationName || null,
           target_zone_id: target.sceneZoneId || null,
           target_zone_name: target.sceneZoneName || null,
@@ -1011,6 +1023,7 @@ export function App() {
                       sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
                       sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
                       distanceBandToPlayer: npcDistance,
+                      standing: entry.bundle.relationship?.standing,
                     };
                     const disableApproach = isRunningTurn || isApproachNotNeeded(npcDistance);
                     const disableRetreat = isRunningTurn || isRetreatNotNeeded(npcDistance);
@@ -1089,7 +1102,7 @@ export function App() {
                           )
                         }
                       >
-                        Annaehern
+                        {approachButtonLabel(npcDistance)}
                       </button>
                       <button
                         type="button"
@@ -1108,7 +1121,7 @@ export function App() {
                           )
                         }
                       >
-                        Abstand
+                        {retreatButtonLabel(npcDistance)}
                       </button>
                       <button
                         type="button"

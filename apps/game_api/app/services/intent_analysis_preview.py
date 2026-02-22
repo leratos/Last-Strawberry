@@ -15,19 +15,22 @@ _RETREAT_PATTERNS = [
     re.compile(r"\bentferne(?:\s+mich)?\s+von\s+([\w _-]+)", re.I),
     re.compile(r"\bgehe\s+weg\s+von\s+([\w _-]+)", re.I),
     re.compile(r"\bweiche\s+([\w _-]+)\s+aus\b", re.I),
+    re.compile(r"\bhalte\s+abstand\s+zu\s+([\w _-]+)", re.I),
+    re.compile(r"\bhalte(?:\s+mich)?\s+von\s+([\w _-]+)\s+fern\b", re.I),
 ]
 _APPROACH_PATTERNS = [
     re.compile(r"\bn(?:ae|ä)her(?:e)?(?:\s+mich)?\s+(?:an\s+)?([\w _-]+)", re.I),
     re.compile(r"\bgehe\s+auf\s+([\w _-]+)\s+zu\b", re.I),
     re.compile(r"\bkomme\s+([\w _-]+)\s+n(?:a|ä)her\b", re.I),
+    re.compile(r"\btrete(?:\s+einen)?(?:\s+schritt)?\s+n(?:a|ä)her\s+an\s+([\w _-]+)", re.I),
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
-_RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg")
-_APPROACH_VERBS = ("naehere", "nähere", "annaehern", "annähern", "naeher", "näher")
+_RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg", "abstand", "fern")
+_APPROACH_VERBS = ("naehere", "nähere", "annaehern", "annähern", "naeher", "näher", "trete")
 
 
 RefMetaIndex = dict[str, dict[str, str]]

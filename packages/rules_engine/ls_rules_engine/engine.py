@@ -87,6 +87,45 @@ class RulesEngine:
         )
         return False
 
+    @staticmethod
+    def _append_distance_reaction_event(
+        *,
+        action: TurnIntentAction,
+        target_display: str,
+        events: list[TurnSystemEvent],
+        phase: str,
+    ) -> None:
+        try:
+            standing = int(action.parameters.get("target_standing"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return
+
+        if phase == "approach":
+            if standing <= -3:
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_wary_to_approach",
+                        message=f"{target_display} reagiert angespannt auf deine Annaeherung.",
+                        severity="warning",
+                    )
+                )
+            elif standing >= 3:
+                events.append(
+                    TurnSystemEvent(
+                        code="npc_reacts_open_to_approach",
+                        message=f"{target_display} wirkt offen, waehrend du naeherkommst.",
+                        severity="info",
+                    )
+                )
+        elif phase == "retreat" and standing <= -3:
+            events.append(
+                TurnSystemEvent(
+                    code="npc_reacts_hostile_hold_distance",
+                    message=f"{target_display} beobachtet deinen Rueckzug misstrauisch.",
+                    severity="info",
+                )
+            )
+
     def _apply_move(
         self,
         action: TurnIntentAction,
@@ -173,6 +212,7 @@ class RulesEngine:
         delta.scene_zone_changed_to_id = state.scene_zone_id
         delta.scene_zone_changed_to_name = state.scene_zone_name
         events.append(TurnSystemEvent(code="approach_success", message=f"Du naeherst dich {target_display} an."))
+        self._append_distance_reaction_event(action=action, target_display=target_display, events=events, phase="approach")
         return True
 
     def _apply_retreat(
@@ -215,6 +255,7 @@ class RulesEngine:
         if target_zone_name:
             message = f"Du weichst von {target_display} zurueck ({state.scene_zone_name})."
         events.append(TurnSystemEvent(code="retreat_success", message=message))
+        self._append_distance_reaction_event(action=action, target_display=target_display, events=events, phase="retreat")
         return True
 
     def _apply_talk(
