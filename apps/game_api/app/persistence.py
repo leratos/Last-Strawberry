@@ -553,6 +553,40 @@ class WorldRepository:
         memory: NPCMemoryEntry,
         world_character_id: str,
     ) -> None:
+        duplicate_row = conn.execute(
+            """
+            SELECT memory_id, importance, tags_json
+            FROM npc_memories
+            WHERE world_id = ? AND npc_id = ? AND world_character_id = ? AND summary = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (
+                memory.world_id,
+                memory.npc_id,
+                world_character_id,
+                memory.summary,
+            ),
+        ).fetchone()
+        if duplicate_row is not None:
+            existing_tags = set(json.loads(str(duplicate_row["tags_json"])))
+            merged_tags = sorted(existing_tags.union(memory.tags))
+            merged_importance = max(float(duplicate_row["importance"]), float(memory.importance))
+            conn.execute(
+                """
+                UPDATE npc_memories
+                SET importance = ?, tags_json = ?, source_turn_id = ?
+                WHERE memory_id = ?
+                """,
+                (
+                    merged_importance,
+                    json.dumps(merged_tags, ensure_ascii=True),
+                    memory.source_turn_id,
+                    str(duplicate_row["memory_id"]),
+                ),
+            )
+            return
+
         conn.execute(
             """
             INSERT INTO npc_memories (

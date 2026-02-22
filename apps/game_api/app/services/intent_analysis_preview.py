@@ -21,6 +21,8 @@ def analyze_player_input_preview(
     world_character_id: str,
     player_input: str,
     inventory: list[InventoryItemInstance],
+    known_npc_names: list[str] | None = None,
+    known_locations: list[str] | None = None,
 ) -> TurnIntent:
     text = (player_input or "").strip()
     lowered = text.lower()
@@ -29,14 +31,17 @@ def analyze_player_input_preview(
 
     destination = _extract_destination(text)
     if destination:
+        canonical_destination = _canonicalize_name(destination, known_locations or [])
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.move,
-                destination=destination,
+                destination=canonical_destination,
+                target_kind="location",
+                parameters={"intent": "move"},
                 confidence=0.85,
             )
         )
-        notes.append(f"Bewegungsziel erkannt: {destination}")
+        notes.append(f"Bewegungsziel erkannt: {canonical_destination}")
 
     if _contains_any_verb(lowered, _USE_VERBS):
         matched_item = _match_inventory_item(lowered, inventory)
@@ -46,6 +51,8 @@ def analyze_player_input_preview(
                     action_type=ActionType.use_item,
                     item_ref=matched_item.inventory_item_id,
                     target_ref=matched_item.name,
+                    target_kind="item",
+                    parameters={"intent": "use_item"},
                     confidence=0.9,
                 )
             )
@@ -55,6 +62,8 @@ def analyze_player_input_preview(
                 TurnIntentAction(
                     action_type=ActionType.use_item,
                     target_ref="unbekanntes_item",
+                    target_kind="item",
+                    parameters={"intent": "use_item"},
                     confidence=0.45,
                 )
             )
@@ -62,22 +71,51 @@ def analyze_player_input_preview(
 
     if _contains_any_verb(lowered, _ATTACK_VERBS):
         target = _extract_target_after_verb(text, _ATTACK_VERBS) or "gegner"
+        target = _canonicalize_name(target, known_npc_names or [])
         actions.append(
-            TurnIntentAction(action_type=ActionType.attack, target_ref=target, confidence=0.8)
+            TurnIntentAction(
+                action_type=ActionType.attack,
+                target_ref=target,
+                target_kind="npc_or_enemy",
+                parameters={"intent": "attack"},
+                confidence=0.8,
+            )
         )
         notes.append(f"Angriff erkannt: {target}")
 
     if _contains_any_verb(lowered, _TALK_VERBS):
         target = _extract_talk_target(text) or "npc"
-        actions.append(TurnIntentAction(action_type=ActionType.talk, target_ref=target, confidence=0.75))
+        target = _canonicalize_name(target, known_npc_names or [])
+        actions.append(
+            TurnIntentAction(
+                action_type=ActionType.talk,
+                target_ref=target,
+                target_kind="npc",
+                parameters={"intent": "talk"},
+                confidence=0.75,
+            )
+        )
         notes.append(f"Gespraech erkannt: {target}")
 
     if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
-        actions.append(TurnIntentAction(action_type=ActionType.inspect, confidence=0.7))
+        actions.append(
+            TurnIntentAction(
+                action_type=ActionType.inspect,
+                target_kind="environment",
+                parameters={"intent": "inspect"},
+                confidence=0.7,
+            )
+        )
         notes.append("Untersuchungsaktion erkannt.")
 
     if not actions:
-        actions.append(TurnIntentAction(action_type=ActionType.clarify, confidence=0.25))
+        actions.append(
+            TurnIntentAction(
+                action_type=ActionType.clarify,
+                parameters={"intent": "clarify"},
+                confidence=0.25,
+            )
+        )
         notes.append("Keine robuste Aktion erkannt, Rueckfrage empfohlen.")
 
     return TurnIntent(
@@ -148,3 +186,17 @@ def _trim_entity_phrase(value: str) -> str:
         flags=re.I,
     )[0]
     return target.strip(" .,!?:;")
+
+
+def _canonicalize_name(candidate: str, known_names: list[str]) -> str:
+    normalized_candidate = candidate.strip()
+    if not normalized_candidate or not known_names:
+        return normalized_candidate
+    lowered_candidate = normalized_candidate.lower()
+    for known_name in known_names:
+        if lowered_candidate == known_name.lower():
+            return known_name
+    for known_name in known_names:
+        if lowered_candidate in known_name.lower() or known_name.lower() in lowered_candidate:
+            return known_name
+    return normalized_candidate

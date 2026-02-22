@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .character import CharacterState
 from .common import LSBaseModel, utc_now
@@ -25,8 +25,18 @@ class TurnIntentAction(LSBaseModel):
     target_ref: str | None = Field(default=None, max_length=120)
     destination: str | None = Field(default=None, max_length=120)
     item_ref: str | None = Field(default=None, max_length=120)
+    target_kind: str | None = Field(default=None, max_length=40)
+    analysis_source: str = Field(default="heuristic_preview", max_length=40)
     parameters: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     confidence: float = Field(default=0.75, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_action_shape(self) -> "TurnIntentAction":
+        if self.action_type == ActionType.move and not (self.destination or self.target_ref):
+            raise ValueError("MOVE action requires destination or target_ref.")
+        if self.action_type == ActionType.use_item and not (self.item_ref or self.target_ref):
+            raise ValueError("USE_ITEM action requires item_ref or target_ref.")
+        return self
 
 
 class TurnIntent(LSBaseModel):
@@ -78,6 +88,8 @@ class NarrativeEnvelope(LSBaseModel):
 
 class TurnRunRequest(LSBaseModel):
     player_input: str = Field(min_length=1, max_length=2000)
+    include_context_before_turn: bool = False
+    include_context_after_turn: bool = True
 
 
 class PersistedTurnRecord(LSBaseModel):
@@ -96,3 +108,6 @@ class TurnRunResponse(LSBaseModel):
     resulting_character_state: CharacterState
     resulting_inventory: list[InventoryItemInstance] = Field(default_factory=list)
     journal_entry_ids: list[str] = Field(default_factory=list)
+    analysis_context_notes: list[str] = Field(default_factory=list)
+    context_before_turn: dict[str, object] | None = None
+    context_after_turn: dict[str, object] | None = None

@@ -1,8 +1,6 @@
 export const GAME_API_BASE_URL =
   import.meta.env.VITE_GAME_API_BASE_URL?.toString() || "http://127.0.0.1:8010";
 
-type JsonObject = Record<string, unknown>;
-
 export type GameContextResponse = {
   world: {
     world_id: string;
@@ -82,6 +80,16 @@ export type GameContextResponse = {
   retrieval_notes: string[];
 };
 
+export type TurnRunResponse = {
+  turn: {
+    turn_id: string;
+  };
+  journal_entry_ids: string[];
+  analysis_context_notes: string[];
+  context_before_turn: GameContextResponse | null;
+  context_after_turn: GameContextResponse | null;
+};
+
 export type WorldBootstrapRequest = {
   user_id: string;
   world_description: string;
@@ -127,9 +135,9 @@ export async function getWorldContext(worldId: string, playerInputHint?: string)
   return (await response.json()) as GameContextResponse;
 }
 
-export async function runTurn(worldId: string, playerInput: string): Promise<JsonObject> {
-  return apiFetch<JsonObject>(`/v1/worlds/${worldId}/turns/run`, {
+export async function runTurn(worldId: string, playerInput: string): Promise<TurnRunResponse> {
+  return apiFetch<TurnRunResponse>(`/v1/worlds/${worldId}/turns/run`, {
     method: "POST",
-    body: JSON.stringify({ player_input: playerInput }),
+    body: JSON.stringify({ player_input: playerInput, include_context_after_turn: true }),
   });
 }

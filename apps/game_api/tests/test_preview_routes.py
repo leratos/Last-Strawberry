@@ -114,6 +114,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("turn", run_payload)
         self.assertTrue(run_payload["turn"]["turn_id"].startswith("turn-"))
         self.assertGreaterEqual(len(run_payload["journal_entry_ids"]), 2)
+        self.assertIn("context_after_turn", run_payload)
+        self.assertIsNotNone(run_payload["context_after_turn"])
+        self.assertEqual(run_payload["context_after_turn"]["world"]["world_id"], world_id)
 
         session_response = self.client.get(f"/v1/worlds/{world_id}")
         self.assertEqual(session_response.status_code, 200)
@@ -204,6 +207,34 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("bundle", top_bundle)
         self.assertIn("relevance_score", top_bundle)
         self.assertIn("retrieval_reasons", top_bundle)
+
+    def test_g6_repeated_identical_talk_dedupes_npc_memory_summary(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g6-1",
+                "world_description": "Eine Handelsstadt mit Informanten in Tavernen und auf dem Markt.",
+                "character_description": "Ein Reisender, der mit Gespraechen Informationen sammelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        for _ in range(2):
+            run_response = self.client.post(
+                f"/v1/worlds/{world_id}/turns/run",
+                json={"player_input": "Ich spreche mit Zorak."},
+            )
+            self.assertEqual(run_response.status_code, 200)
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        zorak = next(bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak")
+        summaries = [memory["summary"] for memory in zorak["recent_memories"]]
+        self.assertEqual(len(summaries), len(set(summaries)))
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(zorak["relationship"]["standing"], 2)
 
 
 if __name__ == "__main__":

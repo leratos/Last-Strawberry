@@ -5,6 +5,7 @@ import {
   GameContextResponse,
   getWorldContext,
   runTurn,
+  TurnRunResponse,
 } from "./api";
 
 type BootstrapForm = {
@@ -32,6 +33,7 @@ export function App() {
   const [isReloading, setIsReloading] = useState(false);
   const [lastActionMessage, setLastActionMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -77,6 +79,7 @@ export function App() {
         character_description: bootstrapForm.characterDescription.trim(),
       });
       await loadContext(created.world_id);
+      setAnalysisNotes([]);
       setLastActionMessage(`Neue Welt erstellt: ${created.world_id}`);
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : "Bootstrap fehlgeschlagen.");
@@ -94,9 +97,18 @@ export function App() {
     setError("");
     setLastActionMessage("");
     try {
-      await runTurn(worldId.trim(), turnInput.trim());
-      await loadContext(worldId.trim(), turnInput.trim());
-      setLastActionMessage("Turn ausgefuehrt und Context aktualisiert.");
+      const runResult: TurnRunResponse = await runTurn(worldId.trim(), turnInput.trim());
+      setAnalysisNotes(runResult.analysis_context_notes || []);
+      if (runResult.context_after_turn) {
+        setContext(runResult.context_after_turn);
+        setWorldId(runResult.context_after_turn.world.world_id);
+        setWorldIdInput(runResult.context_after_turn.world.world_id);
+      } else {
+        await loadContext(worldId.trim(), turnInput.trim());
+      }
+      setLastActionMessage(
+        `Turn ausgefuehrt (${runResult.turn.turn_id}) und Context aktualisiert.`,
+      );
     } catch (turnError) {
       setError(turnError instanceof Error ? turnError.message : "Turn fehlgeschlagen.");
     } finally {
@@ -187,6 +199,11 @@ export function App() {
                   <span>Turns: {context.recent_turns.length}</span>
                 </div>
                 <p className="story-text">{latestNarrative}</p>
+                {analysisNotes.length > 0 ? (
+                  <p className="list-subtle analysis-notes">
+                    Analyse-Kontext: {analysisNotes.join(" | ")}
+                  </p>
+                ) : null}
               </section>
 
               <form className="turn-form" onSubmit={handleTurnSubmit}>

@@ -6,3 +6,6 @@
 - G5: Intent-Parser auf Wortgrenzen umgestellt; false positive schaue -> haue behoben und getestet.
 - G5: Turn-Verlauf zeigt jetzt Event-Severity + Message; Welt-ID kann direkt geladen werden.
 - G5: MariaDB-Kompatibilitaetscheck-Script fuer Migrations-SQL als Basis hinzugefuegt.
+- G6: run_turn nutzt jetzt Context-Assembly intern und kann Context vor/nach Turn im Response liefern.
+- G6: NPC-Memory-Dedupe fuer identische Summaries (same NPC/WorldCharacter) hinzugefuegt.
+- G6: Web-Client nutzt context_after_turn direkt (weniger Roundtrip) und zeigt Analyse-Kontext-Hinweise.

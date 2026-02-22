@@ -2,12 +2,15 @@ from pathlib import Path
 import sys
 import unittest
 
+from pydantic import ValidationError
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "packages" / "shared_schemas"))
 
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode  # noqa: E402
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship  # noqa: E402
+from ls_shared_schemas.turns import ActionType, TurnIntentAction  # noqa: E402
 from ls_shared_schemas.world import WorldBootstrapRequest  # noqa: E402
 
 
@@ -41,6 +44,10 @@ class TestSchemas(unittest.TestCase):
         self.assertEqual(bundle.profile.name, "Mira")
         self.assertEqual(bundle.relationship.standing, 12)
         self.assertEqual(len(bundle.recent_memories), 1)
+
+    def test_turn_intent_action_move_requires_destination_or_target(self):
+        with self.assertRaises(ValidationError):
+            TurnIntentAction(action_type=ActionType.move)
 
 
 if __name__ == "__main__":
