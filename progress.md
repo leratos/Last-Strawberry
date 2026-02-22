@@ -20,3 +20,7 @@
 - G9: Preview-Intent-Analyzer mapped bekannte NPC/Locations auf IDs (target_ref / destination_id) und behaelt Anzeigenamen in parameters.
 - G9: Rules + Persistence verarbeiten NPC-IDs fuer Beziehung/NPC-Memory updates, ohne bestehende Namenspfade zu brechen.
 - G9: Web-UI zeigt Referenz-IDs fuer Inventar/NPCs und Referenz-Zaehlung/-Liste im Context an.
+- G10: `TurnRunRequest` unterstuetzt `actions_override` fuer strukturierte, ID-basierte UI-Turns (Freitext bleibt parallel erhalten).
+- G10: `run_turn` ueberspringt Analyzer komplett bei `actions_override` (weniger Kosten/Fehlerquellen).
+- G10: Web-MVP hat jetzt einen klickbaren Struktur-Aktions-Composer (Move/Talk/Attack/Use Item) auf Basis des `target_catalog`.
+- G10: OpenRouter-Intent-Normalisierung mapped namenbasierte LLM-Outputs auf bekannte target IDs (NPC/Location/Item), falls vorhanden.

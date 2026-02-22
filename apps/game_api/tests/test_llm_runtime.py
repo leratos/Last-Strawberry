@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -160,6 +161,41 @@ class TestLlmRuntime(unittest.TestCase):
         )
         narrative = runtime.narrate(resolution=resolution, context_before=None)
         self.assertIn("Taverne", narrative.narrative)
+
+    def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=False, openrouter_api_key="test-key")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "actions": [
+                    {"action_type": "TALK", "target_ref": "Zorak"},
+                    {"action_type": "MOVE", "destination": "Taverne"},
+                ],
+                "analysis_notes": ["ok"],
+            }
+        )
+        runtime._openrouter_client = fake_client
+
+        intent = runtime.analyze_intent(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich spreche mit Zorak und gehe zur Taverne.",
+            inventory=[],
+            known_npc_names=["Zorak"],
+            known_locations=["Taverne"],
+            known_npc_refs=[{"ref_id": "npc-zorak", "name": "Zorak"}],
+            known_location_refs=[{"ref_id": "loc-taverne", "name": "Taverne"}],
+            known_item_refs=[],
+            context=None,
+        )
+        talk_action = next(action for action in intent.actions if action.action_type == ActionType.talk)
+        move_action = next(action for action in intent.actions if action.action_type == ActionType.move)
+        self.assertEqual(talk_action.target_ref, "npc-zorak")
+        self.assertEqual(talk_action.parameters.get("target_id"), "npc-zorak")
+        self.assertEqual(move_action.target_ref, "loc-taverne")
+        self.assertEqual(move_action.parameters.get("destination_id"), "loc-taverne")
 
 
 if __name__ == "__main__":

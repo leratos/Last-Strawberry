@@ -88,6 +88,7 @@ class NarrativeEnvelope(LSBaseModel):
 
 class TurnRunRequest(LSBaseModel):
     player_input: str = Field(min_length=1, max_length=2000)
+    actions_override: list[TurnIntentAction] = Field(default_factory=list)
     include_context_before_turn: bool = False
     include_context_after_turn: bool = True
 
