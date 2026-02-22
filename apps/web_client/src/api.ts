@@ -92,6 +92,8 @@ export type GameContextResponse = {
       scene_zone_id?: string | null;
       scene_zone_name?: string | null;
       distance_band_to_player?: string | null;
+      detail_level?: number | null;
+      discovery_state?: Record<string, string | number | boolean | null>;
     }>;
     items: Array<{
       ref_id: string;
@@ -102,6 +104,8 @@ export type GameContextResponse = {
       scene_zone_id?: string | null;
       scene_zone_name?: string | null;
       distance_band_to_player?: string | null;
+      detail_level?: number | null;
+      discovery_state?: Record<string, string | number | boolean | null>;
     }>;
     locations: Array<{
       ref_id: string;
@@ -112,6 +116,8 @@ export type GameContextResponse = {
       scene_zone_id?: string | null;
       scene_zone_name?: string | null;
       distance_band_to_player?: string | null;
+      detail_level?: number | null;
+      discovery_state?: Record<string, string | number | boolean | null>;
     }>;
     scene_points: Array<{
       ref_id: string;
@@ -123,6 +129,8 @@ export type GameContextResponse = {
       scene_zone_id?: string | null;
       scene_zone_name?: string | null;
       distance_band_to_player?: string | null;
+      detail_level?: number | null;
+      discovery_state?: Record<string, string | number | boolean | null>;
     }>;
   };
   retrieval_player_input: string | null;

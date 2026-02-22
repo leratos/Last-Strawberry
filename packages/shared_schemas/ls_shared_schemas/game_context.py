@@ -19,6 +19,8 @@ class GameTargetReference(LSBaseModel):
     scene_zone_id: str | None = Field(default=None, max_length=120)
     scene_zone_name: str | None = Field(default=None, max_length=120)
     distance_band_to_player: str | None = Field(default=None, max_length=40)
+    detail_level: int | None = Field(default=None, ge=0, le=10)
+    discovery_state: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class GameTargetCatalog(LSBaseModel):

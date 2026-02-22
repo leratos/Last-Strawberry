@@ -495,6 +495,99 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         event_codes = [event["code"] for event in inspect_payload["turn"]["resolution"]["system_events"]]
         self.assertIn("inspect_focus_success", event_codes)
 
+    def test_g29_container_inspect_upgrades_detail_and_grants_loot_once(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g29-container",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und einem gestoerten Ritual auf dem Marktplatz.",
+                "character_description": "Ein aufmerksamer Binder, der Hinweise und Ausruestung sammelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        # Broad inspect reveals environment targets at low detail.
+        broad_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(broad_inspect.status_code, 200)
+        broad_payload = broad_inspect.json()
+        broad_codes = [event["code"] for event in broad_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("discovery_revealed_scene_points", broad_codes)
+
+        context_after_broad = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_after_broad.status_code, 200)
+        context_payload = context_after_broad.json()
+        container_ref = next(
+            entry for entry in context_payload["target_catalog"]["scene_points"] if entry["kind"] == "container"
+        )
+        self.assertEqual(container_ref.get("detail_level"), 1)
+
+        inspect_container = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": f"UI: Untersuche {container_ref['name']}",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": container_ref["ref_id"],
+                        "target_kind": "container",
+                        "parameters": {
+                            "intent": "inspect",
+                            "target_id": container_ref["ref_id"],
+                            "target_name": container_ref["name"],
+                            "target_kind": "container",
+                            "target_location_name": "Marktplatz",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(inspect_container.status_code, 200)
+        inspect_payload = inspect_container.json()
+        inspect_codes = [event["code"] for event in inspect_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("inspect_focus_success", inspect_codes)
+        self.assertIn("discovery_revealed_scene_details", inspect_codes)
+        self.assertTrue("container_opened" in inspect_codes or "container_already_searched" in inspect_codes)
+        self.assertTrue("container_loot_found" in inspect_codes or "container_empty" in inspect_codes)
+
+        inventory_after_first = inspect_payload["resulting_inventory"]
+        self.assertGreaterEqual(len(inventory_after_first), 1)
+
+        after_first_ctx = inspect_payload["context_after_turn"]
+        updated_container = next(
+            entry for entry in after_first_ctx["target_catalog"]["scene_points"] if entry["ref_id"] == container_ref["ref_id"]
+        )
+        self.assertEqual(updated_container.get("detail_level"), 2)
+        self.assertIn("opened", updated_container.get("discovery_state", {}))
+
+        inspect_again = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": f"UI: Untersuche {container_ref['name']} erneut",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": container_ref["ref_id"],
+                        "target_kind": "container",
+                        "parameters": {
+                            "intent": "inspect",
+                            "target_id": container_ref["ref_id"],
+                            "target_name": container_ref["name"],
+                            "target_kind": "container",
+                            "target_location_name": "Marktplatz",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(inspect_again.status_code, 200)
+        again_payload = inspect_again.json()
+        again_codes = [event["code"] for event in again_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("container_already_searched", again_codes)
+
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

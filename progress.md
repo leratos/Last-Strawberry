@@ -81,3 +81,6 @@
 - G27: Rules Engine akzeptiert `INSPECT` auf `scene_point`-Targets (`inspect_focus_success`) statt Item-Fehler.
 - G27: Retrieval-Notes unterscheiden jetzt unbekannte Praesenzen (NPCs) und unerkundete Interaktionspunkte am Ort.
 - TODO (naechster Schritt): G28 Discovery fuer Objekte/Container/NPC-Rollenwissen verfeinern (z.B. Name sichtbar, Rolle erst nach genauerem Untersuchen/Gespraech).
+- G29: Scene-Point-Discovery hat jetzt `detail_level` + `discovery_state` (broad `schau` zeigt Namen, fokussiertes `Inspect` hebt Details an).
+- G29: Container unter den Umweltzielen haben persistente Zustandslogik (geoeffnet/durchsucht) und koennen einmalig deterministischen Loot vergeben.
+- G29: UI zeigt bei Umweltzielen Details nur nach fokussiertem Inspect; Containerstatus wird sichtbar (z.B. geoeffnet/durchsucht).
