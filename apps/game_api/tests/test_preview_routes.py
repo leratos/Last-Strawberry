@@ -200,6 +200,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertGreaterEqual(len(payload["recent_turns"]), 2)
         self.assertGreaterEqual(len(payload["recent_journal"]), 3)
         self.assertGreaterEqual(len(payload["npc_memory"]), 1)
+        self.assertIn("target_catalog", payload)
+        self.assertGreaterEqual(len(payload["target_catalog"]["items"]), 1)
+        self.assertGreaterEqual(len(payload["target_catalog"]["locations"]), 1)
         self.assertEqual(payload["retrieval_player_input"], "Ich will mehr ueber Zorak und Schmuggler wissen.")
         self.assertTrue(payload["retrieval_notes"])
 
@@ -226,6 +229,12 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
                 json={"player_input": "Ich spreche mit Zorak."},
             )
             self.assertEqual(run_response.status_code, 200)
+            applied_actions = run_response.json()["turn"]["resolution"]["applied_actions"]
+            talk_action = next(action for action in applied_actions if action["action_type"] == "TALK")
+            self.assertTrue(
+                talk_action["target_ref"].startswith("npc-") or talk_action["target_ref"] == "Zorak",
+                msg=f"unexpected target_ref={talk_action['target_ref']}",
+            )
 
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
         self.assertEqual(memory_response.status_code, 200)

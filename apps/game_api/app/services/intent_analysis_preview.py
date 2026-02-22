@@ -23,21 +23,32 @@ def analyze_player_input_preview(
     inventory: list[InventoryItemInstance],
     known_npc_names: list[str] | None = None,
     known_locations: list[str] | None = None,
+    known_npc_refs: list[dict[str, str]] | None = None,
+    known_location_refs: list[dict[str, str]] | None = None,
 ) -> TurnIntent:
     text = (player_input or "").strip()
     lowered = text.lower()
     actions: list[TurnIntentAction] = []
     notes: list[str] = []
 
+    npc_ref_index = _build_ref_index(known_npc_refs or [])
+    location_ref_index = _build_ref_index(known_location_refs or [])
+
     destination = _extract_destination(text)
     if destination:
         canonical_destination = _canonicalize_name(destination, known_locations or [])
+        resolved_location_id = _lookup_ref_id(canonical_destination, location_ref_index)
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.move,
                 destination=canonical_destination,
+                target_ref=resolved_location_id or None,
                 target_kind="location",
-                parameters={"intent": "move"},
+                parameters={
+                    "intent": "move",
+                    "destination_name": canonical_destination,
+                    "destination_id": resolved_location_id,
+                },
                 confidence=0.85,
             )
         )
@@ -52,7 +63,11 @@ def analyze_player_input_preview(
                     item_ref=matched_item.inventory_item_id,
                     target_ref=matched_item.name,
                     target_kind="item",
-                    parameters={"intent": "use_item"},
+                    parameters={
+                        "intent": "use_item",
+                        "item_id": matched_item.inventory_item_id,
+                        "item_name": matched_item.name,
+                    },
                     confidence=0.9,
                 )
             )
@@ -72,12 +87,17 @@ def analyze_player_input_preview(
     if _contains_any_verb(lowered, _ATTACK_VERBS):
         target = _extract_target_after_verb(text, _ATTACK_VERBS) or "gegner"
         target = _canonicalize_name(target, known_npc_names or [])
+        target_id = _lookup_ref_id(target, npc_ref_index)
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.attack,
-                target_ref=target,
+                target_ref=target_id or target,
                 target_kind="npc_or_enemy",
-                parameters={"intent": "attack"},
+                parameters={
+                    "intent": "attack",
+                    "target_name": target,
+                    "target_id": target_id,
+                },
                 confidence=0.8,
             )
         )
@@ -86,12 +106,17 @@ def analyze_player_input_preview(
     if _contains_any_verb(lowered, _TALK_VERBS):
         target = _extract_talk_target(text) or "npc"
         target = _canonicalize_name(target, known_npc_names or [])
+        target_id = _lookup_ref_id(target, npc_ref_index)
         actions.append(
             TurnIntentAction(
                 action_type=ActionType.talk,
-                target_ref=target,
+                target_ref=target_id or target,
                 target_kind="npc",
-                parameters={"intent": "talk"},
+                parameters={
+                    "intent": "talk",
+                    "target_name": target,
+                    "target_id": target_id,
+                },
                 confidence=0.75,
             )
         )
@@ -200,3 +225,26 @@ def _canonicalize_name(candidate: str, known_names: list[str]) -> str:
         if lowered_candidate in known_name.lower() or known_name.lower() in lowered_candidate:
             return known_name
     return normalized_candidate
+
+
+def _build_ref_index(entries: list[dict[str, str]]) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for entry in entries:
+        name = str(entry.get("name") or "").strip()
+        ref_id = str(entry.get("ref_id") or "").strip()
+        if not name or not ref_id:
+            continue
+        index[name.lower()] = ref_id
+    return index
+
+
+def _lookup_ref_id(name: str, ref_index: dict[str, str]) -> str | None:
+    normalized = name.strip().lower()
+    if not normalized:
+        return None
+    if normalized in ref_index:
+        return ref_index[normalized]
+    for known_name, ref_id in ref_index.items():
+        if normalized in known_name or known_name in normalized:
+            return ref_id
+    return None
