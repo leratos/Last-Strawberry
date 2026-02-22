@@ -24,3 +24,7 @@
 - G10: `run_turn` ueberspringt Analyzer komplett bei `actions_override` (weniger Kosten/Fehlerquellen).
 - G10: Web-MVP hat jetzt einen klickbaren Struktur-Aktions-Composer (Move/Talk/Attack/Use Item) auf Basis des `target_catalog`.
 - G10: OpenRouter-Intent-Normalisierung mapped namenbasierte LLM-Outputs auf bekannte target IDs (NPC/Location/Item), falls vorhanden.
+- G11: Web-MVP hat jetzt eine Multi-Action-Queue fuer strukturierte Aktionen (mehrere `actions_override` in einem Turn).
+- G11: Quick Actions in Panels (NPC Talk / Location Move / Item Use) triggern strukturierte ID-basierte Aktionen direkt oder legen sie in die Queue.
+- G11: OpenRouter-Intent bevorzugt `response_format=json_schema` fuer Intent (Fallback auf `json_object` bleibt aktiv).
+- G11: Route-Test fuer Multi-Action-Override-Queue und Runtime-Test fuer `json_schema`-Call abgesichert.

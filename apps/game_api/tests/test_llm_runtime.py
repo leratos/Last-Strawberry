@@ -197,6 +197,9 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertEqual(move_action.target_ref, "loc-taverne")
         self.assertEqual(move_action.parameters.get("destination_id"), "loc-taverne")
 
+        first_call_kwargs = fake_client.chat_completion.call_args_list[0].kwargs
+        self.assertEqual(first_call_kwargs["response_format"]["type"], "json_schema")
+
 
 if __name__ == "__main__":
     unittest.main()
