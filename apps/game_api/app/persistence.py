@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
+from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
@@ -531,19 +532,31 @@ class WorldRepository:
             ).fetchone()
             if preferred_row is not None:
                 return str(preferred_row["npc_id"])
+        inferred_role = infer_canonical_role_from_text(npc_name or "")
         row = conn.execute(
             """
-            SELECT npc_id FROM npc_profiles
+            SELECT npc_id, role FROM npc_profiles
             WHERE world_id = ? AND LOWER(name) = LOWER(?)
             LIMIT 1
             """,
             (world_id, npc_name),
         ).fetchone()
         if row is not None:
-            return str(row["npc_id"])
+            npc_id = str(row["npc_id"])
+            existing_role = str(row["role"] or "unknown")
+            if inferred_role and existing_role in {"", "unknown", "npc"}:
+                conn.execute(
+                    """
+                    UPDATE npc_profiles
+                    SET role = ?, updated_at = ?
+                    WHERE world_id = ? AND npc_id = ?
+                    """,
+                    (inferred_role, timestamp, world_id, npc_id),
+                )
+            return npc_id
 
         npc_id = preferred_npc_id or self._stable_npc_id_from_name(npc_name)
-        profile = NPCProfile(npc_id=npc_id, name=npc_name, role="unknown")
+        profile = NPCProfile(npc_id=npc_id, name=npc_name, role=inferred_role or "unknown")
         self._upsert_world_npc_profiles(
             conn=conn,
             world_id=world_id,

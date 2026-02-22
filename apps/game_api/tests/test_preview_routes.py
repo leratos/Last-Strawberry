@@ -49,6 +49,31 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("world_seed", payload)
         self.assertIn("initial_narrative", payload)
 
+    def test_g23_world_bootstrap_preview_uses_ip_safe_urban_occult_preset(self):
+        response = self.client.post(
+            "/v1/worlds/bootstrap/preview",
+            json={
+                "user_id": "u-g23-preview",
+                "world_description": (
+                    "Eine moderne Stadt mit geheimer Magie, Relikten und rivalisierenden Fraktionen. "
+                    "Ein Ritual fuer einen Champion ist fehlgeschlagen."
+                ),
+                "character_description": (
+                    "Ein junger Binder mit schwachen Mana-Reserven, der ein verbotenes Beschwoerungsritual "
+                    "untersucht."
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        world_seed = payload["world_seed"]
+        self.assertIn("Urban Occult", world_seed["name"])
+        self.assertIn("Binder-Konklave", world_seed["factions"])
+        self.assertTrue(any(npc["role"] == "beschwoerer" for npc in world_seed["starter_npcs"]))
+        orientation_text = " ".join(payload["player_orientation"])
+        self.assertIn("Binder", orientation_text)
+        self.assertIn("Champion", orientation_text)
+
     def test_world_bootstrap_create_and_get_session(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
@@ -167,6 +192,39 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(zorak["relationship"]["standing"], 1)
         self.assertGreaterEqual(len(zorak["recent_memories"]), 1)
         self.assertIn("talk", zorak["recent_memories"][0]["tags"])
+
+    def test_g23_talk_turn_infers_role_for_free_text_beschwoerer_npc(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g23-role",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und rivalisierenden Zirkeln.",
+                "character_description": "Ein Ermittler, der Beschwoerer und Relikte beobachtet.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit dem Beschwoerer ueber das gestoerte Ritual."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        beschwoerer_bundle = next(
+            (
+                bundle
+                for bundle in bundles
+                if "beschwoer" in bundle["profile"]["name"].lower()
+                or bundle["profile"]["role"] == "beschwoerer"
+            ),
+            None,
+        )
+        self.assertIsNotNone(beschwoerer_bundle)
+        self.assertEqual(beschwoerer_bundle["profile"]["role"], "beschwoerer")
 
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(
