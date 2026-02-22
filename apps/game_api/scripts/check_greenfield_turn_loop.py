@@ -74,6 +74,23 @@ def _build_structured_retreat_action(target_ref: dict[str, Any]) -> dict[str, An
     }
 
 
+def _build_structured_approach_action(target_ref: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action_type": "APPROACH",
+        "target_ref": target_ref["ref_id"],
+        "target_kind": "npc",
+        "parameters": {
+            "intent": "approach",
+            "target_id": target_ref["ref_id"],
+            "target_name": target_ref["name"],
+            "target_location_name": target_ref.get("location_name"),
+            "target_zone_id": target_ref.get("scene_zone_id"),
+            "target_zone_name": target_ref.get("scene_zone_name"),
+            "target_distance_band": target_ref.get("distance_band_to_player"),
+        },
+    }
+
+
 def _request_json(  # pragma: no cover - exercised manually against running local API
     *,
     method: str,
@@ -220,6 +237,48 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
             f"Quickcheck erwartet Distanz 'far' nach zweitem RETREAT, bekam: {distance_after_retreat_2!r}"
         )
 
+    approach_turn_run_1 = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Naehere dich {npc_ref.get('name', 'NPC')}",
+            "actions_override": [_build_structured_approach_action(retreat_target_ref_2 or npc_ref)],
+        },
+    )
+    approach_codes_1 = _extract_event_codes(approach_turn_run_1)
+    if "approach_success" not in approach_codes_1:
+        raise RuntimeError(f"Quickcheck erwartet approach_success im ersten APPROACH, bekam: {approach_codes_1}")
+    approach_ctx_1 = approach_turn_run_1.get("context_after_turn") or {}
+    approach_npcs_1 = (approach_ctx_1.get("target_catalog") or {}).get("npcs") or []
+    approach_target_ref_1 = next((entry for entry in approach_npcs_1 if entry.get("ref_id") == npc_ref["ref_id"]), None)
+    distance_after_approach_1 = (approach_target_ref_1 or {}).get("distance_band_to_player")
+    if distance_after_approach_1 != "near":
+        raise RuntimeError(
+            f"Quickcheck erwartet Distanz 'near' nach erstem APPROACH, bekam: {distance_after_approach_1!r}"
+        )
+
+    approach_turn_run_2 = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Gehe noch naeher zu {npc_ref.get('name', 'NPC')}",
+            "actions_override": [_build_structured_approach_action(approach_target_ref_1 or npc_ref)],
+        },
+    )
+    approach_codes_2 = _extract_event_codes(approach_turn_run_2)
+    if "approach_success" not in approach_codes_2:
+        raise RuntimeError(f"Quickcheck erwartet approach_success im zweiten APPROACH, bekam: {approach_codes_2}")
+    approach_ctx_2 = approach_turn_run_2.get("context_after_turn") or {}
+    approach_npcs_2 = (approach_ctx_2.get("target_catalog") or {}).get("npcs") or []
+    approach_target_ref_2 = next((entry for entry in approach_npcs_2 if entry.get("ref_id") == npc_ref["ref_id"]), None)
+    distance_after_approach_2 = (approach_target_ref_2 or {}).get("distance_band_to_player")
+    if distance_after_approach_2 != "adjacent":
+        raise RuntimeError(
+            f"Quickcheck erwartet Distanz 'adjacent' nach zweitem APPROACH, bekam: {distance_after_approach_2!r}"
+        )
+
     result = {
         "world_id": world_id,
         "npc_id": npc_ref.get("ref_id"),
@@ -236,7 +295,11 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "distance_after_retreat": distance_after_retreat,
         "retreat_event_codes_second": retreat_codes_2,
         "distance_after_retreat_second": distance_after_retreat_2,
-        "context_after_turn_present": bool(retreat_turn_run_2.get("context_after_turn")),
+        "approach_event_codes_first": approach_codes_1,
+        "distance_after_approach_first": distance_after_approach_1,
+        "approach_event_codes_second": approach_codes_2,
+        "distance_after_approach_second": distance_after_approach_2,
+        "context_after_turn_present": bool(approach_turn_run_2.get("context_after_turn")),
     }
     return result
 

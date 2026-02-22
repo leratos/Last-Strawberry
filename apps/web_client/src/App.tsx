@@ -15,7 +15,7 @@ type BootstrapForm = {
   characterDescription: string;
 };
 
-type StructuredActionKind = "MOVE" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM";
+type StructuredActionKind = "MOVE" | "APPROACH" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM";
 type StructuredTarget = {
   refId: string;
   name: string;
@@ -102,7 +102,7 @@ function getStructuredTargets(
       auxiliary: item.use_modes.join(", "),
     }));
   }
-  if (composerActionKind === "RETREAT") {
+  if (composerActionKind === "APPROACH" || composerActionKind === "RETREAT") {
     return context.target_catalog.npcs.map((entry) => ({
       refId: entry.ref_id,
       name: entry.name,
@@ -395,6 +395,23 @@ export function App() {
         confidence: 0.99,
       };
     }
+    if (actionKind === "APPROACH") {
+      return {
+        action_type: "APPROACH",
+        target_ref: target.refId,
+        target_kind: "npc",
+        parameters: {
+          intent: "approach",
+          target_id: target.refId,
+          target_name: target.name,
+          target_location_name: target.locationName || null,
+          target_zone_id: target.sceneZoneId || null,
+          target_zone_name: target.sceneZoneName || null,
+          target_distance_band: target.distanceBandToPlayer || null,
+        },
+        confidence: 0.99,
+      };
+    }
     if (actionKind === "RETREAT") {
       return {
         action_type: "RETREAT",
@@ -440,6 +457,9 @@ export function App() {
     }
     if (actionKind === "USE_ITEM") {
       return `UI: Benutze ${target.name}`;
+    }
+    if (actionKind === "APPROACH") {
+      return `UI: Naehere dich ${target.name}`;
     }
     if (actionKind === "RETREAT") {
       return `UI: Gewinne Abstand zu ${target.name}`;
@@ -583,6 +603,7 @@ export function App() {
                     >
                       <option value="TALK">Talk</option>
                       <option value="MOVE">Move</option>
+                      <option value="APPROACH">Approach</option>
                       <option value="RETREAT">Retreat</option>
                       <option value="ATTACK">Attack</option>
                       <option value="USE_ITEM">Use Item</option>
@@ -968,6 +989,50 @@ export function App() {
                         }
                       >
                         Gehe+Rede
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={
+                          isRunningTurn ||
+                          (context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                            ?.distance_band_to_player || "near") === "adjacent"
+                        }
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: buildStructuredActionLabel("APPROACH", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                  locationName:
+                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
+                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                                  distanceBandToPlayer:
+                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                                      ?.distance_band_to_player || undefined,
+                                }),
+                                action: buildStructuredAction("APPROACH", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                  locationName:
+                                    entry.bundle.profile.location_name || context.world.character_state.location_name,
+                                  sceneZoneId: entry.bundle.profile.scene_zone_id || undefined,
+                                  sceneZoneName: entry.bundle.profile.scene_zone_name || undefined,
+                                  distanceBandToPlayer:
+                                    context.target_catalog.npcs.find((n) => n.ref_id === entry.bundle.profile.npc_id)
+                                      ?.distance_band_to_player || undefined,
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Annaehern
                       </button>
                       <button
                         type="button"

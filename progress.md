@@ -50,3 +50,7 @@
 - G16: Context-Distanzregeln verstehen jetzt explizite Spieler-Distanzzonen (`zone-distance-near`, `zone-distance-far`) und geben fuer NPCs in gleicher Location entsprechend `near`/`far` zurueck.
 - G16: API-Route-Test erweitert auf zwei aufeinanderfolgende RETREATs (zweiter Rueckzug fuehrt zu `far`).
 - G16: Quickcheck-Script prueft jetzt nach zweitem RETREAT explizit `distance_after_retreat_second == far`.
+- G17: Neuer Action-Typ `APPROACH` als symmetrische Gegenaktion zu `RETREAT` (Parser, Rules, UI, Override-/LLM-Ref-Normalisierung).
+- G17: `APPROACH` ist gestuft: `far -> near -> adjacent`, `adjacent` liefert `approach_not_needed`.
+- G17: Web-UI hat Quick Action `Annaehern` bei NPCs; Distanzaktionen sind kontextsensitiv (z. B. `Annaehern` aus bei `adjacent`).
+- G17: Quickcheck-Script erweitert auf zwei APPROACHs nach `far` und prueft `distance_after_approach_second == adjacent`.

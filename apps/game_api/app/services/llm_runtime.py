@@ -518,7 +518,7 @@ class LlmRuntime:
         location_ref_index = self._build_ref_index(known_location_refs)
         item_ref_index = self._build_ref_index(known_item_refs)
 
-        if action.action_type.value in {"TALK", "ATTACK", "RETREAT"}:
+        if action.action_type.value in {"TALK", "ATTACK", "RETREAT", "APPROACH"}:
             candidate_name = str(params.get("target_name") or "").strip()
             candidate_ref = (action.target_ref or "").strip()
             if not candidate_name and candidate_ref and not candidate_ref.startswith("npc-"):
