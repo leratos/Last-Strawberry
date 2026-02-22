@@ -9,3 +9,6 @@
 - G6: run_turn nutzt jetzt Context-Assembly intern und kann Context vor/nach Turn im Response liefern.
 - G6: NPC-Memory-Dedupe fuer identische Summaries (same NPC/WorldCharacter) hinzugefuegt.
 - G6: Web-Client nutzt context_after_turn direkt (weniger Roundtrip) und zeigt Analyse-Kontext-Hinweise.
+- G7: LLM-Runtime-Schicht (preview/openrouter) eingefuehrt; OpenRouter-Pfad mit Preview-Fallback vorbereitet.
+- G7: run_turn/analyze/narrate nutzen LLM-Runtime; Health zeigt aktive Provider/Fallback-Konfiguration.
+- G7: Intent-Analyzer bekommt bekannte NPC/Locations aus Context; Targets werden dadurch besser normalisiert.
