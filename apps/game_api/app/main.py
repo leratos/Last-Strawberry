@@ -10,8 +10,7 @@ from apps.game_api.app.config import settings
 from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
-from apps.game_api.app.services.intent_analysis_preview import analyze_player_input_preview
-from apps.game_api.app.services.narration_preview import build_narrative_from_resolution
+from apps.game_api.app.services.llm_runtime import build_llm_runtime
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.game_context import GameContextResponse
@@ -40,6 +39,7 @@ class TurnAnalyzePreviewRequest(BaseModel):
 
 engine = RulesEngine()
 world_repository = WorldRepository(settings.database_path)
+llm_runtime = build_llm_runtime(settings)
 
 
 @asynccontextmanager
@@ -97,11 +97,17 @@ def _assemble_context_for_world(
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    llm_status = llm_runtime.status()
     return {
         "status": "ok",
         "service": "greenfield-game-api",
         "environment": settings.environment,
         "public_game_domain": settings.public_game_domain,
+        "llm_mode": llm_status.mode,
+        "llm_fallback_to_preview": str(llm_status.fallback_to_preview).lower(),
+        "intent_provider": llm_status.intent_provider,
+        "narration_provider": llm_status.narration_provider,
+        "openrouter_configured": str(llm_status.openrouter_configured).lower(),
     }
 
 
@@ -157,13 +163,14 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         memory_per_npc=3,
     )
     session = context.world
-    return analyze_player_input_preview(
+    return llm_runtime.analyze_intent(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
         player_input=request.player_input,
         inventory=session.inventory,
         known_npc_names=[entry.bundle.profile.name for entry in context.npc_memory],
         known_locations=[session.character_state.location_name, session.world_seed.start_location_name],
+        context=context,
     )
 
 
@@ -174,7 +181,7 @@ def resolve_turn_preview(request: TurnResolvePreviewRequest) -> TurnResolution:
 
 @app.post("/v1/turns/narrate/preview", response_model=NarrativeEnvelope)
 def narrate_turn_preview(resolution: TurnResolution) -> NarrativeEnvelope:
-    return build_narrative_from_resolution(resolution)
+    return llm_runtime.narrate(resolution=resolution, context_before=None)
 
 
 @app.post("/v1/worlds/{world_id}/turns/run", response_model=TurnRunResponse)
@@ -192,20 +199,24 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
     known_npc_names = [entry.bundle.profile.name for entry in context_before.npc_memory]
     known_locations = [session.character_state.location_name, session.world_seed.start_location_name]
 
-    intent = analyze_player_input_preview(
+    intent = llm_runtime.analyze_intent(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
         player_input=request.player_input,
         inventory=session.inventory,
         known_npc_names=known_npc_names,
         known_locations=known_locations,
+        context=context_before,
     )
     resolution = engine.resolve(
         intent=intent,
         character_state=session.character_state,
         inventory=session.inventory,
     )
-    narrative = build_narrative_from_resolution(resolution)
+    narrative = llm_runtime.narrate(
+        resolution=resolution,
+        context_before=context_before,
+    )
     turn_record, journal_entries = repository.save_turn_run(
         world_id=world_id,
         intent=intent,
