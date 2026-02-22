@@ -45,6 +45,7 @@ check_*.py
 !apps/game_api/tests/test_*.py
 !packages/shared_schemas/tests/test_*.py
 !packages/rules_engine/tests/test_*.py
+!apps/game_api/scripts/check_*.py
 
 # 2. Python Cache & Virtuelle Umgebungen
 __pycache__/

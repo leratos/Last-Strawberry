@@ -12,7 +12,7 @@ _MOVE_PATTERNS = [
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
-_INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere")
+_INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
 
 
 def analyze_player_input_preview(
@@ -38,7 +38,7 @@ def analyze_player_input_preview(
         )
         notes.append(f"Bewegungsziel erkannt: {destination}")
 
-    if any(verb in lowered for verb in _USE_VERBS):
+    if _contains_any_verb(lowered, _USE_VERBS):
         matched_item = _match_inventory_item(lowered, inventory)
         if matched_item is not None:
             actions.append(
@@ -60,19 +60,19 @@ def analyze_player_input_preview(
             )
             notes.append("Item-Verwendung erkannt, aber kein Inventar-Match gefunden.")
 
-    if any(verb in lowered for verb in _ATTACK_VERBS):
+    if _contains_any_verb(lowered, _ATTACK_VERBS):
         target = _extract_target_after_verb(text, _ATTACK_VERBS) or "gegner"
         actions.append(
             TurnIntentAction(action_type=ActionType.attack, target_ref=target, confidence=0.8)
         )
         notes.append(f"Angriff erkannt: {target}")
 
-    if any(verb in lowered for verb in _TALK_VERBS):
+    if _contains_any_verb(lowered, _TALK_VERBS):
         target = _extract_talk_target(text) or "npc"
         actions.append(TurnIntentAction(action_type=ActionType.talk, target_ref=target, confidence=0.75))
         notes.append(f"Gespraech erkannt: {target}")
 
-    if not actions and any(verb in lowered for verb in _INSPECT_VERBS):
+    if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
         actions.append(TurnIntentAction(action_type=ActionType.inspect, confidence=0.7))
         notes.append("Untersuchungsaktion erkannt.")
 
@@ -100,6 +100,13 @@ def _extract_destination(text: str) -> str | None:
         if destination:
             return destination
     return None
+
+
+def _contains_any_verb(text_lower: str, verbs: tuple[str, ...]) -> bool:
+    for verb in verbs:
+        if re.search(rf"\b{re.escape(verb)}\b", text_lower, re.I):
+            return True
+    return False
 
 
 def _match_inventory_item(text_lower: str, inventory: list[InventoryItemInstance]) -> InventoryItemInstance | None:
