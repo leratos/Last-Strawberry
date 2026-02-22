@@ -6,7 +6,7 @@ import unicodedata
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnIntentAction
 
-from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
+from apps.game_api.app.services.urban_occult_basis import resolve_unique_role_title_npc_reference
 
 _MOVE_PATTERNS = [
     re.compile(r"\b(?:gehe|geh|laufe|reise|betrete)\s+(?:zum|zur|nach|in den|in die|ins)\s+([\w _-]+)", re.I),
@@ -123,116 +123,150 @@ def analyze_player_input_preview(
     if has_melee_attack_verb or has_ranged_attack_verb:
         attack_mode = "ranged" if has_ranged_attack_verb else "melee"
         target = _extract_target_after_verb(text, _ATTACK_VERBS + _RANGED_ATTACK_VERBS) or "gegner"
-        target, target_meta = _resolve_npc_target_reference(target, known_npc_names or [], known_npc_refs or [], npc_ref_index)
-        target_id = str(target_meta.get("ref_id") or "").strip() or None
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.attack,
-                target_ref=target_id or target,
-                target_kind="npc_or_enemy",
-                parameters={
-                    "intent": "attack",
-                    "attack_mode": attack_mode,
-                    "target_name": target,
-                    "target_id": target_id,
-                    "target_role": str(target_meta.get("role") or "") or None,
-                    "target_location_name": str(target_meta.get("location_name") or "") or None,
-                    "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
-                    "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
-                    "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
-                },
-                confidence=0.8,
-            )
+        target, target_meta, clarify_message = _resolve_npc_target_reference(
+            target,
+            known_npc_names or [],
+            known_npc_refs or [],
+            npc_ref_index,
         )
-        notes.append(f"{'Fernkampf' if attack_mode == 'ranged' else 'Nahkampf'} erkannt: {target}")
+        if clarify_message:
+            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            notes.append(clarify_message)
+            target_meta = {}
+            target = ""
+        target_id = str(target_meta.get("ref_id") or "").strip() or None
+        if not clarify_message:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.attack,
+                    target_ref=target_id or target,
+                    target_kind="npc_or_enemy",
+                    parameters={
+                        "intent": "attack",
+                        "attack_mode": attack_mode,
+                        "target_name": target,
+                        "target_id": target_id,
+                        "target_role": str(target_meta.get("role") or "") or None,
+                        "target_location_name": str(target_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
+                        "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
+                    },
+                    confidence=0.8,
+                )
+            )
+            notes.append(f"{'Fernkampf' if attack_mode == 'ranged' else 'Nahkampf'} erkannt: {target}")
 
     if has_talk_verb:
         target = _extract_talk_target(text) or "npc"
-        target, target_meta = _resolve_npc_target_reference(target, known_npc_names or [], known_npc_refs or [], npc_ref_index)
-        target_id = str(target_meta.get("ref_id") or "").strip() or None
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.talk,
-                target_ref=target_id or target,
-                target_kind="npc",
-                parameters={
-                    "intent": "talk",
-                    "target_name": target,
-                    "target_id": target_id,
-                    "target_role": str(target_meta.get("role") or "") or None,
-                    "target_location_name": str(target_meta.get("location_name") or "") or None,
-                    "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
-                    "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
-                    "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
-                },
-                confidence=0.75,
-            )
+        target, target_meta, clarify_message = _resolve_npc_target_reference(
+            target,
+            known_npc_names or [],
+            known_npc_refs or [],
+            npc_ref_index,
         )
-        notes.append(f"Gespraech erkannt: {target}")
+        if clarify_message:
+            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            notes.append(clarify_message)
+            target_meta = {}
+            target = ""
+        target_id = str(target_meta.get("ref_id") or "").strip() or None
+        if not clarify_message:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.talk,
+                    target_ref=target_id or target,
+                    target_kind="npc",
+                    parameters={
+                        "intent": "talk",
+                        "target_name": target,
+                        "target_id": target_id,
+                        "target_role": str(target_meta.get("role") or "") or None,
+                        "target_location_name": str(target_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(target_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(target_meta.get("scene_zone_name") or "") or None,
+                        "target_distance_band": str(target_meta.get("distance_band_to_player") or "") or None,
+                    },
+                    confidence=0.75,
+                )
+            )
+            notes.append(f"Gespraech erkannt: {target}")
 
     approach_target = _extract_approach_target(text)
     if approach_target or _contains_any_verb(lowered, _APPROACH_VERBS):
-        canonical_approach_target, approach_meta = _resolve_npc_target_reference(
+        canonical_approach_target, approach_meta, clarify_message = _resolve_npc_target_reference(
             approach_target or "",
             known_npc_names or [],
             known_npc_refs or [],
             npc_ref_index,
         )
+        if clarify_message:
+            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            notes.append(clarify_message)
+            approach_meta = {}
+            canonical_approach_target = ""
         approach_id = str((approach_meta or {}).get("ref_id") or "").strip() or None
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.approach,
-                target_ref=approach_id or (canonical_approach_target or None),
-                target_kind="npc" if (approach_id or canonical_approach_target) else "environment",
-                parameters={
-                    "intent": "approach",
-                    "target_name": canonical_approach_target or None,
-                    "target_id": approach_id,
-                    "target_role": str((approach_meta or {}).get("role") or "") or None,
-                    "target_location_name": str((approach_meta or {}).get("location_name") or "") or None,
-                    "target_zone_id": str((approach_meta or {}).get("scene_zone_id") or "") or None,
-                    "target_zone_name": str((approach_meta or {}).get("scene_zone_name") or "") or None,
-                    "target_distance_band": str((approach_meta or {}).get("distance_band_to_player") or "") or None,
-                },
-                confidence=0.78 if approach_target else 0.55,
+        if not clarify_message:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.approach,
+                    target_ref=approach_id or (canonical_approach_target or None),
+                    target_kind="npc" if (approach_id or canonical_approach_target) else "environment",
+                    parameters={
+                        "intent": "approach",
+                        "target_name": canonical_approach_target or None,
+                        "target_id": approach_id,
+                        "target_role": str((approach_meta or {}).get("role") or "") or None,
+                        "target_location_name": str((approach_meta or {}).get("location_name") or "") or None,
+                        "target_zone_id": str((approach_meta or {}).get("scene_zone_id") or "") or None,
+                        "target_zone_name": str((approach_meta or {}).get("scene_zone_name") or "") or None,
+                        "target_distance_band": str((approach_meta or {}).get("distance_band_to_player") or "") or None,
+                    },
+                    confidence=0.78 if approach_target else 0.55,
+                )
             )
-        )
-        if canonical_approach_target:
-            notes.append(f"Annaehern erkannt: {canonical_approach_target}")
-        else:
-            notes.append("Annaehern erkannt.")
+            if canonical_approach_target:
+                notes.append(f"Annaehern erkannt: {canonical_approach_target}")
+            else:
+                notes.append("Annaehern erkannt.")
 
     retreat_target = _extract_retreat_target(text)
     if retreat_target or _contains_any_verb(lowered, _RETREAT_VERBS):
-        canonical_retreat_target, retreat_meta = _resolve_npc_target_reference(
+        canonical_retreat_target, retreat_meta, clarify_message = _resolve_npc_target_reference(
             retreat_target or "",
             known_npc_names or [],
             known_npc_refs or [],
             npc_ref_index,
         )
+        if clarify_message:
+            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            notes.append(clarify_message)
+            retreat_meta = {}
+            canonical_retreat_target = ""
         retreat_id = str((retreat_meta or {}).get("ref_id") or "").strip() or None
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.retreat,
-                target_ref=retreat_id or (canonical_retreat_target or None),
-                target_kind="npc" if (retreat_id or canonical_retreat_target) else "environment",
-                parameters={
-                    "intent": "retreat",
-                    "target_name": canonical_retreat_target or None,
-                    "target_id": retreat_id,
-                    "target_role": str((retreat_meta or {}).get("role") or "") or None,
-                    "target_location_name": str((retreat_meta or {}).get("location_name") or "") or None,
-                    "target_zone_id": str((retreat_meta or {}).get("scene_zone_id") or "") or None,
-                    "target_zone_name": str((retreat_meta or {}).get("scene_zone_name") or "") or None,
-                    "target_distance_band": str((retreat_meta or {}).get("distance_band_to_player") or "") or None,
-                },
-                confidence=0.78 if retreat_target else 0.55,
+        if not clarify_message:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.retreat,
+                    target_ref=retreat_id or (canonical_retreat_target or None),
+                    target_kind="npc" if (retreat_id or canonical_retreat_target) else "environment",
+                    parameters={
+                        "intent": "retreat",
+                        "target_name": canonical_retreat_target or None,
+                        "target_id": retreat_id,
+                        "target_role": str((retreat_meta or {}).get("role") or "") or None,
+                        "target_location_name": str((retreat_meta or {}).get("location_name") or "") or None,
+                        "target_zone_id": str((retreat_meta or {}).get("scene_zone_id") or "") or None,
+                        "target_zone_name": str((retreat_meta or {}).get("scene_zone_name") or "") or None,
+                        "target_distance_band": str((retreat_meta or {}).get("distance_band_to_player") or "") or None,
+                    },
+                    confidence=0.78 if retreat_target else 0.55,
+                )
             )
-        )
-        if canonical_retreat_target:
-            notes.append(f"Rueckzug/Abstand erkannt: {canonical_retreat_target}")
-        else:
-            notes.append("Rueckzug/Abstand erkannt.")
+            if canonical_retreat_target:
+                notes.append(f"Rueckzug/Abstand erkannt: {canonical_retreat_target}")
+            else:
+                notes.append("Rueckzug/Abstand erkannt.")
 
     if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
         actions.append(
@@ -388,24 +422,39 @@ def _resolve_npc_target_reference(
     known_npc_names: list[str],
     known_npc_refs: list[dict[str, str]],
     npc_ref_index: RefMetaIndex,
-) -> tuple[str, dict[str, str]]:
+) -> tuple[str, dict[str, str], str | None]:
     canonical_name = _canonicalize_name(candidate, known_npc_names)
     target_meta = _lookup_ref_entry(canonical_name, npc_ref_index) or {}
     if target_meta:
-        return canonical_name, target_meta
+        return canonical_name, target_meta, None
 
-    inferred_role = infer_canonical_role_from_text(candidate)
-    if not inferred_role:
-        return canonical_name, {}
+    role_resolution = resolve_unique_role_title_npc_reference(candidate, known_npc_refs)
+    if not role_resolution:
+        return canonical_name, {}, None
+    if str(role_resolution.get("status")) == "ambiguous":
+        role_name = str(role_resolution.get("role") or "npc")
+        candidates = [str(name) for name in (role_resolution.get("candidates") or []) if str(name).strip()]
+        if candidates:
+            return (
+                canonical_name,
+                {},
+                f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren: {', '.join(candidates[:4])}.",
+            )
+        return canonical_name, {}, f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren."
 
-    role_matches = [
-        entry
-        for entry in known_npc_refs
-        if str(entry.get("role") or "").strip().lower() == inferred_role.lower()
-    ]
-    if len(role_matches) != 1:
-        return canonical_name, {}
-
-    matched_entry = {str(k): str(v) for k, v in role_matches[0].items() if v is not None}
+    matched_entry = dict(role_resolution.get("entry") or {})
     matched_name = str(matched_entry.get("name") or canonical_name).strip() or canonical_name
-    return matched_name, matched_entry
+    return matched_name, matched_entry, None
+
+
+def _clarify_action_for_ambiguous_npc_target(message: str) -> TurnIntentAction:
+    return TurnIntentAction(
+        action_type=ActionType.clarify,
+        target_kind="npc",
+        parameters={
+            "intent": "clarify",
+            "reason": "ambiguous_npc_role_title",
+            "message": message,
+        },
+        confidence=0.35,
+    )

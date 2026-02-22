@@ -10,6 +10,7 @@ from urllib import request as urllib_request
 from apps.game_api.app.config import Settings
 from apps.game_api.app.services.intent_analysis_preview import analyze_player_input_preview
 from apps.game_api.app.services.narration_preview import build_narrative_from_resolution
+from apps.game_api.app.services.urban_occult_basis import resolve_unique_role_title_npc_reference
 from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.turns import NarrativeEnvelope, TurnIntent, TurnIntentAction, TurnResolution
 
@@ -523,6 +524,32 @@ class LlmRuntime:
             candidate_ref = (action.target_ref or "").strip()
             if not candidate_name and candidate_ref and not candidate_ref.startswith("npc-"):
                 candidate_name = candidate_ref
+            if candidate_name and not candidate_ref.startswith("npc-"):
+                role_resolution = resolve_unique_role_title_npc_reference(candidate_name, known_npc_refs)
+                if role_resolution and str(role_resolution.get("status")) == "ambiguous":
+                    role_name = str(role_resolution.get("role") or "npc")
+                    candidate_names = [
+                        str(name) for name in (role_resolution.get("candidates") or []) if str(name).strip()
+                    ]
+                    message = (
+                        f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren: "
+                        f"{', '.join(candidate_names[:4])}."
+                        if candidate_names
+                        else f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren."
+                    )
+                    return TurnIntentAction(
+                        action_type="CLARIFY",
+                        analysis_source=action.analysis_source or "openrouter_llm",
+                        target_kind="npc",
+                        parameters={
+                            "intent": "clarify",
+                            "reason": "ambiguous_npc_role_title",
+                            "message": message,
+                        },
+                        confidence=min(float(action.confidence or 0.4), 0.4),
+                    )
+                if role_resolution and str(role_resolution.get("status")) == "resolved":
+                    candidate_name = str((role_resolution.get("entry") or {}).get("name") or candidate_name).strip() or candidate_name
             resolved_id = candidate_ref if candidate_ref.startswith("npc-") else self._lookup_ref_id(candidate_name, npc_ref_index)
             if resolved_id:
                 updates["target_ref"] = resolved_id
