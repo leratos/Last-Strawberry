@@ -326,7 +326,7 @@ def _normalize_override_actions(actions: list[TurnIntentAction]) -> list[TurnInt
                 updates["target_ref"] = destination_id
             params.setdefault("destination_name", destination_name or None)
             params.setdefault("destination_id", destination_id or None)
-        if action.action_type.value == "RETREAT":
+        if action.action_type.value in {"APPROACH", "RETREAT"}:
             target_name = str(params.get("target_name") or "").strip()
             target_id = str(params.get("target_id") or action.target_ref or "").strip()
             if target_id:

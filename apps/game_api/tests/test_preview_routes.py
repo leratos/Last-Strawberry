@@ -684,6 +684,112 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         mira_far = next(entry for entry in ctx_far["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
         self.assertEqual(mira_far["distance_band_to_player"], "far")
 
+    def test_g17_two_approaches_after_far_restore_adjacent_distance(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g17-1",
+                "world_description": "Ein Marktplatz mit Mira, viel Raum zum Manövrieren und mehreren Fluchtwegen.",
+                "character_description": "Ein vorsichtiger Abenteurer, der Distanz taktisch steuert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        mira_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+
+        # Get adjacent first via talk.
+        talk_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": mira_ref["name"],
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_response.status_code, 200)
+        ctx_adjacent = talk_response.json()["context_after_turn"]
+        mira_current = next(entry for entry in ctx_adjacent["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_current["distance_band_to_player"], "adjacent")
+
+        # Retreat twice to far.
+        for expected in ("near", "far"):
+            retreat_response = self.client.post(
+                f"/v1/worlds/{world_id}/turns/run",
+                json={
+                    "player_input": f"UI: Abstand {expected}",
+                    "actions_override": [
+                        {
+                            "action_type": "RETREAT",
+                            "target_ref": mira_current["ref_id"],
+                            "target_kind": "npc",
+                            "parameters": {
+                                "intent": "retreat",
+                                "target_id": mira_current["ref_id"],
+                                "target_name": mira_current["name"],
+                                "target_location_name": mira_current.get("location_name"),
+                                "target_zone_id": mira_current.get("scene_zone_id"),
+                                "target_zone_name": mira_current.get("scene_zone_name"),
+                                "target_distance_band": mira_current.get("distance_band_to_player"),
+                            },
+                        }
+                    ],
+                },
+            )
+            self.assertEqual(retreat_response.status_code, 200)
+            ctx_next = retreat_response.json()["context_after_turn"]
+            mira_current = next(entry for entry in ctx_next["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+            self.assertEqual(mira_current["distance_band_to_player"], expected)
+
+        # Approach twice back to adjacent.
+        for expected in ("near", "adjacent"):
+            approach_response = self.client.post(
+                f"/v1/worlds/{world_id}/turns/run",
+                json={
+                    "player_input": f"UI: Annaehern {expected}",
+                    "actions_override": [
+                        {
+                            "action_type": "APPROACH",
+                            "target_ref": mira_current["ref_id"],
+                            "target_kind": "npc",
+                            "parameters": {
+                                "intent": "approach",
+                                "target_id": mira_current["ref_id"],
+                                "target_name": mira_current["name"],
+                                "target_location_name": mira_current.get("location_name"),
+                                "target_zone_id": mira_current.get("scene_zone_id"),
+                                "target_zone_name": mira_current.get("scene_zone_name"),
+                                "target_distance_band": mira_current.get("distance_band_to_player"),
+                            },
+                        }
+                    ],
+                },
+            )
+            self.assertEqual(approach_response.status_code, 200)
+            payload = approach_response.json()
+            codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+            self.assertIn("approach_success", codes)
+            ctx_next = payload["context_after_turn"]
+            mira_current = next(entry for entry in ctx_next["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+            self.assertEqual(mira_current["distance_band_to_player"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

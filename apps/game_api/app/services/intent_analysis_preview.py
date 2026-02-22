@@ -15,12 +15,18 @@ _RETREAT_PATTERNS = [
     re.compile(r"\bgehe\s+weg\s+von\s+([\w _-]+)", re.I),
     re.compile(r"\bweiche\s+([\w _-]+)\s+aus\b", re.I),
 ]
+_APPROACH_PATTERNS = [
+    re.compile(r"\bn(?:a|ä)here(?:\s+mich)?\s+(?:an\s+)?([\w _-]+)", re.I),
+    re.compile(r"\bgehe\s+auf\s+([\w _-]+)\s+zu\b", re.I),
+    re.compile(r"\bkomme\s+([\w _-]+)\s+n(?:a|ä)her\b", re.I),
+]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
 _INSPECT_VERBS = ("untersuche", "umschauen", "umsehen", "betrachte", "inspiziere", "schaue", "suche")
 _RETREAT_VERBS = ("entferne", "zurueck", "zurück", "rueckzug", "weg")
+_APPROACH_VERBS = ("naehere", "nähere", "annaehern", "annähern", "naeher", "näher")
 
 
 RefMetaIndex = dict[str, dict[str, str]]
@@ -159,6 +165,33 @@ def analyze_player_input_preview(
         )
         notes.append(f"Gespraech erkannt: {target}")
 
+    approach_target = _extract_approach_target(text)
+    if approach_target or _contains_any_verb(lowered, _APPROACH_VERBS):
+        canonical_approach_target = _canonicalize_name(approach_target or "", known_npc_names or [])
+        approach_meta = _lookup_ref_entry(canonical_approach_target, npc_ref_index) if canonical_approach_target else None
+        approach_id = str((approach_meta or {}).get("ref_id") or "").strip() or None
+        actions.append(
+            TurnIntentAction(
+                action_type=ActionType.approach,
+                target_ref=approach_id or (canonical_approach_target or None),
+                target_kind="npc" if (approach_id or canonical_approach_target) else "environment",
+                parameters={
+                    "intent": "approach",
+                    "target_name": canonical_approach_target or None,
+                    "target_id": approach_id,
+                    "target_location_name": str((approach_meta or {}).get("location_name") or "") or None,
+                    "target_zone_id": str((approach_meta or {}).get("scene_zone_id") or "") or None,
+                    "target_zone_name": str((approach_meta or {}).get("scene_zone_name") or "") or None,
+                    "target_distance_band": str((approach_meta or {}).get("distance_band_to_player") or "") or None,
+                },
+                confidence=0.78 if approach_target else 0.55,
+            )
+        )
+        if canonical_approach_target:
+            notes.append(f"Annaehern erkannt: {canonical_approach_target}")
+        else:
+            notes.append("Annaehern erkannt.")
+
     retreat_target = _extract_retreat_target(text)
     if retreat_target or _contains_any_verb(lowered, _RETREAT_VERBS):
         canonical_retreat_target = _canonicalize_name(retreat_target or "", known_npc_names or [])
@@ -231,6 +264,17 @@ def _extract_destination(text: str) -> str | None:
 
 def _extract_retreat_target(text: str) -> str | None:
     for pattern in _RETREAT_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        if target:
+            return target
+    return None
+
+
+def _extract_approach_target(text: str) -> str | None:
+    for pattern in _APPROACH_PATTERNS:
         match = pattern.search(text)
         if not match:
             continue

@@ -58,6 +58,8 @@ class RulesEngine:
     ) -> bool:
         if action.action_type == ActionType.move:
             return self._apply_move(action, state, delta, events)
+        if action.action_type == ActionType.approach:
+            return self._apply_approach(action, state, delta, events)
         if action.action_type == ActionType.retreat:
             return self._apply_retreat(action, state, delta, events)
         if action.action_type == ActionType.inspect:
@@ -120,6 +122,57 @@ class RulesEngine:
             events.append(TurnSystemEvent(code="inspect_item_missing", message=f"Item nicht gefunden: {target}", severity="warning"))
             return False
         events.append(TurnSystemEvent(code="inspect_item_success", message=f"{item.name} untersucht."))
+        return True
+
+    def _apply_approach(
+        self,
+        action: TurnIntentAction,
+        state: CharacterState,
+        delta: StateDelta,
+        events: list[TurnSystemEvent],
+    ) -> bool:
+        target_name = str(action.parameters.get("target_name") or "").strip()
+        target_display = target_name or (action.target_ref or "Ziel").strip()
+        target_distance_band = str(action.parameters.get("target_distance_band") or "").strip().lower()
+        target_zone_id = str(action.parameters.get("target_zone_id") or "").strip()
+        target_zone_name = str(action.parameters.get("target_zone_name") or "").strip()
+        target_location_name = str(action.parameters.get("target_location_name") or "").strip()
+
+        if target_distance_band == "adjacent":
+            events.append(
+                TurnSystemEvent(
+                    code="approach_not_needed",
+                    message=f"Du bist bereits direkt bei {target_display}.",
+                )
+            )
+            return True
+
+        if target_location_name and target_location_name != state.location_name:
+            state.location_name = target_location_name
+            delta.location_changed_to = target_location_name
+            events.append(
+                TurnSystemEvent(
+                    code="auto_move_location_for_approach",
+                    message=f"Du bewegst dich zu {target_location_name}, um {target_display} naeherzukommen.",
+                )
+            )
+
+        if target_distance_band == "far":
+            state.scene_zone_id = "zone-distance-near"
+            state.scene_zone_name = f"Naeher an {target_display}"
+        elif target_distance_band in {"near", "unreachable"} and target_zone_id:
+            state.scene_zone_id = target_zone_id
+            state.scene_zone_name = target_zone_name or f"Bei {target_display}"
+        elif target_distance_band in {"near", "unreachable"}:
+            state.scene_zone_id = "zone-distance-near"
+            state.scene_zone_name = f"Naeher an {target_display}"
+        else:
+            state.scene_zone_id = "zone-distance-near"
+            state.scene_zone_name = f"Naeher an {target_display}"
+
+        delta.scene_zone_changed_to_id = state.scene_zone_id
+        delta.scene_zone_changed_to_name = state.scene_zone_name
+        events.append(TurnSystemEvent(code="approach_success", message=f"Du naeherst dich {target_display} an."))
         return True
 
     def _apply_retreat(
