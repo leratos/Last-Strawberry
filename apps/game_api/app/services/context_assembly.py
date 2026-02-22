@@ -238,6 +238,10 @@ def _distance_band_for_entity(
     if target_zone and player_zone:
         if target_zone == player_zone:
             return "adjacent"
+        if player_zone.startswith("zone-distance-far"):
+            return "far"
+        if player_zone.startswith("zone-distance-near"):
+            return "near"
         return "near"
 
     if target_location and player_location and target_location == player_location:

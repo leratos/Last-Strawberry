@@ -268,6 +268,44 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("retreat_success", codes)
 
+    def test_retreat_from_near_target_advances_distance_to_far(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-distance-near",
+            scene_zone_name="Abstand zu Mira",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich gehe weiter auf Abstand.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.retreat,
+                    target_ref="npc-mira",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "near",
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(result.resulting_character_state.scene_zone_id, "zone-distance-far")
+        self.assertEqual(result.state_delta.scene_zone_changed_to_id, "zone-distance-far")
+        self.assertIn("Weit weg", result.resulting_character_state.scene_zone_name)
+        codes = [event.code for event in result.system_events]
+        self.assertIn("retreat_success", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

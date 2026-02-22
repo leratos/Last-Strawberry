@@ -46,3 +46,7 @@
 - G15: Freitext erkennt jetzt `entferne mich von ...` / `gehe weg von ...` als `RETREAT` statt `clarify_required`.
 - G15: Rules Engine setzt bei `RETREAT` die Spieler-Zone auf Rueckzugszone und macht Distanzwechsel `adjacent -> near` im Zonenmodell sichtbar.
 - G15: Quickcheck-Script erweitert um RETREAT-Turn und prueft `retreat_success` sowie Distanz `near` nach Rueckzug.
+- G16: Gestuftes Retreat umgesetzt: `adjacent -> near -> far`, bei `far` bleibt `retreat_not_needed`.
+- G16: Context-Distanzregeln verstehen jetzt explizite Spieler-Distanzzonen (`zone-distance-near`, `zone-distance-far`) und geben fuer NPCs in gleicher Location entsprechend `near`/`far` zurueck.
+- G16: API-Route-Test erweitert auf zwei aufeinanderfolgende RETREATs (zweiter Rueckzug fuehrt zu `far`).
+- G16: Quickcheck-Script prueft jetzt nach zweitem RETREAT explizit `distance_after_retreat_second == far`.
