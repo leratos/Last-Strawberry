@@ -522,6 +522,108 @@ class TestRulesEngine(unittest.TestCase):
         result = engine.resolve(intent=intent, character_state=state, inventory=[])
         self.assertIn("npc_reacts_cautious_to_retreat", [event.code for event in result.system_events])
 
+    def test_approach_friendly_merchant_message_mentions_haendler(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-distance-near",
+            scene_zone_name="Naeher an Harl",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich gehe auf Harl zu.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.approach,
+                    target_ref="npc-harl",
+                    parameters={
+                        "target_name": "Harl",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "near",
+                        "target_standing": 2,
+                        "target_role": "haendler",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_friendly_to_approach")
+        self.assertIn("Haendler", reaction_event.message)
+
+    def test_approach_cautious_mage_message_mentions_arcane(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Archiv",
+            scene_zone_id="zone-distance-far",
+            scene_zone_name="Weit weg von Elra",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich naeher mich Elra.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.approach,
+                    target_ref="npc-elra",
+                    parameters={
+                        "target_name": "Elra",
+                        "target_zone_id": "zone-ritual",
+                        "target_zone_name": "Ritualkreis",
+                        "target_distance_band": "far",
+                        "target_standing": 1,
+                        "target_role": "magier",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_cautious_to_approach")
+        self.assertIn("arkaner", reaction_event.message)
+
+    def test_retreat_aggressive_summoner_message_mentions_beschwoerung(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Katakomben",
+            scene_zone_id="zone-ritual",
+            scene_zone_name="Ritualkreis",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich halte Abstand zu Vorun.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.retreat,
+                    target_ref="npc-vorun",
+                    parameters={
+                        "target_name": "Vorun",
+                        "target_zone_id": "zone-ritual",
+                        "target_zone_name": "Ritualkreis",
+                        "target_distance_band": "adjacent",
+                        "target_standing": -5,
+                        "target_role": "beschwoerer",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_aggressive_to_retreat")
+        self.assertIn("Beschwoerungsenergie", reaction_event.message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -66,3 +66,6 @@
 - G21: Rollenfokus erweitert/abgesichert fuer Heiler/Krieger/Tank mit rollenspezifischen Reaktionsmeldungen bei Distanzaktionen.
 - G21: `target_catalog.npcs` traegt jetzt optional `role`; Struktur-Composer uebernimmt Rolleninfos fuer Distanz-/Talk-/Attack-Actions.
 - G21: NPC-Panel zeigt Badges fuer Distanz und abgeleiteten Reaktionsstil (`freundlich/vorsichtig/aggressiv`).
+- G22: Rollenspezifische Reaktionsmeldungen erweitert fuer Haendler, Magier und Beschwoerer (deutsch + englische Alias-Rollen).
+- G22: Preview-Narration hebt Reaktions-Events explizit mit `Reaktion:` hervor statt sie nur implizit in den ersten Eventtexten zu verstecken.
+- G22: Narration-Preview-Test hinzugefuegt (`apps/game_api/tests/test_narration_preview.py`).
