@@ -132,6 +132,39 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             "Taverne",
         )
 
+    def test_g3_talk_turn_creates_npc_memory_bundle(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g3-1",
+                "world_description": "Eine regennasse Handelsstadt mit engen Gassen, Wachen und Schuldeneintreibern.",
+                "character_description": "Eine wortgewandte Kundschafterin, die Informationen gegen Gefallen tauscht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich spreche mit Zorak ueber die letzten Vorfaelle."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        self.assertGreaterEqual(len(bundles), 1)
+
+        zorak = next((bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak ueber die letzten Vorfaelle"), None)
+        if zorak is None:
+            zorak = next((bundle for bundle in bundles if bundle["profile"]["name"] == "Zorak"), None)
+
+        self.assertIsNotNone(zorak)
+        self.assertIsNotNone(zorak["relationship"])
+        self.assertEqual(zorak["relationship"]["standing"], 1)
+        self.assertGreaterEqual(len(zorak["recent_memories"]), 1)
+        self.assertIn("talk", zorak["recent_memories"][0]["tags"])
+
 
 if __name__ == "__main__":
     unittest.main()
