@@ -273,6 +273,23 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(approach_action.target_ref, "npc-mira")
         self.assertEqual(approach_action.parameters.get("target_name"), "Mira")
 
+    def test_maps_role_title_reference_to_unique_known_npc(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit dem Beschwoerer.",
+            inventory=[],
+            known_npc_names=["Kael", "Mira"],
+            known_npc_refs=[
+                {"ref_id": "npc-circle-binder", "name": "Kael", "role": "beschwoerer"},
+                {"ref_id": "npc-market-guide", "name": "Mira", "role": "heiler"},
+            ],
+        )
+        talk_action = next(action for action in intent.actions if action.action_type.value == "TALK")
+        self.assertEqual(talk_action.target_ref, "npc-circle-binder")
+        self.assertEqual(talk_action.parameters.get("target_name"), "Kael")
+        self.assertEqual(talk_action.parameters.get("target_role"), "beschwoerer")
+
 
 if __name__ == "__main__":
     unittest.main()
