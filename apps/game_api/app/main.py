@@ -171,6 +171,7 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         {
             "ref_id": entry.ref_id,
             "name": entry.name,
+            "role": entry.role,
             "location_name": entry.location_name,
             "scene_zone_id": entry.scene_zone_id,
             "scene_zone_name": entry.scene_zone_name,
@@ -235,6 +236,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         {
             "ref_id": entry.ref_id,
             "name": entry.name,
+            "role": entry.role,
             "location_name": entry.location_name,
             "scene_zone_id": entry.scene_zone_id,
             "scene_zone_name": entry.scene_zone_name,

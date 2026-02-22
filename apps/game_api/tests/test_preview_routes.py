@@ -193,7 +193,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertGreaterEqual(len(zorak["recent_memories"]), 1)
         self.assertIn("talk", zorak["recent_memories"][0]["tags"])
 
-    def test_g23_talk_turn_infers_role_for_free_text_beschwoerer_npc(self):
+    def test_g23_talk_turn_resolves_role_title_to_existing_beschwoerer_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
             json={
@@ -214,17 +214,14 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
         self.assertEqual(memory_response.status_code, 200)
         bundles = memory_response.json()
-        beschwoerer_bundle = next(
-            (
-                bundle
-                for bundle in bundles
-                if "beschwoer" in bundle["profile"]["name"].lower()
-                or bundle["profile"]["role"] == "beschwoerer"
-            ),
-            None,
-        )
+        beschwoerer_bundle = next((bundle for bundle in bundles if bundle["profile"]["npc_id"] == "npc-circle-binder"), None)
         self.assertIsNotNone(beschwoerer_bundle)
+        self.assertEqual(beschwoerer_bundle["profile"]["name"], "Kael")
         self.assertEqual(beschwoerer_bundle["profile"]["role"], "beschwoerer")
+        auto_beschwoerer = [
+            bundle for bundle in bundles if bundle["profile"]["npc_id"].startswith("npc-auto-") and "beschwoer" in bundle["profile"]["name"].lower()
+        ]
+        self.assertEqual(auto_beschwoerer, [])
 
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(
