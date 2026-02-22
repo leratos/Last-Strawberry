@@ -74,3 +74,25 @@ class NarrativeEnvelope(LSBaseModel):
     narrative: str = Field(min_length=1, max_length=8000)
     actionable_options: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class TurnRunRequest(LSBaseModel):
+    player_input: str = Field(min_length=1, max_length=2000)
+
+
+class PersistedTurnRecord(LSBaseModel):
+    turn_id: str = Field(min_length=1, max_length=120)
+    world_id: str = Field(min_length=1, max_length=120)
+    world_character_id: str = Field(min_length=1, max_length=120)
+    raw_player_input: str = Field(min_length=1, max_length=2000)
+    intent: TurnIntent
+    resolution: TurnResolution
+    narrative: NarrativeEnvelope
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class TurnRunResponse(LSBaseModel):
+    turn: PersistedTurnRecord
+    resulting_character_state: CharacterState
+    resulting_inventory: list[InventoryItemInstance] = Field(default_factory=list)
+    journal_entry_ids: list[str] = Field(default_factory=list)

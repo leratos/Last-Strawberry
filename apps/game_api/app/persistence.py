@@ -7,9 +7,11 @@ from datetime import datetime, UTC
 from pathlib import Path
 from uuid import uuid4
 
+from apps.game_api.app.migration_runner import SqliteMigrationRunner
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCProfile
+from ls_shared_schemas.turns import NarrativeEnvelope, PersistedTurnRecord, TurnIntent, TurnResolution
 from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
@@ -18,10 +20,11 @@ def _utc_iso_now() -> str:
 
 
 class WorldRepository:
-    """SQLite persistence for Greenfield G1 world bootstrap sessions."""
+    """SQLite persistence for Greenfield bootstrap + turn pipeline."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, migrations_dir: str | None = None):
         self.db_path = Path(db_path)
+        self.migrations_dir = Path(migrations_dir) if migrations_dir else (Path(__file__).resolve().parent / "migrations")
 
     @contextmanager
     def _connect(self):
@@ -34,48 +37,8 @@ class WorldRepository:
             connection.close()
 
     def initialize(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS worlds (
-                    world_id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    tone TEXT NOT NULL,
-                    difficulty TEXT NOT NULL,
-                    world_seed_json TEXT NOT NULL,
-                    initial_narrative TEXT NOT NULL,
-                    player_orientation_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS world_characters (
-                    world_character_id TEXT PRIMARY KEY,
-                    world_id TEXT NOT NULL,
-                    character_state_json TEXT NOT NULL,
-                    inventory_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (world_id) REFERENCES worlds(world_id)
-                );
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS journal_entries (
-                    journal_entry_id TEXT PRIMARY KEY,
-                    world_id TEXT NOT NULL,
-                    entry_type TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (world_id) REFERENCES worlds(world_id)
-                );
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_world_characters_world_id ON world_characters(world_id);")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_entries_world_id ON journal_entries(world_id, created_at);")
-            conn.commit()
+        runner = SqliteMigrationRunner(db_path=self.db_path, migrations_dir=self.migrations_dir)
+        runner.apply_all()
 
     def create_world_session(
         self,
@@ -148,20 +111,7 @@ class WorldRepository:
                         created_at,
                     ),
                 )
-                for entry in journal_entries:
-                    conn.execute(
-                        """
-                        INSERT INTO journal_entries (journal_entry_id, world_id, entry_type, text, created_at)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            entry.journal_entry_id,
-                            world_id,
-                            entry.entry_type,
-                            entry.text,
-                            entry.created_at.isoformat(),
-                        ),
-                    )
+                self._insert_journal_entries(conn, journal_entries)
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -187,10 +137,7 @@ class WorldRepository:
             if world_row is None:
                 return None
 
-            character_row = conn.execute(
-                "SELECT * FROM world_characters WHERE world_id = ? ORDER BY created_at ASC LIMIT 1",
-                (world_id,),
-            ).fetchone()
+            character_row = self._get_primary_character_row(conn, world_id)
             if character_row is None:
                 return None
 
@@ -199,6 +146,148 @@ class WorldRepository:
                 (world_id,),
             ).fetchall()
 
+        return self._build_world_session_from_rows(world_row, character_row, journal_rows)
+
+    def save_turn_run(
+        self,
+        *,
+        world_id: str,
+        intent: TurnIntent,
+        resolution: TurnResolution,
+        narrative: NarrativeEnvelope,
+    ) -> tuple[PersistedTurnRecord, list[JournalEntryRecord]]:
+        created_at = _utc_iso_now()
+        turn_id = f"turn-{uuid4().hex[:12]}"
+
+        journal_entries = [
+            JournalEntryRecord(
+                journal_entry_id=f"journal-{uuid4().hex[:12]}",
+                world_id=world_id,
+                entry_type="player_input",
+                text=intent.raw_player_input,
+            ),
+            JournalEntryRecord(
+                journal_entry_id=f"journal-{uuid4().hex[:12]}",
+                world_id=world_id,
+                entry_type="narrative",
+                text=narrative.narrative,
+            ),
+        ]
+
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            try:
+                world_row = conn.execute("SELECT * FROM worlds WHERE world_id = ?", (world_id,)).fetchone()
+                if world_row is None:
+                    raise KeyError("world_not_found")
+
+                character_row = self._get_primary_character_row(conn, world_id)
+                if character_row is None:
+                    raise KeyError("world_character_not_found")
+
+                conn.execute(
+                    """
+                    INSERT INTO turns (
+                        turn_id, world_id, world_character_id, raw_player_input,
+                        intent_json, resolution_json, narrative_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        turn_id,
+                        world_id,
+                        resolution.world_character_id,
+                        intent.raw_player_input,
+                        intent.model_dump_json(),
+                        resolution.model_dump_json(),
+                        narrative.model_dump_json(),
+                        created_at,
+                    ),
+                )
+
+                conn.execute(
+                    """
+                    UPDATE world_characters
+                    SET character_state_json = ?, inventory_json = ?, created_at = ?
+                    WHERE world_character_id = ?
+                    """,
+                    (
+                        resolution.resulting_character_state.model_dump_json(),
+                        json.dumps(
+                            [item.model_dump(mode="json") for item in resolution.resulting_inventory],
+                            ensure_ascii=True,
+                        ),
+                        created_at,
+                        resolution.world_character_id,
+                    ),
+                )
+
+                self._insert_journal_entries(conn, journal_entries)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        turn_record = PersistedTurnRecord(
+            turn_id=turn_id,
+            world_id=world_id,
+            world_character_id=resolution.world_character_id,
+            raw_player_input=intent.raw_player_input,
+            intent=intent,
+            resolution=resolution,
+            narrative=narrative,
+            created_at=datetime.fromisoformat(created_at),
+        )
+        return turn_record, journal_entries
+
+    def list_turns(self, world_id: str, limit: int = 50) -> list[PersistedTurnRecord]:
+        safe_limit = max(1, min(limit, 200))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM turns
+                WHERE world_id = ?
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (world_id, safe_limit),
+            ).fetchall()
+        return [self._turn_from_row(row) for row in rows]
+
+    def get_world_context(self, world_id: str) -> tuple[WorldSessionResponse | None, CharacterState | None, list[InventoryItemInstance]]:
+        session = self.get_world_session(world_id)
+        if session is None:
+            return None, None, []
+        return session, session.character_state, list(session.inventory)
+
+    def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
+        for entry in entries:
+            conn.execute(
+                """
+                INSERT INTO journal_entries (journal_entry_id, world_id, entry_type, text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.journal_entry_id,
+                    entry.world_id,
+                    entry.entry_type,
+                    entry.text,
+                    entry.created_at.isoformat(),
+                ),
+            )
+
+    @staticmethod
+    def _get_primary_character_row(conn: sqlite3.Connection, world_id: str) -> sqlite3.Row | None:
+        return conn.execute(
+            "SELECT * FROM world_characters WHERE world_id = ? ORDER BY created_at ASC LIMIT 1",
+            (world_id,),
+        ).fetchone()
+
+    def _build_world_session_from_rows(
+        self,
+        world_row: sqlite3.Row,
+        character_row: sqlite3.Row,
+        journal_rows: list[sqlite3.Row],
+    ) -> WorldSessionResponse:
         world_seed = self._load_world_seed_json(str(world_row["world_seed_json"]))
         character_state = CharacterState.model_validate_json(str(character_row["character_state_json"]))
         inventory = self._load_inventory_json(str(character_row["inventory_json"]))
@@ -251,5 +340,18 @@ class WorldRepository:
             world_id=str(row["world_id"]),
             entry_type=str(row["entry_type"]),
             text=str(row["text"]),
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    @staticmethod
+    def _turn_from_row(row: sqlite3.Row) -> PersistedTurnRecord:
+        return PersistedTurnRecord(
+            turn_id=str(row["turn_id"]),
+            world_id=str(row["world_id"]),
+            world_character_id=str(row["world_character_id"]),
+            raw_player_input=str(row["raw_player_input"]),
+            intent=TurnIntent.model_validate_json(str(row["intent_json"])),
+            resolution=TurnResolution.model_validate_json(str(row["resolution_json"])),
+            narrative=NarrativeEnvelope.model_validate_json(str(row["narrative_json"])),
             created_at=datetime.fromisoformat(str(row["created_at"])),
         )

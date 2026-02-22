@@ -4,10 +4,13 @@ from .npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelation
 from .turns import (
     ActionType,
     NarrativeEnvelope,
+    PersistedTurnRecord,
     StateDelta,
     TurnIntent,
     TurnIntentAction,
     TurnResolution,
+    TurnRunRequest,
+    TurnRunResponse,
     TurnSystemEvent,
 )
 from .world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSeed, WorldSessionResponse
@@ -27,10 +30,13 @@ __all__ = [
     "NPCMemoryEntry",
     "NPCProfile",
     "NPCRelationship",
+    "PersistedTurnRecord",
     "StateDelta",
     "TurnIntent",
     "TurnIntentAction",
     "TurnResolution",
+    "TurnRunRequest",
+    "TurnRunResponse",
     "TurnSystemEvent",
     "WorldBootstrapRequest",
     "WorldBootstrapResult",
