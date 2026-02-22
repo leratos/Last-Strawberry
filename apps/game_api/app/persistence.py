@@ -411,31 +411,58 @@ class WorldRepository:
         resolution: TurnResolution,
         timestamp: str,
     ) -> None:
-        standing_changes: dict[str, int] = {}
+        standing_changes_by_id: dict[str, int] = {}
+        standing_changes_by_name: dict[str, int] = {}
         for change in resolution.state_delta.relationship_changes:
+            npc_id = str(change.get("npc_id") or "").strip()
             npc_name = str(change.get("npc") or "").strip()
-            if not npc_name:
+            if not npc_name and not npc_id:
                 continue
             standing_delta = int(change.get("standing_delta") or 0)
-            standing_changes[npc_name] = standing_changes.get(npc_name, 0) + standing_delta
+            if npc_id:
+                standing_changes_by_id[npc_id] = standing_changes_by_id.get(npc_id, 0) + standing_delta
+            if npc_name:
+                standing_changes_by_name[npc_name] = standing_changes_by_name.get(npc_name, 0) + standing_delta
 
-        interaction_targets: dict[str, str] = {}
+        interaction_targets: dict[str, dict[str, str]] = {}
         for action in resolution.applied_actions:
             if action.action_type not in {ActionType.talk, ActionType.attack}:
                 continue
-            target_name = (action.target_ref or "").strip()
-            if not target_name:
+            target_name = str(action.parameters.get("target_name") or "").strip()
+            target_id = str(action.parameters.get("target_id") or "").strip()
+            fallback_ref = (action.target_ref or "").strip()
+            if not target_name and fallback_ref and not fallback_ref.startswith("npc-"):
+                target_name = fallback_ref
+            if not target_id and fallback_ref.startswith("npc-"):
+                target_id = fallback_ref
+            if not target_name and not target_id:
                 continue
-            interaction_targets[target_name] = action.action_type.value.lower()
+            interaction_targets[target_id or target_name.lower()] = {
+                "target_name": target_name,
+                "target_id": target_id,
+                "interaction_kind": action.action_type.value.lower(),
+            }
 
-        for npc_name, interaction_kind in interaction_targets.items():
+        for target_meta in interaction_targets.values():
+            interaction_kind = target_meta["interaction_kind"]
+            npc_name = target_meta["target_name"]
+            preferred_npc_id = target_meta["target_id"] or None
+            if not npc_name and preferred_npc_id:
+                npc_name = self._get_npc_name_by_id(
+                    conn=conn,
+                    world_id=world_id,
+                    npc_id=preferred_npc_id,
+                ) or preferred_npc_id
             npc_id = self._find_or_create_npc_profile(
                 conn=conn,
                 world_id=world_id,
                 npc_name=npc_name,
                 timestamp=timestamp,
+                preferred_npc_id=preferred_npc_id,
             )
-            standing_delta = standing_changes.get(npc_name, 0)
+            standing_delta = standing_changes_by_id.get(npc_id, 0)
+            if standing_delta == 0 and npc_name:
+                standing_delta = standing_changes_by_name.get(npc_name, 0)
             if standing_delta != 0:
                 self._upsert_npc_relationship(
                     conn=conn,
@@ -463,6 +490,25 @@ class WorldRepository:
                 world_character_id=world_character_id,
             )
 
+    def _get_npc_name_by_id(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        npc_id: str,
+    ) -> str | None:
+        row = conn.execute(
+            """
+            SELECT name FROM npc_profiles
+            WHERE world_id = ? AND npc_id = ?
+            LIMIT 1
+            """,
+            (world_id, npc_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["name"])
+
     def _find_or_create_npc_profile(
         self,
         *,
@@ -470,7 +516,19 @@ class WorldRepository:
         world_id: str,
         npc_name: str,
         timestamp: str,
+        preferred_npc_id: str | None = None,
     ) -> str:
+        if preferred_npc_id:
+            preferred_row = conn.execute(
+                """
+                SELECT npc_id FROM npc_profiles
+                WHERE world_id = ? AND npc_id = ?
+                LIMIT 1
+                """,
+                (world_id, preferred_npc_id),
+            ).fetchone()
+            if preferred_row is not None:
+                return str(preferred_row["npc_id"])
         row = conn.execute(
             """
             SELECT npc_id FROM npc_profiles
@@ -482,7 +540,7 @@ class WorldRepository:
         if row is not None:
             return str(row["npc_id"])
 
-        npc_id = self._stable_npc_id_from_name(npc_name)
+        npc_id = preferred_npc_id or self._stable_npc_id_from_name(npc_name)
         profile = NPCProfile(npc_id=npc_id, name=npc_name, role="unknown")
         self._upsert_world_npc_profiles(
             conn=conn,

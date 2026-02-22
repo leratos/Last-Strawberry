@@ -16,3 +16,7 @@
 - G8: OpenRouter-Requests setzen provider.require_parameters=true; verhindert Provider-Routing ohne JSON-Parameter-Support.
 - G8: Default-Modellpaar angepasst (Intent=Qwen 80B, Narration=Llama 70B) und per ENV steuerbar.
 - G8: Tests erweitert fuer fenced JSON, Repair-Retry und Narration-Fallback bei invalidem OpenRouter-Output.
+- G9: GameContext liefert jetzt target_catalog (NPC/Item/Location-Referenzen mit stabilen IDs) fuer UI und LLM-Analyse.
+- G9: Preview-Intent-Analyzer mapped bekannte NPC/Locations auf IDs (target_ref / destination_id) und behaelt Anzeigenamen in parameters.
+- G9: Rules + Persistence verarbeiten NPC-IDs fuer Beziehung/NPC-Memory updates, ohne bestehende Namenspfade zu brechen.
+- G9: Web-UI zeigt Referenz-IDs fuer Inventar/NPCs und Referenz-Zaehlung/-Liste im Context an.

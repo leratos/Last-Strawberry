@@ -166,6 +166,18 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         memory_per_npc=3,
     )
     session = context.world
+    npc_refs = [
+        {"ref_id": entry.ref_id, "name": entry.name}
+        for entry in context.target_catalog.npcs
+    ]
+    location_refs = [
+        {"ref_id": entry.ref_id, "name": entry.name}
+        for entry in context.target_catalog.locations
+    ]
+    item_refs = [
+        {"ref_id": entry.ref_id, "name": entry.name}
+        for entry in context.target_catalog.items
+    ]
     return llm_runtime.analyze_intent(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
@@ -173,6 +185,9 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         inventory=session.inventory,
         known_npc_names=[entry.bundle.profile.name for entry in context.npc_memory],
         known_locations=[session.character_state.location_name, session.world_seed.start_location_name],
+        known_npc_refs=npc_refs,
+        known_location_refs=location_refs,
+        known_item_refs=item_refs,
         context=context,
     )
 
@@ -201,6 +216,9 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
 
     known_npc_names = [entry.bundle.profile.name for entry in context_before.npc_memory]
     known_locations = [session.character_state.location_name, session.world_seed.start_location_name]
+    known_npc_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.npcs]
+    known_location_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.locations]
+    known_item_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.items]
 
     intent = llm_runtime.analyze_intent(
         world_id=world_id,
@@ -209,6 +227,9 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         inventory=session.inventory,
         known_npc_names=known_npc_names,
         known_locations=known_locations,
+        known_npc_refs=known_npc_refs,
+        known_location_refs=known_location_refs,
+        known_item_refs=known_item_refs,
         context=context_before,
     )
     resolution = engine.resolve(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ls_shared_schemas.game_context import GameContextResponse, RetrievedNpcMemoryBundle
+from ls_shared_schemas.game_context import GameContextResponse, GameTargetCatalog, GameTargetReference, RetrievedNpcMemoryBundle
 from ls_shared_schemas.npc_memory import NPCMemoryBundle
 from ls_shared_schemas.turns import PersistedTurnRecord
 from ls_shared_schemas.world import JournalEntryRecord, WorldSessionResponse
@@ -30,12 +30,14 @@ def assemble_game_context(
 
     recent_journal = world.journal[-safe_journal_limit:]
     recent_turns = turns[-safe_turn_limit:]
+    target_catalog = _build_target_catalog(world=world, turns=recent_turns, npc_memory=npc_memory)
 
     return GameContextResponse(
         world=world,
         recent_turns=recent_turns,
         recent_journal=recent_journal,
         npc_memory=retrieved_memory,
+        target_catalog=target_catalog,
         retrieval_player_input=retrieval_player_input,
         retrieval_notes=retrieval_notes,
     )
@@ -103,3 +105,85 @@ def _tokenize(text: str) -> set[str]:
         for token in re.split(r"[^a-zA-Z0-9äöüÄÖÜß]+", text.lower())
         if len(token) >= 3
     }
+
+
+def _build_target_catalog(
+    *,
+    world: WorldSessionResponse,
+    turns: list[PersistedTurnRecord],
+    npc_memory: list[NPCMemoryBundle],
+) -> GameTargetCatalog:
+    npc_refs: dict[str, GameTargetReference] = {}
+    item_refs: dict[str, GameTargetReference] = {}
+    location_refs: dict[str, GameTargetReference] = {}
+
+    for npc in world.world_seed.starter_npcs:
+        npc_refs[npc.npc_id] = GameTargetReference(
+            ref_id=npc.npc_id,
+            kind="npc",
+            name=npc.name,
+            aliases=[],
+            source="world_seed",
+        )
+    for bundle in npc_memory:
+        profile = bundle.profile
+        npc_refs[profile.npc_id] = GameTargetReference(
+            ref_id=profile.npc_id,
+            kind="npc",
+            name=profile.name,
+            aliases=[],
+            source="npc_memory",
+        )
+
+    for item in world.inventory:
+        item_refs[item.inventory_item_id] = GameTargetReference(
+            ref_id=item.inventory_item_id,
+            kind="item",
+            name=item.name,
+            aliases=[item.item_def_id] if item.item_def_id and item.item_def_id != item.inventory_item_id else [],
+            source="inventory",
+        )
+
+    current_location = world.character_state.location_name.strip()
+    if current_location:
+        location_refs[_location_ref_id_from_name(current_location)] = GameTargetReference(
+            ref_id=_location_ref_id_from_name(current_location),
+            kind="location",
+            name=current_location,
+            aliases=[],
+            source="character_state",
+        )
+    start_location = world.world_seed.start_location_name.strip()
+    if start_location:
+        location_refs[_location_ref_id_from_name(start_location)] = GameTargetReference(
+            ref_id=_location_ref_id_from_name(start_location),
+            kind="location",
+            name=start_location,
+            aliases=[],
+            source="world_seed",
+        )
+
+    for turn in turns:
+        for action in turn.intent.actions:
+            if action.action_type.value == "MOVE":
+                move_name = str(action.destination or action.parameters.get("destination_name") or "").strip()
+                if move_name:
+                    ref_id = str(action.parameters.get("destination_id") or _location_ref_id_from_name(move_name))
+                    location_refs[ref_id] = GameTargetReference(
+                        ref_id=ref_id,
+                        kind="location",
+                        name=move_name,
+                        aliases=[],
+                        source="turn_intent",
+                    )
+
+    return GameTargetCatalog(
+        npcs=sorted(npc_refs.values(), key=lambda ref: ref.name.lower()),
+        items=sorted(item_refs.values(), key=lambda ref: ref.name.lower()),
+        locations=sorted(location_refs.values(), key=lambda ref: ref.name.lower()),
+    )
+
+
+def _location_ref_id_from_name(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return f"loc-{(slug or 'unknown')[:48]}"

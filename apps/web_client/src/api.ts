@@ -76,6 +76,11 @@ export type GameContextResponse = {
       }>;
     };
   }>;
+  target_catalog: {
+    npcs: Array<{ ref_id: string; kind: string; name: string; source: string }>;
+    items: Array<{ ref_id: string; kind: string; name: string; source: string }>;
+    locations: Array<{ ref_id: string; kind: string; name: string; source: string }>;
+  };
   retrieval_player_input: string | null;
   retrieval_notes: string[];
 };

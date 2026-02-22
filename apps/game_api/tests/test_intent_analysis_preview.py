@@ -34,6 +34,39 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertIn("USE_ITEM", action_types)
         self.assertIn("Bewegungsziel erkannt", " ".join(intent.analysis_notes))
 
+    def test_prefers_ids_for_known_targets(self):
+        inventory = [
+            InventoryItemInstance(
+                inventory_item_id="inv-abc123",
+                item_def_id="starter_healing_draught",
+                name="Starter-Heiltrank",
+                use_modes=[ItemUseMode.inspect, ItemUseMode.consume, ItemUseMode.use],
+                quantity=1,
+            )
+        ]
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich gehe zur Taverne, spreche mit Zorak und benutze den Starter-Heiltrank.",
+            inventory=inventory,
+            known_npc_names=["Zorak"],
+            known_locations=["Taverne"],
+            known_npc_refs=[{"ref_id": "npc-zorak", "name": "Zorak"}],
+            known_location_refs=[{"ref_id": "loc-taverne", "name": "Taverne"}],
+        )
+        move_action = next(action for action in intent.actions if action.action_type.value == "MOVE")
+        talk_action = next(action for action in intent.actions if action.action_type.value == "TALK")
+        use_action = next(action for action in intent.actions if action.action_type.value == "USE_ITEM")
+
+        self.assertEqual(move_action.destination, "Taverne")
+        self.assertEqual(move_action.target_ref, "loc-taverne")
+        self.assertEqual(move_action.parameters.get("destination_id"), "loc-taverne")
+        self.assertEqual(talk_action.target_ref, "npc-zorak")
+        self.assertEqual(talk_action.parameters.get("target_name"), "Zorak")
+        self.assertEqual(talk_action.parameters.get("target_id"), "npc-zorak")
+        self.assertEqual(use_action.item_ref, "inv-abc123")
+        self.assertEqual(use_action.parameters.get("item_id"), "inv-abc123")
+
     def test_falls_back_to_clarify(self):
         intent = analyze_player_input_preview(
             world_id="w1",

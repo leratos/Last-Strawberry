@@ -122,9 +122,14 @@ class RulesEngine:
         delta: StateDelta,
         events: list[TurnSystemEvent],
     ) -> bool:
-        target = (action.target_ref or "NPC").strip()
-        delta.relationship_changes.append({"npc": target, "standing_delta": 1})
-        events.append(TurnSystemEvent(code="talk_success", message=f"Gespraech mit {target} gefuehrt."))
+        target_id = str(action.parameters.get("target_id") or "").strip() or None
+        target_name = str(action.parameters.get("target_name") or "").strip()
+        target_display = target_name or (action.target_ref or "NPC").strip()
+        relationship_change = {"npc": target_display, "standing_delta": 1}
+        if target_id:
+            relationship_change["npc_id"] = target_id
+        delta.relationship_changes.append(relationship_change)
+        events.append(TurnSystemEvent(code="talk_success", message=f"Gespraech mit {target_display} gefuehrt."))
         return True
 
     def _apply_attack(
@@ -134,7 +139,9 @@ class RulesEngine:
         delta: StateDelta,
         events: list[TurnSystemEvent],
     ) -> bool:
-        target = (action.target_ref or "Ziel").strip()
+        target_id = str(action.parameters.get("target_id") or "").strip() or None
+        target_name = str(action.parameters.get("target_name") or "").strip()
+        target = target_name or (action.target_ref or "Ziel").strip()
         base_damage = max(1, int(state.attributes.strength / 3))
         stamina_cost = 1
         if state.resources.stamina < stamina_cost:
@@ -142,7 +149,10 @@ class RulesEngine:
             return False
         state.resources.stamina = max(0, state.resources.stamina - stamina_cost)
         delta.stamina_delta -= stamina_cost
-        delta.relationship_changes.append({"npc": target, "standing_delta": -5})
+        relationship_change = {"npc": target, "standing_delta": -5}
+        if target_id:
+            relationship_change["npc_id"] = target_id
+        delta.relationship_changes.append(relationship_change)
         events.append(
             TurnSystemEvent(code="attack_resolved", message=f"Angriff gegen {target} ausgefuehrt (MVP-Schaden: {base_damage}).")
         )

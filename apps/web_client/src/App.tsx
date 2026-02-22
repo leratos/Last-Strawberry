@@ -197,6 +197,7 @@ export function App() {
                   <span>{context.world.world_seed.name}</span>
                   <span>Ort: {context.world.character_state.location_name}</span>
                   <span>Turns: {context.recent_turns.length}</span>
+                  <span>Refs: {context.target_catalog.npcs.length}/{context.target_catalog.items.length}/{context.target_catalog.locations.length}</span>
                 </div>
                 <p className="story-text">{latestNarrative}</p>
                 {analysisNotes.length > 0 ? (
@@ -328,7 +329,7 @@ export function App() {
                     <span className="list-title">
                       {item.name} x{item.quantity}
                     </span>
-                    <span className="list-subtle">{item.use_modes.join(", ")}</span>
+                    <span className="list-subtle">{item.use_modes.join(", ")} | {item.inventory_item_id}</span>
                   </li>
                 ))}
               </ul>
@@ -345,12 +346,23 @@ export function App() {
                       {entry.bundle.profile.name} ({entry.bundle.profile.role})
                     </p>
                     <p className="list-subtle">
+                      ID: {entry.bundle.profile.npc_id} |{" "}
                       Score: {entry.relevance_score.toFixed(2)}
                       {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
                     </p>
                     {entry.bundle.recent_memories[0] ? (
                       <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                     ) : null}
+                  </li>
+                ))}
+              </ul>
+
+              <h3>Ziel-Referenzen</h3>
+              <ul className="list list-tight">
+                {context.target_catalog.locations.slice(0, 5).map((location) => (
+                  <li key={location.ref_id}>
+                    <span className="list-title">{location.name}</span>
+                    <span className="list-subtle">{location.ref_id}</span>
                   </li>
                 ))}
               </ul>

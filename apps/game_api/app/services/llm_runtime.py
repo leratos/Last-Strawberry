@@ -124,6 +124,9 @@ class LlmRuntime:
         inventory: list,
         known_npc_names: list[str] | None = None,
         known_locations: list[str] | None = None,
+        known_npc_refs: list[dict[str, str]] | None = None,
+        known_location_refs: list[dict[str, str]] | None = None,
+        known_item_refs: list[dict[str, str]] | None = None,
         context: GameContextResponse | None = None,
     ) -> TurnIntent:
         if self.settings.llm_mode != "openrouter":
@@ -134,6 +137,8 @@ class LlmRuntime:
                 inventory=inventory,
                 known_npc_names=known_npc_names,
                 known_locations=known_locations,
+                known_npc_refs=known_npc_refs,
+                known_location_refs=known_location_refs,
             )
 
         try:
@@ -144,6 +149,9 @@ class LlmRuntime:
                 inventory=inventory,
                 known_npc_names=known_npc_names or [],
                 known_locations=known_locations or [],
+                known_npc_refs=known_npc_refs or [],
+                known_location_refs=known_location_refs or [],
+                known_item_refs=known_item_refs or [],
                 context=context,
             )
         except Exception as exc:
@@ -156,6 +164,8 @@ class LlmRuntime:
                 inventory=inventory,
                 known_npc_names=known_npc_names,
                 known_locations=known_locations,
+                known_npc_refs=known_npc_refs,
+                known_location_refs=known_location_refs,
             )
             preview_intent.analysis_notes.append(
                 f"OpenRouter-Fallback auf Preview-Analyzer wegen Fehler: {type(exc).__name__}"
@@ -190,6 +200,9 @@ class LlmRuntime:
         inventory: list,
         known_npc_names: list[str],
         known_locations: list[str],
+        known_npc_refs: list[dict[str, str]],
+        known_location_refs: list[dict[str, str]],
+        known_item_refs: list[dict[str, str]],
         context: GameContextResponse | None,
     ) -> TurnIntent:
         system_prompt = (
@@ -204,6 +217,11 @@ class LlmRuntime:
                     "inventory_names": [item.name for item in context.world.inventory],
                     "known_npcs": known_npc_names,
                     "known_locations": known_locations,
+                    "target_refs": {
+                        "npcs": known_npc_refs,
+                        "locations": known_location_refs,
+                        "items": known_item_refs,
+                    },
                 },
                 ensure_ascii=False,
             )
