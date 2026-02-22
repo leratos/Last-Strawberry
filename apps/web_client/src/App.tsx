@@ -1305,11 +1305,27 @@ export function App() {
                   <li key={point.ref_id}>
                     <span className="list-title">{point.name}</span>
                     <span className="list-subtle">
-                      {point.kind}
+                      {(point.detail_level || 1) >= 2 ? point.kind : "unbekannt"}
                       {" | "}
                       {point.ref_id}
                       {point.scene_zone_name ? ` | Zone: ${point.scene_zone_name}` : ""}
+                      {point.detail_level ? ` | Details: ${point.detail_level}` : ""}
                     </span>
+                    {(point.detail_level || 1) >= 2 && point.discovery_state ? (
+                      <p className="list-subtle">
+                        {point.kind === "container"
+                          ? `Containerstatus: ${
+                              point.discovery_state.looted
+                                ? "durchsucht"
+                                : point.discovery_state.opened
+                                  ? "geoeffnet"
+                                  : "geschlossen"
+                            }`
+                          : "Details durch Untersuchung verifiziert."}
+                      </p>
+                    ) : (
+                      <p className="list-subtle">Untersuche den Punkt gezielt, um Typ und Details zu bestaetigen.</p>
+                    )}
                     <div className="turn-actions">
                       <button
                         type="button"

@@ -236,6 +236,20 @@ class WorldRepository:
                             severity="info",
                         )
                     )
+                newly_revealed_scene_details = self._apply_scene_point_interaction_updates(
+                    conn=conn,
+                    world_id=world_id,
+                    resolution=resolution,
+                    timestamp=created_at,
+                )
+                if newly_revealed_scene_details > 0:
+                    resolution.system_events.append(
+                        TurnSystemEvent(
+                            code="discovery_revealed_scene_details",
+                            message=f"Du erkennst {newly_revealed_scene_details} Detailhinweis(e) an untersuchten Objekten.",
+                            severity="info",
+                        )
+                    )
 
                 conn.execute(
                     """
@@ -484,14 +498,61 @@ class WorldRepository:
         if session is None:
             return []
         points = build_scene_point_targets_for_location(world=session, location_name=location_name)
-        discovered_ids = set(
-            self.list_discovered_scene_point_ids(
-                world_id=world_id,
-                world_character_id=world_character_id,
-                location_name=location_name,
-            )
+        discovered_points = self.list_scene_point_discoveries_in_location(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            location_name=location_name,
         )
-        return [point for point in points if point.ref_id in discovered_ids]
+        discovered_ids = set(discovered_points.keys())
+        visible_points: list[GameTargetReference] = []
+        for point in points:
+            if point.ref_id not in discovered_ids:
+                continue
+            detail = discovered_points[point.ref_id]
+            detail_level = int(detail.get("detail_level", 1) or 1)
+            state = detail.get("state", {})
+            visible_points.append(
+                point.model_copy(
+                    update={
+                        "detail_level": detail_level,
+                        "discovery_state": state,
+                    }
+                )
+            )
+        return visible_points
+
+    def list_scene_point_discoveries_in_location(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+    ) -> dict[str, dict[str, object]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT point_ref_id, detail_level, state_json
+                FROM scene_point_discoveries
+                WHERE world_id = ?
+                  AND world_character_id = ?
+                  AND location_name = ?
+                """,
+                (world_id, world_character_id, location_name),
+            ).fetchall()
+        result: dict[str, dict[str, object]] = {}
+        for row in rows:
+            raw_state = str(row["state_json"] or "{}")
+            try:
+                state = json.loads(raw_state)
+            except json.JSONDecodeError:
+                state = {}
+            if not isinstance(state, dict):
+                state = {}
+            result[str(row["point_ref_id"])] = {
+                "detail_level": int(row["detail_level"] or 1),
+                "state": state,
+            }
+        return result
 
     def list_discovered_scene_point_ids(
         self,
@@ -500,18 +561,13 @@ class WorldRepository:
         world_character_id: str,
         location_name: str,
     ) -> list[str]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT point_ref_id
-                FROM scene_point_discoveries
-                WHERE world_id = ?
-                  AND world_character_id = ?
-                  AND location_name = ?
-                """,
-                (world_id, world_character_id, location_name),
-            ).fetchall()
-        return [str(row["point_ref_id"]) for row in rows]
+        return list(
+            self.list_scene_point_discoveries_in_location(
+                world_id=world_id,
+                world_character_id=world_character_id,
+                location_name=location_name,
+            ).keys()
+        )
 
     def _insert_journal_entries(self, conn: sqlite3.Connection, entries: list[JournalEntryRecord]) -> None:
         for entry in entries:
@@ -573,6 +629,53 @@ class WorldRepository:
                 )
         return revealed_npcs, revealed_scene_points
 
+    def _apply_scene_point_interaction_updates(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        resolution: TurnResolution,
+        timestamp: str,
+    ) -> int:
+        detail_reveals = 0
+        for action in resolution.applied_actions:
+            if action.action_type != ActionType.inspect:
+                continue
+            target_ref = str(action.parameters.get("target_id") or action.target_ref or "").strip()
+            if not (target_ref.startswith("poi-") or target_ref.startswith("obj-")):
+                continue
+            target_kind = str(action.parameters.get("target_kind") or action.target_kind or "").strip().lower() or "scene_point"
+            location_name = str(
+                action.parameters.get("target_location_name")
+                or resolution.resulting_character_state.location_name
+                or ""
+            ).strip()
+            if not location_name:
+                continue
+
+            _created_count, upgraded_detail = self._upsert_scene_point_discovery(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=resolution.world_character_id,
+                location_name=location_name,
+                point_ref_id=target_ref,
+                detail_level=2,
+                timestamp=timestamp,
+            )
+            detail_reveals += upgraded_detail
+            if target_kind == "container":
+                self._apply_container_inspect_state_and_loot(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                    location_name=location_name,
+                    point_ref_id=target_ref,
+                    point_name=str(action.parameters.get("target_name") or target_ref),
+                    resolution=resolution,
+                    timestamp=timestamp,
+                )
+        return detail_reveals
+
     def _reveal_npcs_in_location_for_character(
         self,
         *,
@@ -621,7 +724,7 @@ class WorldRepository:
         points = build_scene_point_targets_for_location(world=session, location_name=location_name)
         count = 0
         for point in points:
-            count += self._upsert_scene_point_discovery(
+            created_count, _ = self._upsert_scene_point_discovery(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
@@ -629,6 +732,7 @@ class WorldRepository:
                 point_ref_id=point.ref_id,
                 timestamp=timestamp,
             )
+            count += created_count
         return count
 
     def _upsert_npc_discovery(
@@ -674,11 +778,13 @@ class WorldRepository:
         world_character_id: str,
         location_name: str,
         point_ref_id: str,
+        detail_level: int = 1,
+        state_updates: dict[str, object] | None = None,
         timestamp: str,
-    ) -> int:
+    ) -> tuple[int, int]:
         existing = conn.execute(
             """
-            SELECT 1
+            SELECT detail_level, state_json
             FROM scene_point_discoveries
             WHERE world_id = ?
               AND world_character_id = ?
@@ -688,27 +794,159 @@ class WorldRepository:
             (world_id, world_character_id, location_name, point_ref_id),
         ).fetchone()
         if existing is None:
+            state_payload = dict(state_updates or {})
             conn.execute(
                 """
                 INSERT INTO scene_point_discoveries (
-                    world_id, world_character_id, location_name, point_ref_id, discovered_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    world_id, world_character_id, location_name, point_ref_id, discovered_at, updated_at, detail_level, state_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (world_id, world_character_id, location_name, point_ref_id, timestamp, timestamp),
+                (
+                    world_id,
+                    world_character_id,
+                    location_name,
+                    point_ref_id,
+                    timestamp,
+                    timestamp,
+                    max(1, int(detail_level)),
+                    json.dumps(state_payload, ensure_ascii=True),
+                ),
             )
-            return 1
+            return 1, 1 if int(detail_level) > 1 else 0
+        try:
+            current_state = json.loads(str(existing["state_json"] or "{}"))
+        except json.JSONDecodeError:
+            current_state = {}
+        if not isinstance(current_state, dict):
+            current_state = {}
+        if state_updates:
+            current_state.update(state_updates)
+        current_detail = int(existing["detail_level"] or 1)
+        next_detail = max(current_detail, int(detail_level))
+        detail_upgraded = 1 if next_detail > current_detail else 0
         conn.execute(
             """
             UPDATE scene_point_discoveries
-            SET updated_at = ?
+            SET updated_at = ?, detail_level = ?, state_json = ?
             WHERE world_id = ?
               AND world_character_id = ?
               AND location_name = ?
               AND point_ref_id = ?
             """,
-            (timestamp, world_id, world_character_id, location_name, point_ref_id),
+            (
+                timestamp,
+                next_detail,
+                json.dumps(current_state, ensure_ascii=True),
+                world_id,
+                world_character_id,
+                location_name,
+                point_ref_id,
+            ),
         )
-        return 0
+        return 0, detail_upgraded
+
+    def _apply_container_inspect_state_and_loot(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+        point_ref_id: str,
+        point_name: str,
+        resolution: TurnResolution,
+        timestamp: str,
+    ) -> None:
+        row = conn.execute(
+            """
+            SELECT state_json
+            FROM scene_point_discoveries
+            WHERE world_id = ?
+              AND world_character_id = ?
+              AND location_name = ?
+              AND point_ref_id = ?
+            """,
+            (world_id, world_character_id, location_name, point_ref_id),
+        ).fetchone()
+        if row is None:
+            return
+        try:
+            state = json.loads(str(row["state_json"] or "{}"))
+        except json.JSONDecodeError:
+            state = {}
+        if not isinstance(state, dict):
+            state = {}
+
+        opened = bool(state.get("opened"))
+        looted = bool(state.get("looted"))
+        events = resolution.system_events
+        if not opened:
+            events.append(TurnSystemEvent(code="container_opened", message=f"Du oeffnest {point_name}."))
+            opened = True
+
+        if not looted:
+            loot_item = self._deterministic_container_loot(point_ref_id)
+            if loot_item is not None:
+                self._grant_inventory_item(resolution.resulting_inventory, loot_item)
+                resolution.state_delta.inventory_gained.append(
+                    {"item_id": loot_item.inventory_item_id, "name": loot_item.name, "quantity": loot_item.quantity}
+                )
+                events.append(
+                    TurnSystemEvent(code="container_loot_found", message=f"Du findest in {point_name}: {loot_item.name}.")
+                )
+            else:
+                events.append(TurnSystemEvent(code="container_empty", message=f"{point_name} ist leer."))
+            looted = True
+        else:
+            events.append(TurnSystemEvent(code="container_already_searched", message=f"{point_name} wurde bereits durchsucht."))
+
+        _, _ = self._upsert_scene_point_discovery(
+            conn=conn,
+            world_id=world_id,
+            world_character_id=world_character_id,
+            location_name=location_name,
+            point_ref_id=point_ref_id,
+            detail_level=2,
+            state_updates={"opened": opened, "looted": looted},
+            timestamp=timestamp,
+        )
+
+    def _deterministic_container_loot(self, point_ref_id: str) -> InventoryItemInstance | None:
+        if "siegelkoffer" in point_ref_id:
+            return InventoryItemInstance(
+                inventory_item_id=f"inv-loot-{point_ref_id[-12:]}",
+                item_def_id="sealed_case_notes",
+                name="Ritualnotizen (Fragment)",
+                category="document",
+                description="Ein Fragment mit Notizen zu einem misslungenen Binder-Ritual.",
+                quantity=1,
+            )
+        if "supply-crate" in point_ref_id:
+            return InventoryItemInstance(
+                inventory_item_id=f"inv-loot-{point_ref_id[-12:]}",
+                item_def_id="field_bandages",
+                name="Verbandspaket",
+                category="consumable",
+                description="Ein einfaches Verbandspaket aus einer Vorratskiste.",
+                quantity=1,
+            )
+        if "discarded-bag" in point_ref_id:
+            return InventoryItemInstance(
+                inventory_item_id=f"inv-loot-{point_ref_id[-12:]}",
+                item_def_id="coin_pouch_small",
+                name="Kleiner Geldbeutel",
+                category="misc",
+                description="Ein abgegriffener Geldbeutel mit ein paar Metallmarken.",
+                quantity=1,
+            )
+        return None
+
+    def _grant_inventory_item(self, inventory: list[InventoryItemInstance], item: InventoryItemInstance) -> None:
+        for existing in inventory:
+            if existing.item_def_id == item.item_def_id and existing.stackable == item.stackable:
+                existing.quantity += item.quantity
+                return
+        inventory.append(item)
 
     def _upsert_world_npc_profiles(
         self,
