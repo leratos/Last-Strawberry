@@ -24,6 +24,7 @@ const DEFAULT_BOOTSTRAP: BootstrapForm = {
 export function App() {
   const [bootstrapForm, setBootstrapForm] = useState<BootstrapForm>(DEFAULT_BOOTSTRAP);
   const [worldId, setWorldId] = useState<string>("");
+  const [worldIdInput, setWorldIdInput] = useState<string>("");
   const [turnInput, setTurnInput] = useState<string>("Ich spreche mit einem Haendler ueber Geruechte.");
   const [context, setContext] = useState<GameContextResponse | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -47,11 +48,21 @@ export function App() {
       const nextContext = await getWorldContext(targetWorldId, retrievalHint);
       setContext(nextContext);
       setWorldId(targetWorldId);
+      setWorldIdInput(targetWorldId);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Context konnte nicht geladen werden.");
     } finally {
       setIsReloading(false);
     }
+  }
+
+  async function handleLoadWorldById(): Promise<void> {
+    if (!worldIdInput.trim()) {
+      return;
+    }
+    setLastActionMessage("");
+    await loadContext(worldIdInput.trim());
+    setLastActionMessage(`Welt geladen: ${worldIdInput.trim()}`);
   }
 
   async function handleBootstrapSubmit(event: FormEvent<HTMLFormElement>) {
@@ -101,7 +112,21 @@ export function App() {
           <h1>Web-Spiel MVP (Greenfield)</h1>
           <p className="subtitle">API: {GAME_API_BASE_URL}</p>
         </div>
-        <div className="chip">{context ? `World: ${context.world.world_id}` : "Kein aktiver Run"}</div>
+        <div className="header-actions">
+          <label className="compact-label">
+            Welt-ID
+            <input
+              className="compact-input"
+              value={worldIdInput}
+              onChange={(event) => setWorldIdInput(event.target.value)}
+              placeholder="world-..."
+            />
+          </label>
+          <button className="secondary-btn" type="button" onClick={() => void handleLoadWorldById()}>
+            Welt laden
+          </button>
+          <div className="chip">{context ? `World: ${context.world.world_id}` : "Kein aktiver Run"}</div>
+        </div>
       </header>
 
       <section className="grid">
@@ -200,9 +225,18 @@ export function App() {
                       .map((turn) => (
                         <li key={turn.turn_id}>
                           <p className="list-title">{turn.raw_player_input}</p>
-                          <p className="list-subtle">
-                            {turn.resolution.system_events.map((event) => event.code).join(", ") || "Keine Events"}
-                          </p>
+                          {turn.resolution.system_events.length === 0 ? (
+                            <p className="list-subtle">Keine Events</p>
+                          ) : (
+                            <div className="event-list">
+                              {turn.resolution.system_events.map((event, index) => (
+                                <div key={`${turn.turn_id}-${event.code}-${index}`} className="event-row">
+                                  <span className={`event-badge event-${event.severity}`}>{event.code}</span>
+                                  <span className="event-message">{event.message}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </li>
                       ))}
                   </ul>
@@ -283,6 +317,9 @@ export function App() {
               </ul>
 
               <h3>NPC Memory (Retrieval)</h3>
+              {context.retrieval_notes.length > 0 ? (
+                <p className="list-subtle">{context.retrieval_notes.join(" | ")}</p>
+              ) : null}
               <ul className="list">
                 {context.npc_memory.length === 0 ? <li>Noch keine NPC-Erinnerungen.</li> : null}
                 {context.npc_memory.map((entry) => (

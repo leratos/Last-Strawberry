@@ -44,6 +44,17 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(len(intent.actions), 1)
         self.assertEqual(intent.actions[0].action_type.value, "CLARIFY")
 
+    def test_schaue_does_not_false_positive_attack(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich schaue mich vorsichtig um und suche nach Hinweisen.",
+            inventory=[],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertNotIn("ATTACK", action_types)
+        self.assertIn("INSPECT", action_types)
+
 
 if __name__ == "__main__":
     unittest.main()
