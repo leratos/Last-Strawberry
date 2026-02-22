@@ -101,7 +101,8 @@ class RulesEngine:
         except (TypeError, ValueError):
             return
         aggressive_roles = {"guard", "soldier", "mercenary", "bandit", "raider", "thug", "warrior", "krieger", "tank"}
-        friendly_roles = {"healer", "heiler", "merchant", "innkeeper", "guide", "ally"}
+        friendly_roles = {"healer", "heiler", "merchant", "haendler", "händler", "innkeeper", "guide", "ally"}
+        arcane_roles = {"mage", "magier", "wizard", "sorcerer", "summoner", "beschwoerer", "beschwörer"}
 
         if standing >= 3:
             style = "friendly"
@@ -123,6 +124,8 @@ class RulesEngine:
                     message = f"{target_display} stemmt sich wie ein Tank gegen deine Annaeherung und wirkt kampfbereit."
                 elif target_role in {"warrior", "krieger"}:
                     message = f"{target_display} reagiert aggressiv auf deine Annaeherung und geht in Kampfhaltung."
+                elif target_role in {"summoner", "beschwoerer", "beschwörer"}:
+                    message = f"{target_display} reagiert aggressiv auf deine Annaeherung; die Beschwoerungszeichen um ihn flackern auf."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_aggressive_to_approach",
@@ -134,6 +137,8 @@ class RulesEngine:
                 message = f"{target_display} reagiert freundlich auf deine Annaeherung."
                 if target_role in {"healer", "heiler"}:
                     message = f"{target_display} reagiert freundlich auf deine Annaeherung und beobachtet dich aufmerksam wie ein Heiler."
+                elif target_role in {"merchant", "haendler", "händler"}:
+                    message = f"{target_display} reagiert freundlich auf deine Annaeherung und taxiert dich wie ein erfahrener Haendler."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_friendly_to_approach",
@@ -145,6 +150,8 @@ class RulesEngine:
                 message = f"{target_display} reagiert vorsichtig auf deine Annaeherung."
                 if target_role in {"warrior", "krieger", "tank"}:
                     message = f"{target_display} reagiert vorsichtig auf deine Annaeherung und mustert deine Bewegungen."
+                elif target_role in arcane_roles:
+                    message = f"{target_display} reagiert vorsichtig auf deine Annaeherung und beobachtet dich mit arkaner Wachsamkeit."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_cautious_to_approach",
@@ -161,6 +168,8 @@ class RulesEngine:
                     message = f"{target_display} haelt die Front wie ein Tank und verfolgt deinen Rueckzug mit Druck."
                 elif target_role in {"warrior", "krieger"}:
                     message = f"{target_display} verfolgt deinen Rueckzug mit aggressiver Kampfbereitschaft."
+                elif target_role in {"summoner", "beschwoerer", "beschwörer"}:
+                    message = f"{target_display} verfolgt deinen Rueckzug aggressiv, waehrend Beschwoerungsenergie um ihn knistert."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_aggressive_to_retreat",
@@ -172,6 +181,8 @@ class RulesEngine:
                 message = f"{target_display} laesst dir freundlich Raum."
                 if target_role in {"healer", "heiler"}:
                     message = f"{target_display} laesst dir freundlich Raum und senkt sichtbar die Anspannung."
+                elif target_role in {"merchant", "haendler", "händler"}:
+                    message = f"{target_display} laesst dir freundlich Raum und behaelt dabei wachsam den Warenstand im Blick."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_friendly_to_retreat",
@@ -180,10 +191,13 @@ class RulesEngine:
                     )
                 )
             else:
+                message = f"{target_display} haelt vorsichtig Distanz, waehrend du dich zurueckziehst."
+                if target_role in arcane_roles:
+                    message = f"{target_display} haelt vorsichtig Distanz, waehrend arkane Energie um ihn kreist."
                 events.append(
                     TurnSystemEvent(
                         code="npc_reacts_cautious_to_retreat",
-                        message=f"{target_display} haelt vorsichtig Distanz, waehrend du dich zurueckziehst.",
+                        message=message,
                         severity="info",
                     )
                 )

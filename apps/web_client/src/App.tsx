@@ -142,7 +142,8 @@ function retreatButtonLabel(distanceBand: DistanceBand): string {
 function reactionStyleKey(role: string | undefined, standing: number | undefined): "freundlich" | "vorsichtig" | "aggressiv" {
   const normalizedRole = (role || "").trim().toLowerCase();
   const aggressiveRoles = new Set(["guard", "soldier", "mercenary", "bandit", "raider", "thug", "warrior", "krieger", "tank"]);
-  const friendlyRoles = new Set(["healer", "heiler", "merchant", "innkeeper", "guide", "ally"]);
+  const friendlyRoles = new Set(["healer", "heiler", "merchant", "haendler", "händler", "innkeeper", "guide", "ally"]);
+  const arcaneRoles = new Set(["mage", "magier", "wizard", "sorcerer", "summoner", "beschwoerer", "beschwörer"]);
   const safeStanding = typeof standing === "number" ? standing : 0;
 
   if (safeStanding >= 3) {
@@ -155,6 +156,9 @@ function reactionStyleKey(role: string | undefined, standing: number | undefined
     return "aggressiv";
   }
   if (safeStanding <= 0) {
+    return "vorsichtig";
+  }
+  if (arcaneRoles.has(normalizedRole) && safeStanding < 3) {
     return "vorsichtig";
   }
   if (friendlyRoles.has(normalizedRole)) {
