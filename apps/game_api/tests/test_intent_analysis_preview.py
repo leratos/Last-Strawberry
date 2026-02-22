@@ -290,6 +290,43 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(talk_action.parameters.get("target_name"), "Kael")
         self.assertEqual(talk_action.parameters.get("target_role"), "beschwoerer")
 
+    def test_maps_generic_role_titles_like_magier_to_unique_known_npc(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit dem Magier.",
+            inventory=[],
+            known_npc_names=["Arven", "Mira"],
+            known_npc_refs=[
+                {"ref_id": "npc-arven", "name": "Arven", "role": "magier"},
+                {"ref_id": "npc-mira", "name": "Mira", "role": "heiler"},
+            ],
+        )
+        talk_action = next(action for action in intent.actions if action.action_type.value == "TALK")
+        self.assertEqual(talk_action.target_ref, "npc-arven")
+        self.assertEqual(talk_action.parameters.get("target_name"), "Arven")
+        self.assertEqual(talk_action.parameters.get("target_role"), "magier")
+
+    def test_returns_clarify_for_ambiguous_role_title_reference(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit dem Beschwoerer.",
+            inventory=[],
+            known_npc_names=["Kael", "Liora"],
+            known_npc_refs=[
+                {"ref_id": "npc-kael", "name": "Kael", "role": "beschwoerer"},
+                {"ref_id": "npc-liora", "name": "Liora", "role": "beschwoerer"},
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertNotIn("TALK", action_types)
+        self.assertIn("CLARIFY", action_types)
+        clarify_action = next(action for action in intent.actions if action.action_type.value == "CLARIFY")
+        self.assertEqual(clarify_action.parameters.get("reason"), "ambiguous_npc_role_title")
+        self.assertIn("Kael", str(clarify_action.parameters.get("message") or ""))
+        self.assertIn("Liora", str(clarify_action.parameters.get("message") or ""))
+
 
 if __name__ == "__main__":
     unittest.main()

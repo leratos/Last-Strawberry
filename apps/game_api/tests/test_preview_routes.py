@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "packages" / "rules_engine"))
 
 from apps.game_api.app.main import app  # noqa: E402
 from apps.game_api.app.persistence import WorldRepository  # noqa: E402
+from ls_shared_schemas.npc_memory import NPCProfile  # noqa: E402
 
 
 class TestGameApiPreviewRoutes(unittest.TestCase):
@@ -222,6 +223,60 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             bundle for bundle in bundles if bundle["profile"]["npc_id"].startswith("npc-auto-") and "beschwoer" in bundle["profile"]["name"].lower()
         ]
         self.assertEqual(auto_beschwoerer, [])
+
+    def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g24-ambiguity",
+                "world_description": "Eine moderne Stadt mit geheimer Magie, Ritualen und rivalisierenden Zirkeln.",
+                "character_description": "Eine Beobachterin, die Binder und Champions im Blick behaelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        repository = app.state.world_repository
+        with repository._connect() as conn:  # noqa: SLF001 - test helper access
+            repository._upsert_world_npc_profiles(  # noqa: SLF001 - test helper access
+                conn=conn,
+                world_id=world_id,
+                profiles=[
+                    NPCProfile(
+                        npc_id="npc-liora-circle",
+                        name="Liora",
+                        role="beschwoerer",
+                        faction="binder_konklave",
+                        location_name="Marktplatz",
+                        scene_zone_id="zone-market-stalls",
+                        scene_zone_name="Marktstaende",
+                    )
+                ],
+                timestamp="2026-02-22T00:00:00Z",
+            )
+            conn.commit()
+
+        ambiguous_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit dem Beschwoerer."},
+        )
+        self.assertEqual(ambiguous_response.status_code, 200)
+        payload = ambiguous_response.json()
+        applied_action_types = [action["action_type"] for action in payload["turn"]["resolution"]["applied_actions"]]
+        self.assertEqual(applied_action_types, [])
+
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("clarify_required", event_codes)
+
+        memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
+        self.assertEqual(memory_response.status_code, 200)
+        bundles = memory_response.json()
+        auto_plain_beschwoerer = [
+            bundle
+            for bundle in bundles
+            if bundle["profile"]["npc_id"] == "npc-auto-beschwoerer" or bundle["profile"]["name"] == "Beschwoerer"
+        ]
+        self.assertEqual(auto_plain_beschwoerer, [])
 
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(

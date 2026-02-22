@@ -59,11 +59,11 @@ ROLE_ALIASES_BY_CANONICAL: dict[str, tuple[str, ...]] = {
     "heiler": ("heiler", "heilerin", "healer", "medicus"),
     "krieger": ("krieger", "warrior", "fighter", "schwertkaempfer", "schwertkämpfer"),
     "tank": ("tank", "guardian", "vanguard", "schildtraeger", "schildträger"),
-    "haendler": ("haendler", "händler", "merchant", "trader", "kaufmann", "verkaeufer"),
-    "magier": ("magier", "mage", "wizard", "zauberer", "hexer"),
-    "beschwoerer": ("beschwoerer", "beschwörer", "summoner", "conjurer", "binder"),
-    "wache": ("wache", "guard", "waechter", "wächter", "executor"),
-    "priester": ("priester", "priest", "exorzist", "exorcist"),
+    "haendler": ("haendler", "händler", "haendlerin", "händlerin", "merchant", "trader", "kaufmann", "verkaeufer"),
+    "magier": ("magier", "magierin", "mage", "wizard", "zauberer", "zauberin", "hexer", "hexe"),
+    "beschwoerer": ("beschwoerer", "beschwörer", "beschwoererin", "beschwörerin", "summoner", "conjurer", "binder"),
+    "wache": ("wache", "guard", "waechter", "wächter", "waechterin", "wächterin", "executor"),
+    "priester": ("priester", "priesterin", "priest", "exorzist", "exorcist"),
     "ritter": ("ritter", "knight"),
 }
 
@@ -136,6 +136,41 @@ def infer_canonical_role_from_text(text: str) -> str | None:
     for token in _ROLE_TOKEN_PATTERN.findall(folded):
         if token in ROLE_CANONICAL_BY_ALIAS:
             return ROLE_CANONICAL_BY_ALIAS[token]
+
+    return None
+
+
+def resolve_unique_role_title_npc_reference(
+    candidate_text: str,
+    known_npc_refs: list[dict[str, str]],
+) -> dict[str, object] | None:
+    inferred_role = infer_canonical_role_from_text(candidate_text)
+    if not inferred_role:
+        return None
+
+    role_matches: list[dict[str, str]] = []
+    for entry in known_npc_refs:
+        role = str(entry.get("role") or "").strip().lower()
+        if role != inferred_role:
+            continue
+        role_matches.append({str(k): str(v) for k, v in entry.items() if v is not None})
+
+    if len(role_matches) == 1:
+        return {
+            "status": "resolved",
+            "role": inferred_role,
+            "entry": role_matches[0],
+        }
+
+    if len(role_matches) > 1:
+        candidate_names = sorted(
+            {str(entry.get("name") or "").strip() for entry in role_matches if str(entry.get("name") or "").strip()}
+        )
+        return {
+            "status": "ambiguous",
+            "role": inferred_role,
+            "candidates": candidate_names,
+        }
 
     return None
 
