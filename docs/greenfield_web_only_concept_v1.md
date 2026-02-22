@@ -65,6 +65,7 @@ Formal:
 - **LLM Orchestrator**: Intent-Analyse + Narration (OpenRouter)
 - **Rules Engine (deterministisch)**: autoritativer Zustand, Wuerfe, Kosten, Effekte
 - **Persistence**: relationale DB (empfohlen Postgres, nicht SQLite als Langfristziel)
+- **Persistence**: lokal zunaechst SQLite (schnell testbar), spaeter Server-Deployment mit MariaDB
 - **Memory/RAG**: asynchroner Kontextspeicher fuer Story-/Lore-Rueckbezug
 - **Observability**: Prometheus/Grafana/Logs (bereits stark, weiter nutzen)
 
