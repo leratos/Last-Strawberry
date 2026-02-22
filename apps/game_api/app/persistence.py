@@ -639,7 +639,7 @@ class WorldRepository:
     ) -> int:
         detail_reveals = 0
         for action in resolution.applied_actions:
-            if action.action_type != ActionType.inspect:
+            if action.action_type not in {ActionType.inspect, ActionType.open, ActionType.search, ActionType.take}:
                 continue
             target_ref = str(action.parameters.get("target_id") or action.target_ref or "").strip()
             if not (target_ref.startswith("poi-") or target_ref.startswith("obj-")):
@@ -664,7 +664,19 @@ class WorldRepository:
             )
             detail_reveals += upgraded_detail
             if target_kind == "container":
-                self._apply_container_inspect_state_and_loot(
+                self._apply_container_interaction_state_and_loot(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                    location_name=location_name,
+                    point_ref_id=target_ref,
+                    point_name=str(action.parameters.get("target_name") or target_ref),
+                    action_type=action.action_type,
+                    resolution=resolution,
+                    timestamp=timestamp,
+                )
+            if target_kind == "scene_object" and action.action_type == ActionType.take:
+                self._apply_scene_object_take_state_and_loot(
                     conn=conn,
                     world_id=world_id,
                     world_character_id=resolution.world_character_id,
@@ -845,7 +857,7 @@ class WorldRepository:
         )
         return 0, detail_upgraded
 
-    def _apply_container_inspect_state_and_loot(
+    def _apply_container_interaction_state_and_loot(
         self,
         *,
         conn: sqlite3.Connection,
@@ -854,6 +866,7 @@ class WorldRepository:
         location_name: str,
         point_ref_id: str,
         point_name: str,
+        action_type: ActionType,
         resolution: TurnResolution,
         timestamp: str,
     ) -> None:
@@ -883,8 +896,11 @@ class WorldRepository:
         if not opened:
             events.append(TurnSystemEvent(code="container_opened", message=f"Du oeffnest {point_name}."))
             opened = True
+        elif action_type == ActionType.open:
+            events.append(TurnSystemEvent(code="container_already_open", message=f"{point_name} ist bereits geoeffnet."))
 
-        if not looted:
+        should_search_loot = action_type in {ActionType.inspect, ActionType.search}
+        if should_search_loot and not looted:
             loot_item = self._deterministic_container_loot(point_ref_id)
             if loot_item is not None:
                 self._grant_inventory_item(resolution.resulting_inventory, loot_item)
@@ -897,7 +913,7 @@ class WorldRepository:
             else:
                 events.append(TurnSystemEvent(code="container_empty", message=f"{point_name} ist leer."))
             looted = True
-        else:
+        elif should_search_loot:
             events.append(TurnSystemEvent(code="container_already_searched", message=f"{point_name} wurde bereits durchsucht."))
 
         _, _ = self._upsert_scene_point_discovery(
@@ -947,6 +963,69 @@ class WorldRepository:
                 existing.quantity += item.quantity
                 return
         inventory.append(item)
+
+    def _apply_scene_object_take_state_and_loot(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        location_name: str,
+        point_ref_id: str,
+        point_name: str,
+        resolution: TurnResolution,
+        timestamp: str,
+    ) -> None:
+        row = conn.execute(
+            """
+            SELECT state_json
+            FROM scene_point_discoveries
+            WHERE world_id = ?
+              AND world_character_id = ?
+              AND location_name = ?
+              AND point_ref_id = ?
+            """,
+            (world_id, world_character_id, location_name, point_ref_id),
+        ).fetchone()
+        if row is None:
+            return
+        try:
+            state = json.loads(str(row["state_json"] or "{}"))
+        except json.JSONDecodeError:
+            state = {}
+        if not isinstance(state, dict):
+            state = {}
+
+        taken = bool(state.get("taken"))
+        looted = bool(state.get("looted"))
+        events = resolution.system_events
+        if taken:
+            events.append(TurnSystemEvent(code="scene_object_already_taken", message=f"{point_name} wurde bereits mitgenommen."))
+        else:
+            events.append(TurnSystemEvent(code="scene_object_taken", message=f"Du nimmst {point_name} mit."))
+
+        if not looted:
+            loot_item = self._deterministic_container_loot(point_ref_id)
+            if loot_item is not None:
+                self._grant_inventory_item(resolution.resulting_inventory, loot_item)
+                resolution.state_delta.inventory_gained.append(
+                    {"item_id": loot_item.inventory_item_id, "name": loot_item.name, "quantity": loot_item.quantity}
+                )
+                events.append(TurnSystemEvent(code="scene_object_loot_found", message=f"Aus {point_name} sicherst du: {loot_item.name}."))
+            else:
+                events.append(TurnSystemEvent(code="scene_object_nothing_to_take", message=f"An {point_name} ist nichts Verwertbares."))
+            looted = True
+
+        _, _ = self._upsert_scene_point_discovery(
+            conn=conn,
+            world_id=world_id,
+            world_character_id=world_character_id,
+            location_name=location_name,
+            point_ref_id=point_ref_id,
+            detail_level=2,
+            state_updates={"taken": True, "looted": looted},
+            timestamp=timestamp,
+        )
 
     def _upsert_world_npc_profiles(
         self,

@@ -7,12 +7,27 @@ def build_narrative_from_resolution(resolution: TurnResolution) -> NarrativeEnve
     primary_events = [
         event.message for event in resolution.system_events if not event.code.startswith("npc_reacts_")
     ]
+    event_codes = [event.code for event in resolution.system_events if not event.code.startswith("npc_reacts_")]
     reaction_events = [
         event.message for event in resolution.system_events if event.code.startswith("npc_reacts_")
     ]
     summary_parts: list[str] = []
     if primary_events:
         summary_parts.append(" ".join(primary_events[:2]).strip())
+    loot_messages = [
+        event.message
+        for event in resolution.system_events
+        if event.code in {"container_loot_found", "container_empty", "container_already_searched"}
+    ]
+    if loot_messages:
+        summary_parts.append(f"Fund: {loot_messages[0]}")
+    elif "container_opened" in event_codes:
+        opened_message = next(
+            (event.message for event in resolution.system_events if event.code == "container_opened"),
+            "",
+        )
+        if opened_message:
+            summary_parts.append(f"Behaeltnis: {opened_message}")
     if reaction_events:
         summary_parts.append(f"Reaktion: {reaction_events[0]}")
     event_summary = " ".join(part for part in summary_parts if part).strip() or "Die Situation entwickelt sich weiter."

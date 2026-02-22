@@ -1132,6 +1132,7 @@ export function App() {
                           ID: {entry.bundle.profile.npc_id} |{" "}
                           Score: {entry.relevance_score.toFixed(2)}
                           {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
+                          {entry.bundle.profile.faction ? ` | Fraktion: ${entry.bundle.profile.faction}` : ""}
                         </p>
                         <p className="list-subtle">
                           Ort/Zone: {entry.bundle.profile.location_name || context.world.character_state.location_name} /{" "}
@@ -1293,6 +1294,12 @@ export function App() {
               </ul>
 
               <h3>Interaktionspunkte (sichtbar)</h3>
+              {context.target_catalog.scene_points.length > 0 ? (
+                <p className="list-subtle">
+                  Sichtbar: {context.target_catalog.scene_points.length} | Detail verifiziert:{" "}
+                  {context.target_catalog.scene_points.filter((point) => (point.detail_level || 1) >= 2).length}
+                </p>
+              ) : null}
               <ul className="list list-tight">
                 {context.target_catalog.scene_points.length === 0 ? (
                   <li>
@@ -1311,6 +1318,26 @@ export function App() {
                       {point.scene_zone_name ? ` | Zone: ${point.scene_zone_name}` : ""}
                       {point.detail_level ? ` | Details: ${point.detail_level}` : ""}
                     </span>
+                    <div className="npc-badge-row">
+                      <span className={`npc-badge ${(point.detail_level || 1) >= 2 ? "npc-badge-friendly" : "npc-badge-cautious"}`}>
+                        {(point.detail_level || 1) >= 2 ? "Discovery: Details verifiziert" : "Discovery: Sichtbar, aber unklar"}
+                      </span>
+                      {point.kind === "container" && (point.detail_level || 1) >= 2 ? (
+                        <span className="npc-badge npc-badge-distance">
+                          Container:{" "}
+                          {point.discovery_state?.looted
+                            ? "durchsucht"
+                            : point.discovery_state?.opened
+                              ? "geoeffnet"
+                              : "geschlossen"}
+                        </span>
+                      ) : null}
+                      {point.kind === "scene_object" && (point.detail_level || 1) >= 2 ? (
+                        <span className="npc-badge npc-badge-distance">
+                          Objekt: {point.discovery_state?.taken ? "mitgenommen" : "verfuegbar"}
+                        </span>
+                      ) : null}
+                    </div>
                     {(point.detail_level || 1) >= 2 && point.discovery_state ? (
                       <p className="list-subtle">
                         {point.kind === "container"
@@ -1327,6 +1354,101 @@ export function App() {
                       <p className="list-subtle">Untersuche den Punkt gezielt, um Typ und Details zu bestaetigen.</p>
                     )}
                     <div className="turn-actions">
+                      {point.kind === "scene_object" && (point.detail_level || 1) >= 2 ? (
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          disabled={isRunningTurn || Boolean(point.discovery_state?.taken)}
+                          title={point.discovery_state?.taken ? "Objekt wurde bereits mitgenommen." : undefined}
+                          onClick={() =>
+                            void executeStructuredActions(
+                              [
+                                {
+                                  label: `Nimm ${point.name}`,
+                                  action: {
+                                    action_type: "TAKE",
+                                    target_ref: point.ref_id,
+                                    target_kind: "scene_object",
+                                    parameters: {
+                                      intent: "take",
+                                      target_id: point.ref_id,
+                                      target_name: point.name,
+                                      target_kind: "scene_object",
+                                    },
+                                    confidence: 0.99,
+                                  },
+                                },
+                              ],
+                              "Quick Action",
+                            )
+                          }
+                        >
+                          Nehmen
+                        </button>
+                      ) : null}
+                      {point.kind === "container" && (point.detail_level || 1) >= 2 ? (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            disabled={isRunningTurn || Boolean(point.discovery_state?.opened)}
+                            title={point.discovery_state?.opened ? "Container ist bereits geoeffnet." : undefined}
+                            onClick={() =>
+                              void executeStructuredActions(
+                                [
+                                  {
+                                    label: `Oeffne ${point.name}`,
+                                    action: {
+                                      action_type: "OPEN",
+                                      target_ref: point.ref_id,
+                                      target_kind: "container",
+                                      parameters: {
+                                        intent: "open",
+                                        target_id: point.ref_id,
+                                        target_name: point.name,
+                                        target_kind: "container",
+                                      },
+                                      confidence: 0.99,
+                                    },
+                                  },
+                                ],
+                                "Quick Action",
+                              )
+                            }
+                          >
+                            Oeffnen
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            disabled={isRunningTurn}
+                            onClick={() =>
+                              void executeStructuredActions(
+                                [
+                                  {
+                                    label: `Durchsuche ${point.name}`,
+                                    action: {
+                                      action_type: "SEARCH",
+                                      target_ref: point.ref_id,
+                                      target_kind: "container",
+                                      parameters: {
+                                        intent: "search",
+                                        target_id: point.ref_id,
+                                        target_name: point.name,
+                                        target_kind: "container",
+                                      },
+                                      confidence: 0.99,
+                                    },
+                                  },
+                                ],
+                                "Quick Action",
+                              )
+                            }
+                          >
+                            Durchsuchen
+                          </button>
+                        </>
+                      ) : null}
                       <button
                         type="button"
                         className="secondary-btn"

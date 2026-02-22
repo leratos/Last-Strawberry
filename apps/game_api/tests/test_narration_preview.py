@@ -37,6 +37,27 @@ class TestNarrationPreview(unittest.TestCase):
         self.assertIn("Du naeherst dich Mira an.", envelope.narrative)
         self.assertIn("Reaktion: Mira reagiert freundlich", envelope.narrative)
 
+    def test_container_loot_event_is_highlighted_in_narrative(self):
+        resolution = TurnResolution(
+            world_id="world-1",
+            world_character_id="wc-1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc-1",
+                name="Ari",
+                location_name="Marktplatz",
+            ),
+            state_delta=StateDelta(),
+            system_events=[
+                TurnSystemEvent(code="search_focus_success", message="Du durchsuchst die Vorratskiste."),
+                TurnSystemEvent(code="container_opened", message="Du oeffnest die Vorratskiste."),
+                TurnSystemEvent(code="container_loot_found", message="Du findest in der Vorratskiste: Verbandspaket."),
+            ],
+        )
+
+        envelope = build_narrative_from_resolution(resolution)
+
+        self.assertIn("Fund: Du findest in der Vorratskiste: Verbandspaket.", envelope.narrative)
+
 
 if __name__ == "__main__":
     unittest.main()

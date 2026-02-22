@@ -317,6 +317,81 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(lyra_bundle["profile"]["role"], "beschwoerer")
         self.assertEqual(lyra_bundle["relationship"]["standing"], 2)
 
+    def test_g35_discovered_npc_role_hidden_until_talk_memory_exists(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g35-role-hide",
+                "world_description": "Eine okkulte Stadt mit Marktplatz und versteckten Beschwoerern.",
+                "character_description": "Ein Beobachter, der Personen erst nach Kontakt richtig einordnet.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spawn_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-g35-lyra",
+                "name": "Lyra",
+                "role": "beschwoerer",
+                "location_name": "Marktplatz",
+                "scene_zone_id": "zone-fountain-ring",
+                "scene_zone_name": "Brunnenplatz",
+                "revealed_to_player": True,
+            },
+        )
+        self.assertEqual(spawn_response.status_code, 200)
+
+        before_context = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(before_context.status_code, 200)
+        before_payload = before_context.json()
+        lyra_ref_before = next(entry for entry in before_payload["target_catalog"]["npcs"] if entry["ref_id"] == "npc-g35-lyra")
+        self.assertEqual(lyra_ref_before["role"], "unknown")
+
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich rede mit Lyra."})
+
+        after_context = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(after_context.status_code, 200)
+        after_payload = after_context.json()
+        lyra_ref_after = next(entry for entry in after_payload["target_catalog"]["npcs"] if entry["ref_id"] == "npc-g35-lyra")
+        self.assertEqual(lyra_ref_after["role"], "beschwoerer")
+
+    def test_g36_discovered_npc_faction_hidden_until_talk_memory_exists(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g36-faction-hide",
+                "world_description": "Eine okkulte Stadt mit rivalisierenden Binder-Fraktionen.",
+                "character_description": "Ein Beobachter, der Zugehoerigkeiten erst nach Kontakt versteht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spawn_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-g36-lyra",
+                "name": "Lyra",
+                "role": "beschwoerer",
+                "faction": "binder_konklave",
+                "location_name": "Marktplatz",
+                "revealed_to_player": True,
+            },
+        )
+        self.assertEqual(spawn_response.status_code, 200)
+
+        before_payload = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        lyra_ref_before = next(entry for entry in before_payload["target_catalog"]["npcs"] if entry["ref_id"] == "npc-g36-lyra")
+        self.assertIsNone(lyra_ref_before.get("faction"))
+
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich rede mit Lyra."})
+
+        after_payload = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        lyra_ref_after = next(entry for entry in after_payload["target_catalog"]["npcs"] if entry["ref_id"] == "npc-g36-lyra")
+        self.assertEqual(lyra_ref_after.get("faction"), "binder_konklave")
+
     def test_g26_hidden_spawned_npc_is_revealed_after_inspect(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
@@ -587,6 +662,118 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         again_payload = inspect_again.json()
         again_codes = [event["code"] for event in again_payload["turn"]["resolution"]["system_events"]]
         self.assertIn("container_already_searched", again_codes)
+
+    def test_g30_freetext_inspect_visible_container_maps_to_focused_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g30-freetext-inspect",
+                "world_description": "Eine moderne Stadt mit geheimer Magie und Spuren eines fehlgeschlagenen Rituals.",
+                "character_description": "Ein aufmerksamer Binder, der verdaechtige Objekte untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        broad_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(broad_inspect.status_code, 200)
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        ctx = context_response.json()
+        container_ref = next(entry for entry in ctx["target_catalog"]["scene_points"] if entry["kind"] == "container")
+
+        focused_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": f"Ich untersuche die {container_ref['name']}."},
+        )
+        self.assertEqual(focused_inspect.status_code, 200)
+        payload = focused_inspect.json()
+        intent_actions = payload["turn"]["intent"]["actions"]
+        self.assertEqual(intent_actions[0]["action_type"], "INSPECT")
+        self.assertEqual(intent_actions[0]["target_ref"], container_ref["ref_id"])
+        self.assertEqual(intent_actions[0]["target_kind"], "container")
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("inspect_focus_success", event_codes)
+
+    def test_g31_open_then_search_container_preserves_open_and_loot_sequence(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g31-open-search",
+                "world_description": "Eine okkulte Marktszene mit Kisten und Ritualspuren.",
+                "character_description": "Ein Ermittler, der Behaeltnisse erst oeffnet und dann durchsucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        reveal_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(reveal_response.status_code, 200)
+
+        ctx = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        container_ref = next(entry for entry in ctx["target_catalog"]["scene_points"] if entry["kind"] == "container")
+
+        open_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": f"Ich oeffne die {container_ref['name']}."},
+        )
+        self.assertEqual(open_response.status_code, 200)
+        open_payload = open_response.json()
+        self.assertEqual(open_payload["turn"]["intent"]["actions"][0]["action_type"], "OPEN")
+        open_codes = [event["code"] for event in open_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("open_focus_success", open_codes)
+        self.assertIn("container_opened", open_codes)
+        self.assertNotIn("container_loot_found", open_codes)
+
+        search_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": f"Ich durchsuche die {container_ref['name']}."},
+        )
+        self.assertEqual(search_response.status_code, 200)
+        search_payload = search_response.json()
+        self.assertEqual(search_payload["turn"]["intent"]["actions"][0]["action_type"], "SEARCH")
+        search_codes = [event["code"] for event in search_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("search_focus_success", search_codes)
+        self.assertTrue("container_loot_found" in search_codes or "container_empty" in search_codes)
+
+    def test_g37_take_scene_object_marks_taken_and_updates_context(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g37-take-object",
+                "world_description": "Ein urban-okkulter Marktplatz mit herumliegenden Gegenstaenden.",
+                "character_description": "Ein aufmerksamer Binder, der verwertbare Dinge einsammelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "Ich schau mich um."})
+        context_payload = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        scene_object = next(entry for entry in context_payload["target_catalog"]["scene_points"] if entry["kind"] == "scene_object")
+
+        take_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": f"Ich nehme die {scene_object['name']}."},
+        )
+        self.assertEqual(take_response.status_code, 200)
+        take_payload = take_response.json()
+        self.assertEqual(take_payload["turn"]["intent"]["actions"][0]["action_type"], "TAKE")
+        take_codes = [event["code"] for event in take_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("take_focus_success", take_codes)
+        self.assertIn("scene_object_taken", take_codes)
+
+        updated_obj = next(
+            entry for entry in take_payload["context_after_turn"]["target_catalog"]["scene_points"] if entry["ref_id"] == scene_object["ref_id"]
+        )
+        self.assertTrue(updated_obj.get("discovery_state", {}).get("taken"))
 
     def test_g4_context_endpoint_assembles_turns_journal_and_npc_memory(self):
         create_response = self.client.post(

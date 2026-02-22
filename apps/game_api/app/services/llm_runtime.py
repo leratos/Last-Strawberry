@@ -162,6 +162,7 @@ class LlmRuntime:
         known_npc_refs: list[dict[str, str]] | None = None,
         known_location_refs: list[dict[str, str]] | None = None,
         known_item_refs: list[dict[str, str]] | None = None,
+        known_scene_point_refs: list[dict[str, str]] | None = None,
         context: GameContextResponse | None = None,
     ) -> TurnIntent:
         if self.settings.llm_mode != "openrouter":
@@ -174,6 +175,7 @@ class LlmRuntime:
                 known_locations=known_locations,
                 known_npc_refs=known_npc_refs,
                 known_location_refs=known_location_refs,
+                known_scene_point_refs=known_scene_point_refs,
             )
 
         try:
@@ -187,6 +189,7 @@ class LlmRuntime:
                 known_npc_refs=known_npc_refs or [],
                 known_location_refs=known_location_refs or [],
                 known_item_refs=known_item_refs or [],
+                known_scene_point_refs=known_scene_point_refs or [],
                 context=context,
             )
         except Exception as exc:
@@ -201,6 +204,7 @@ class LlmRuntime:
                 known_locations=known_locations,
                 known_npc_refs=known_npc_refs,
                 known_location_refs=known_location_refs,
+                known_scene_point_refs=known_scene_point_refs,
             )
             preview_intent.analysis_notes.append(
                 f"OpenRouter-Fallback auf Preview-Analyzer wegen Fehler: {type(exc).__name__}"
@@ -238,6 +242,7 @@ class LlmRuntime:
         known_npc_refs: list[dict[str, str]],
         known_location_refs: list[dict[str, str]],
         known_item_refs: list[dict[str, str]],
+        known_scene_point_refs: list[dict[str, str]],
         context: GameContextResponse | None,
     ) -> TurnIntent:
         system_prompt = (
@@ -256,6 +261,7 @@ class LlmRuntime:
                         "npcs": known_npc_refs,
                         "locations": known_location_refs,
                         "items": known_item_refs,
+                        "scene_points": known_scene_point_refs,
                     },
                 },
                 ensure_ascii=False,
@@ -288,6 +294,7 @@ class LlmRuntime:
                 known_npc_refs=known_npc_refs,
                 known_location_refs=known_location_refs,
                 known_item_refs=known_item_refs,
+                known_scene_point_refs=known_scene_point_refs,
             )
             actions.append(validated)
         analysis_notes = [str(note) for note in (payload.get("analysis_notes") or [])]
@@ -511,6 +518,7 @@ class LlmRuntime:
         known_npc_refs: list[dict[str, str]],
         known_location_refs: list[dict[str, str]],
         known_item_refs: list[dict[str, str]],
+        known_scene_point_refs: list[dict[str, str]],
     ) -> TurnIntentAction:
         params = dict(action.parameters)
         updates: dict[str, object] = {}
@@ -518,6 +526,7 @@ class LlmRuntime:
         npc_ref_index = self._build_ref_index(known_npc_refs)
         location_ref_index = self._build_ref_index(known_location_refs)
         item_ref_index = self._build_ref_index(known_item_refs)
+        scene_point_ref_index = self._build_ref_index(known_scene_point_refs)
 
         if action.action_type.value in {"TALK", "ATTACK", "RETREAT", "APPROACH"}:
             candidate_name = str(params.get("target_name") or "").strip()
@@ -591,6 +600,30 @@ class LlmRuntime:
                 params.setdefault("target_name", item_name)
                 if not action.target_ref:
                     updates["target_ref"] = item_name
+
+        if action.action_type.value in {"INSPECT", "OPEN", "SEARCH", "TAKE"}:
+            target_name = str(params.get("target_name") or "").strip()
+            target_ref = (action.target_ref or "").strip()
+            target_kind = str(params.get("target_kind") or action.target_kind or "").strip()
+            if not target_name and target_ref and not target_ref.startswith(("sp-", "poi-", "obj-", "ctr-")):
+                target_name = target_ref
+            target_meta = self._lookup_ref_entry(target_name, scene_point_ref_index) or {}
+            resolved_target_id = (
+                target_ref if target_ref.startswith(("sp-", "poi-", "obj-", "ctr-", "env-")) else self._lookup_ref_id(target_name, scene_point_ref_index)
+            )
+            if resolved_target_id:
+                updates["target_ref"] = resolved_target_id
+                params["target_id"] = resolved_target_id
+            if target_name:
+                params.setdefault("target_name", target_name)
+            if target_meta:
+                target_kind = str(target_meta.get("kind") or target_kind or "").strip() or target_kind
+                params.setdefault("target_kind", target_kind or None)
+                params.setdefault("target_location_name", str(target_meta.get("location_name") or "") or None)
+                params.setdefault("target_zone_id", str(target_meta.get("scene_zone_id") or "") or None)
+                params.setdefault("target_zone_name", str(target_meta.get("scene_zone_name") or "") or None)
+                if target_kind and not action.target_kind:
+                    updates["target_kind"] = target_kind
 
         updates["parameters"] = params
         if not updates:

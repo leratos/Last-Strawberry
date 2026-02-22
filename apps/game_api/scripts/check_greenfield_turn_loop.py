@@ -91,6 +91,25 @@ def _build_structured_approach_action(target_ref: dict[str, Any]) -> dict[str, A
     }
 
 
+def _build_structured_scene_action(target_ref: dict[str, Any], action_type: str) -> dict[str, Any]:
+    action_type_upper = action_type.upper()
+    intent = action_type_upper.lower()
+    return {
+        "action_type": action_type_upper,
+        "target_ref": target_ref["ref_id"],
+        "target_kind": target_ref.get("kind") or "scene_point",
+        "parameters": {
+            "intent": intent,
+            "target_id": target_ref["ref_id"],
+            "target_name": target_ref["name"],
+            "target_kind": target_ref.get("kind") or "scene_point",
+            "target_location_name": target_ref.get("location_name"),
+            "target_zone_id": target_ref.get("scene_zone_id"),
+            "target_zone_name": target_ref.get("scene_zone_name"),
+        },
+    }
+
+
 def _request_json(  # pragma: no cover - exercised manually against running local API
     *,
     method: str,
@@ -137,6 +156,70 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     if not npc_refs:
         raise RuntimeError("Quickcheck konnte keinen NPC im target_catalog finden.")
     npc_ref = npc_refs[0]
+
+    discover_turn_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={"player_input": "Ich schau mich um."},
+    )
+    discover_codes = _extract_event_codes(discover_turn_run)
+    if "discovery_revealed_scene_points" not in discover_codes:
+        raise RuntimeError(f"Quickcheck erwartet discovery_revealed_scene_points, bekam: {discover_codes}")
+    discovered_context = discover_turn_run.get("context_after_turn") or {}
+    discovered_scene_points = (discovered_context.get("target_catalog") or {}).get("scene_points") or []
+    if not discovered_scene_points:
+        raise RuntimeError("Quickcheck erwartete sichtbare Interaktionspunkte nach INSPECT.")
+    container_ref = next((entry for entry in discovered_scene_points if entry.get("kind") == "container"), None)
+    scene_object_ref = next((entry for entry in discovered_scene_points if entry.get("kind") == "scene_object"), None)
+    if container_ref is None or scene_object_ref is None:
+        raise RuntimeError("Quickcheck erwartet mindestens einen container und ein scene_object nach INSPECT.")
+
+    open_container_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Oeffne {container_ref.get('name', 'Container')}",
+            "actions_override": [_build_structured_scene_action(container_ref, "OPEN")],
+        },
+    )
+    open_container_codes = _extract_event_codes(open_container_run)
+    if "container_opened" not in open_container_codes:
+        raise RuntimeError(f"Quickcheck erwartet container_opened, bekam: {open_container_codes}")
+
+    search_container_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Durchsuche {container_ref.get('name', 'Container')}",
+            "actions_override": [_build_structured_scene_action(container_ref, "SEARCH")],
+        },
+    )
+    search_container_codes = _extract_event_codes(search_container_run)
+    if "search_focus_success" not in search_container_codes:
+        raise RuntimeError(f"Quickcheck erwartet search_focus_success, bekam: {search_container_codes}")
+    if not any(code in search_container_codes for code in ("container_loot_found", "container_empty", "container_already_searched")):
+        raise RuntimeError(f"Quickcheck erwartet Container-Search-Ergebnis, bekam: {search_container_codes}")
+
+    take_scene_object_run = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={
+            "player_input": f"UI Quickcheck: Nimm {scene_object_ref.get('name', 'Objekt')}",
+            "actions_override": [_build_structured_scene_action(scene_object_ref, "TAKE")],
+        },
+    )
+    take_scene_object_codes = _extract_event_codes(take_scene_object_run)
+    if "scene_object_taken" not in take_scene_object_codes:
+        raise RuntimeError(f"Quickcheck erwartet scene_object_taken, bekam: {take_scene_object_codes}")
+    scene_object_context = take_scene_object_run.get("context_after_turn") or {}
+    scene_object_entries = (scene_object_context.get("target_catalog") or {}).get("scene_points") or []
+    scene_object_after = next((entry for entry in scene_object_entries if entry.get("ref_id") == scene_object_ref.get("ref_id")), None)
+    if not scene_object_after or not bool((scene_object_after.get("discovery_state") or {}).get("taken")):
+        raise RuntimeError("Quickcheck erwartet discovery_state.taken=true nach TAKE.")
 
     talk_turn_run = _request_json(
         method="POST",
@@ -283,6 +366,11 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "world_id": world_id,
         "npc_id": npc_ref.get("ref_id"),
         "npc_name": npc_ref.get("name"),
+        "discover_event_codes": discover_codes,
+        "discovered_scene_points_count": len(discovered_scene_points),
+        "open_container_event_codes": open_container_codes,
+        "search_container_event_codes": search_container_codes,
+        "take_scene_object_event_codes": take_scene_object_codes,
         "talk_event_codes": talk_codes,
         "queue_event_codes": queue_codes,
         "had_auto_approach_talk": "auto_approach_for_talk" in talk_codes,

@@ -64,6 +64,7 @@ export type GameContextResponse = {
         npc_id: string;
         name: string;
         role: string;
+        faction?: string | null;
         location_name?: string | null;
         scene_zone_id?: string | null;
         scene_zone_name?: string | null;
@@ -87,6 +88,7 @@ export type GameContextResponse = {
       kind: string;
       name: string;
       role?: string | null;
+      faction?: string | null;
       source: string;
       location_name?: string | null;
       scene_zone_id?: string | null;
@@ -148,7 +150,7 @@ export type TurnRunResponse = {
 };
 
 export type StructuredTurnAction = {
-  action_type: "MOVE" | "APPROACH" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM" | "INSPECT";
+  action_type: "MOVE" | "APPROACH" | "RETREAT" | "TALK" | "ATTACK" | "USE_ITEM" | "INSPECT" | "OPEN" | "SEARCH" | "TAKE";
   target_ref?: string | null;
   destination?: string | null;
   item_ref?: string | null;

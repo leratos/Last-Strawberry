@@ -84,3 +84,16 @@
 - G29: Scene-Point-Discovery hat jetzt `detail_level` + `discovery_state` (broad `schau` zeigt Namen, fokussiertes `Inspect` hebt Details an).
 - G29: Container unter den Umweltzielen haben persistente Zustandslogik (geoeffnet/durchsucht) und koennen einmalig deterministischen Loot vergeben.
 - G29: UI zeigt bei Umweltzielen Details nur nach fokussiertem Inspect; Containerstatus wird sichtbar (z.B. geoeffnet/durchsucht).
+- G30: Freitext-`INSPECT` kann sichtbare Umweltziele gezielt aufloesen (z. B. `Ich untersuche die Vorratskiste`) statt nur broad inspect.
+- G30: `run_turn`/Preview-Analyse geben sichtbare `scene_points` an Analyzer/LLM-Runtime weiter; Route- und Parser-Tests sichern focused inspect per Freitext.
+- G31: Neue strukturierte Aktionen `OPEN` und `SEARCH` eingefuehrt (Schema, Parser, Rules, Persistenz, UI-Override-Normalisierung).
+- G31: Container-Semantik getrennt: `OPEN` oeffnet ohne Loot, `SEARCH` durchsucht/lootet; Route-Test deckt Sequenz `open -> search` ab.
+- G32: UI-Quick-Actions fuer Container erweitert (`Oeffnen`, `Durchsuchen`) mit Status-Disable bei bereits geoeffnetem Container.
+- G33: Preview-Narration hebt Container-/Loot-Ergebnisse expliziter hervor (`Fund:` / `Behaeltnis:`), statt sie nur implizit im Eventtext zu mischen.
+- G34: Discovery-UI fuer Interaktionspunkte verbessert (Counter `sichtbar/detail verifiziert`, Discovery-Badges pro Punkt).
+- G35: NPC-Rollenwissen wird im Context maskiert (`unknown`) bis echte Interaktion/Memory vorliegt; bloßes Entdecken reicht nicht mehr fuer Rollenerkennung.
+- G36: Fraktionswissen folgt demselben Prinzip wie Rollenwissen (erst nach Interaktion sichtbar); UI zeigt Fraktion nur wenn bekannt.
+- G37: Neuer Action-Typ `TAKE` fuer `scene_object`-Ziele (Freitext + strukturierte Aktion), inklusive persistenter Objektzustand `taken` und einmaligem Loot-MVP.
+- G37: UI-Quick-Action `Nehmen` bei detailverifizierten Szene-Objekten, mit Statusanzeige `verfuegbar/mitgenommen`.
+- G38: Greenfield-Quickcheck erweitert um Discovery (`schau mich um`), Container `OPEN/SEARCH` und `TAKE` auf Szene-Objekte.
+- G39: Dokumentation/Progress auf G30-G39 aktualisiert; Abschluss-Regressionslauf (Repo-Tests + Frontend-Build) als Batch-Check.

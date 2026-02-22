@@ -269,6 +269,17 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         {"ref_id": entry.ref_id, "name": entry.name}
         for entry in context.target_catalog.items
     ]
+    scene_point_refs = [
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "kind": entry.kind,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+        }
+        for entry in context.target_catalog.scene_points
+    ]
     return llm_runtime.analyze_intent(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
@@ -279,6 +290,7 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
         known_npc_refs=npc_refs,
         known_location_refs=location_refs,
         known_item_refs=item_refs,
+        known_scene_point_refs=scene_point_refs,
         context=context,
     )
 
@@ -331,6 +343,17 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         for entry in context_before.target_catalog.locations
     ]
     known_item_refs = [{"ref_id": entry.ref_id, "name": entry.name} for entry in context_before.target_catalog.items]
+    known_scene_point_refs = [
+        {
+            "ref_id": entry.ref_id,
+            "name": entry.name,
+            "kind": entry.kind,
+            "location_name": entry.location_name,
+            "scene_zone_id": entry.scene_zone_id,
+            "scene_zone_name": entry.scene_zone_name,
+        }
+        for entry in context_before.target_catalog.scene_points
+    ]
 
     if request.actions_override:
         normalized_actions = _normalize_override_actions(request.actions_override)
@@ -352,6 +375,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             known_npc_refs=known_npc_refs,
             known_location_refs=known_location_refs,
             known_item_refs=known_item_refs,
+            known_scene_point_refs=known_scene_point_refs,
             context=context_before,
         )
     resolution = engine.resolve(
@@ -426,6 +450,13 @@ def _normalize_override_actions(actions: list[TurnIntentAction]) -> list[TurnInt
                 updates["target_ref"] = item_name
             params.setdefault("item_id", item_id or None)
             params.setdefault("item_name", item_name or None)
+        if action.action_type.value in {"INSPECT", "OPEN", "SEARCH", "TAKE"}:
+            target_id = str(params.get("target_id") or action.target_ref or "").strip()
+            target_name = str(params.get("target_name") or "").strip()
+            if target_id:
+                updates["target_ref"] = target_id
+            params.setdefault("target_id", target_id or None)
+            params.setdefault("target_name", target_name or None)
         updates["parameters"] = params
         normalized.append(action.model_copy(update=updates))
     return normalized
