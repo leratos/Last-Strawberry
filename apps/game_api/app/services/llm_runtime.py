@@ -18,6 +18,40 @@ class LlmRuntimeError(RuntimeError):
     pass
 
 
+_OPENROUTER_INTENT_JSON_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "turn_intent_response",
+        "strict": False,
+        "schema": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "properties": {
+                            "action_type": {"type": "string"},
+                            "target_ref": {"type": ["string", "null"]},
+                            "destination": {"type": ["string", "null"]},
+                            "item_ref": {"type": ["string", "null"]},
+                            "target_kind": {"type": ["string", "null"]},
+                            "confidence": {"type": ["number", "null"]},
+                            "parameters": {"type": ["object", "null"]},
+                        },
+                        "required": ["action_type"],
+                    },
+                },
+                "analysis_notes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["actions"],
+        },
+    },
+}
+
+
 @dataclass(frozen=True)
 class LlmRuntimeStatus:
     mode: str
@@ -236,6 +270,7 @@ class LlmRuntime:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             purpose="intent_analysis",
+            response_format_candidates=[_OPENROUTER_INTENT_JSON_SCHEMA, {"type": "json_object"}],
         )
         actions_raw = payload.get("actions") or []
         if isinstance(actions_raw, dict):
@@ -302,6 +337,7 @@ class LlmRuntime:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             purpose="narration",
+            response_format_candidates=[{"type": "json_object"}],
         )
         fallback_narrative = build_narrative_from_resolution(resolution)
         narrative_text = str(payload.get("narrative") or "").strip()
@@ -321,13 +357,39 @@ class LlmRuntime:
         system_prompt: str,
         user_prompt: str,
         purpose: str,
+        response_format_candidates: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        content = self._openrouter_client.chat_completion(
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            response_format={"type": "json_object"},
-        )
+        formats = response_format_candidates or [{"type": "json_object"}]
+        last_error: Exception | None = None
+        for response_format in formats:
+            try:
+                content = self._openrouter_client.chat_completion(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    response_format=response_format,
+                )
+                return self._parse_or_repair_json_object(
+                    model=model,
+                    content=content,
+                    purpose=purpose,
+                    response_format=response_format,
+                )
+            except Exception as exc:
+                last_error = exc
+                continue
+        if last_error is None:
+            raise LlmRuntimeError("OpenRouter request failed before response parsing.")
+        raise LlmRuntimeError(f"OpenRouter JSON request failed for all response formats: {last_error}") from last_error
+
+    def _parse_or_repair_json_object(
+        self,
+        *,
+        model: str,
+        content: str,
+        purpose: str,
+        response_format: dict[str, Any],
+    ) -> dict[str, Any]:
         try:
             return self._parse_json_object_from_llm_text(content)
         except LlmRuntimeError as first_error:
@@ -347,7 +409,7 @@ class LlmRuntime:
                             "Convert the following content to a valid JSON object preserving meaning.\n"
                             f"{content}"
                         ),
-                        response_format={"type": "json_object"},
+                        response_format=response_format,
                     )
                     return self._parse_json_object_from_llm_text(repaired_content)
                 except Exception as exc:  # pragma: no cover - retry path exercised in tests

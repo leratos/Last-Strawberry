@@ -16,6 +16,11 @@ type BootstrapForm = {
 };
 
 type StructuredActionKind = "MOVE" | "TALK" | "ATTACK" | "USE_ITEM";
+type StructuredTarget = { refId: string; name: string; kind: string; auxiliary?: string };
+type QueuedStructuredAction = {
+  label: string;
+  action: StructuredTurnAction;
+};
 
 const DEFAULT_BOOTSTRAP: BootstrapForm = {
   userId: "local-dev-user",
@@ -28,7 +33,7 @@ const DEFAULT_BOOTSTRAP: BootstrapForm = {
 function getStructuredTargets(
   context: GameContextResponse,
   composerActionKind: StructuredActionKind,
-): Array<{ refId: string; name: string; kind: string; auxiliary?: string }> {
+): StructuredTarget[] {
   if (composerActionKind === "MOVE") {
     return context.target_catalog.locations.map((entry) => ({
       refId: entry.ref_id,
@@ -65,6 +70,7 @@ export function App() {
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
+  const [structuredQueue, setStructuredQueue] = useState<QueuedStructuredAction[]>([]);
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -156,14 +162,43 @@ export function App() {
 
     const action = buildStructuredAction(composerActionKind, selected);
     const label = buildStructuredActionLabel(composerActionKind, selected);
+    await executeStructuredActions([{ label, action }], `Struktur-Turn: ${label}`);
+  }
 
+  function enqueueStructuredAction(actionKind: StructuredActionKind, target: StructuredTarget): void {
+    const action = buildStructuredAction(actionKind, target);
+    const label = buildStructuredActionLabel(actionKind, target);
+    setStructuredQueue((current) => [...current, { label, action }]);
+    setLastActionMessage(`Zur Queue hinzugefuegt: ${label}`);
+    setError("");
+  }
+
+  async function handleQueueSubmit(): Promise<void> {
+    if (structuredQueue.length === 0) {
+      setError("Queue ist leer.");
+      return;
+    }
+    await executeStructuredActions(structuredQueue, `Queue (${structuredQueue.length} Aktionen)`);
+    setStructuredQueue([]);
+  }
+
+  async function executeStructuredActions(
+    queuedActions: QueuedStructuredAction[],
+    messagePrefix: string,
+  ): Promise<void> {
+    if (!worldId.trim()) {
+      return;
+    }
     setIsRunningTurn(true);
     setError("");
     setLastActionMessage("");
     try {
-      const runResult = await runTurn(worldId.trim(), label, { actionsOverride: [action] });
+      const label = queuedActions.map((entry) => entry.label).join(" | ").slice(0, 500);
+      const runResult = await runTurn(worldId.trim(), label, {
+        actionsOverride: queuedActions.map((entry) => entry.action),
+      });
       await applyTurnResult(runResult, worldId.trim(), label);
-      setLastActionMessage(`Struktur-Turn ausgefuehrt (${runResult.turn.turn_id}).`);
+      setLastActionMessage(`${messagePrefix} ausgefuehrt (${runResult.turn.turn_id}).`);
     } catch (turnError) {
       setError(turnError instanceof Error ? turnError.message : "Struktur-Turn fehlgeschlagen.");
     } finally {
@@ -193,7 +228,7 @@ export function App() {
 
   function buildStructuredAction(
     actionKind: StructuredActionKind,
-    target: { refId: string; name: string; kind: string },
+    target: StructuredTarget,
   ): StructuredTurnAction {
     if (actionKind === "MOVE") {
       return {
@@ -239,7 +274,7 @@ export function App() {
 
   function buildStructuredActionLabel(
     actionKind: StructuredActionKind,
-    target: { refId: string; name: string; kind: string },
+    target: StructuredTarget,
   ): string {
     if (actionKind === "MOVE") {
       return `UI: Gehe zu ${target.name}`;
@@ -415,11 +450,52 @@ export function App() {
                   >
                     {isRunningTurn ? "Verarbeite..." : "Struktur-Turn senden"}
                   </button>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => {
+                      const selected =
+                        composerTargets.find((entry) => entry.refId === composerTargetRef) || composerTargets[0];
+                      if (selected) {
+                        enqueueStructuredAction(composerActionKind, selected);
+                      }
+                    }}
+                    disabled={isRunningTurn || composerTargets.length === 0}
+                  >
+                    Zur Queue
+                  </button>
                 </div>
                 {composerTargets[0] ? (
                   <p className="list-subtle">
                     ID-basierter Turn ueber `actions_override`. Freitext bleibt optional parallel nutzbar.
                   </p>
+                ) : null}
+                <div className="turn-actions">
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => void handleQueueSubmit()}
+                    disabled={isRunningTurn || structuredQueue.length === 0}
+                  >
+                    {isRunningTurn ? "Verarbeite..." : `Queue senden (${structuredQueue.length})`}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => setStructuredQueue([])}
+                    disabled={isRunningTurn || structuredQueue.length === 0}
+                  >
+                    Queue leeren
+                  </button>
+                </div>
+                {structuredQueue.length > 0 ? (
+                  <ul className="list list-tight">
+                    {structuredQueue.map((entry, index) => (
+                      <li key={`${entry.label}-${index}`}>
+                        <span className="list-title">{index + 1}. {entry.label}</span>
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
               </section>
 
@@ -521,6 +597,40 @@ export function App() {
                       {item.name} x{item.quantity}
                     </span>
                     <span className="list-subtle">{item.use_modes.join(", ")} | {item.inventory_item_id}</span>
+                    <div className="turn-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={
+                          isRunningTurn ||
+                          item.quantity <= 0 ||
+                          (!item.use_modes.includes("use") && !item.use_modes.includes("consume"))
+                        }
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: buildStructuredActionLabel("USE_ITEM", {
+                                  refId: item.inventory_item_id,
+                                  name: item.name,
+                                  kind: "item",
+                                  auxiliary: item.use_modes.join(", "),
+                                }),
+                                action: buildStructuredAction("USE_ITEM", {
+                                  refId: item.inventory_item_id,
+                                  name: item.name,
+                                  kind: "item",
+                                  auxiliary: item.use_modes.join(", "),
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Use
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -544,6 +654,48 @@ export function App() {
                     {entry.bundle.recent_memories[0] ? (
                       <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                     ) : null}
+                    <div className="turn-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: buildStructuredActionLabel("TALK", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                }),
+                                action: buildStructuredAction("TALK", {
+                                  refId: entry.bundle.profile.npc_id,
+                                  name: entry.bundle.profile.name,
+                                  kind: "npc",
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Talk
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
+                          enqueueStructuredAction("ATTACK", {
+                            refId: entry.bundle.profile.npc_id,
+                            name: entry.bundle.profile.name,
+                            kind: "npc",
+                          })
+                        }
+                      >
+                        +Attack Queue
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -554,6 +706,34 @@ export function App() {
                   <li key={location.ref_id}>
                     <span className="list-title">{location.name}</span>
                     <span className="list-subtle">{location.ref_id}</span>
+                    <div className="turn-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() =>
+                          void executeStructuredActions(
+                            [
+                              {
+                                label: buildStructuredActionLabel("MOVE", {
+                                  refId: location.ref_id,
+                                  name: location.name,
+                                  kind: "location",
+                                }),
+                                action: buildStructuredAction("MOVE", {
+                                  refId: location.ref_id,
+                                  name: location.name,
+                                  kind: "location",
+                                }),
+                              },
+                            ],
+                            "Quick Action",
+                          )
+                        }
+                      >
+                        Move
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

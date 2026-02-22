@@ -301,6 +301,65 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         zorak_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == zorak_ref["ref_id"])
         self.assertEqual(zorak_bundle["relationship"]["standing"], 1)
 
+    def test_g11_run_turn_accepts_multi_action_override_queue(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g11-1",
+                "world_description": "Eine Stadt mit Markt und Taverne sowie einem gesprächigen Haendler.",
+                "character_description": "Eine Reisende, die zuerst Orte aufsucht und dann Informationen sammelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        market_ref = next(
+            (entry for entry in context_payload["target_catalog"]["locations"] if entry["name"] == "Marktplatz"),
+            None,
+        )
+        if market_ref is None:
+            market_ref = context_payload["target_catalog"]["locations"][0]
+        npc_ref = context_payload["target_catalog"]["npcs"][0]
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI Queue: Gehe zum Marktplatz und rede mit Haendler",
+                "actions_override": [
+                    {
+                        "action_type": "MOVE",
+                        "target_ref": market_ref["ref_id"],
+                        "destination": "Marktplatz",
+                        "target_kind": "location",
+                        "parameters": {
+                            "intent": "move",
+                            "destination_id": market_ref["ref_id"],
+                            "destination_name": "Marktplatz",
+                        },
+                    },
+                    {
+                        "action_type": "TALK",
+                        "target_ref": npc_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": npc_ref["ref_id"],
+                            "target_name": npc_ref["name"],
+                        },
+                    },
+                ],
+            },
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        self.assertEqual(payload["resulting_character_state"]["location_name"], "Marktplatz")
+        applied = payload["turn"]["resolution"]["applied_actions"]
+        self.assertEqual([a["action_type"] for a in applied], ["MOVE", "TALK"])
+        self.assertIn("UI structured action override", " ".join(payload["turn"]["intent"]["analysis_notes"]))
+
 
 if __name__ == "__main__":
     unittest.main()
