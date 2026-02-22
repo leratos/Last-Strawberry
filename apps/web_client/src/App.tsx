@@ -1305,6 +1305,8 @@ export function App() {
                   <li key={point.ref_id}>
                     <span className="list-title">{point.name}</span>
                     <span className="list-subtle">
+                      {point.kind}
+                      {" | "}
                       {point.ref_id}
                       {point.scene_zone_name ? ` | Zone: ${point.scene_zone_name}` : ""}
                     </span>

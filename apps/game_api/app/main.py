@@ -130,7 +130,7 @@ def _assemble_context_for_world(
     )
     if hidden_scene_points > 0:
         context.retrieval_notes.append(
-            f"Es gibt {hidden_scene_points} unerkundete Interaktionspunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
+            f"Es gibt {hidden_scene_points} unerkundete Interaktions-/Objektpunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
         )
     return context
 

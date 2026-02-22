@@ -45,12 +45,31 @@ def _base_points_for_location(location_name: str) -> list[GameTargetReference]:
             scene_zone_name="Anschlagbereich",
             aliases=["tafel", "hinweise", "zettel"],
         ),
+        _scene_point_ref(
+            point_id=f"obj-{slug}-supply-crate",
+            name="Vorratskiste",
+            kind="container",
+            location_name=location_name,
+            scene_zone_id=f"zone-poi-{slug}-crate",
+            scene_zone_name="Kistenbereich",
+            aliases=["kiste", "kiste am rand", "truhe"],
+        ),
+        _scene_point_ref(
+            point_id=f"obj-{slug}-discarded-bag",
+            name="Liegende Tasche",
+            kind="scene_object",
+            location_name=location_name,
+            scene_zone_id=f"zone-poi-{slug}-bag",
+            scene_zone_name="Randbereich",
+            aliases=["tasche", "beutel", "sack"],
+        ),
     ]
     if slug in {"marktplatz", "market-square"}:
         refs.append(
             _scene_point_ref(
                 point_id="poi-marktplatz-brunnen",
                 name="Brunnenanlage",
+                kind="scene_point",
                 location_name=location_name,
                 scene_zone_id="zone-fountain-ring",
                 scene_zone_name="Brunnenplatz",
@@ -67,6 +86,7 @@ def _urban_occult_points_for_location(location_name: str) -> list[GameTargetRefe
             _scene_point_ref(
                 point_id="poi-marktplatz-runenspuren",
                 name="Verkohlte Runenspuren",
+                kind="scene_point",
                 location_name=location_name,
                 scene_zone_id="zone-fountain-ring",
                 scene_zone_name="Brunnenplatz",
@@ -75,16 +95,27 @@ def _urban_occult_points_for_location(location_name: str) -> list[GameTargetRefe
             _scene_point_ref(
                 point_id="poi-marktplatz-laternenkasten",
                 name="Flackernder Laternenkasten",
+                kind="scene_object",
                 location_name=location_name,
                 scene_zone_id="zone-market-edge",
                 scene_zone_name="Randgasse",
                 aliases=["laterne", "stromkasten", "kabel"],
+            ),
+            _scene_point_ref(
+                point_id="obj-marktplatz-siegelkoffer",
+                name="Versiegelter Instrumentenkoffer",
+                kind="container",
+                location_name=location_name,
+                scene_zone_id="zone-market-edge",
+                scene_zone_name="Randgasse",
+                aliases=["koffer", "instrumentenkoffer", "versiegelter koffer"],
             ),
         ]
     return [
         _scene_point_ref(
             point_id=f"poi-{slug}-arcane-residue",
             name="Arkane Rueckstaende",
+            kind="scene_point",
             location_name=location_name,
             scene_zone_id=f"zone-poi-{slug}-arcane",
             scene_zone_name="Stoerungsbereich",
@@ -120,6 +151,7 @@ def _scene_point_ref(
     *,
     point_id: str,
     name: str,
+    kind: str = "scene_point",
     location_name: str,
     scene_zone_id: str,
     scene_zone_name: str,
@@ -127,7 +159,7 @@ def _scene_point_ref(
 ) -> GameTargetReference:
     return GameTargetReference(
         ref_id=point_id,
-        kind="scene_point",
+        kind=kind,
         name=name,
         aliases=aliases,
         source="scene_catalog",
