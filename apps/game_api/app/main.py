@@ -108,6 +108,9 @@ def health() -> dict[str, str]:
         "intent_provider": llm_status.intent_provider,
         "narration_provider": llm_status.narration_provider,
         "openrouter_configured": str(llm_status.openrouter_configured).lower(),
+        "openrouter_intent_model": llm_status.intent_model,
+        "openrouter_narrator_model": llm_status.narrator_model,
+        "openrouter_json_repair_attempts": str(settings.openrouter_json_repair_attempts),
     }
 
 
