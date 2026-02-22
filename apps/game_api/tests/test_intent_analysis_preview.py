@@ -99,6 +99,34 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertIn("MOVE", action_types)
         self.assertIn("TALK", action_types)
 
+    def test_skips_location_move_when_phrase_targets_known_npc_for_talk(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich bewege mich zu Mira und frage sie was sie macht.",
+            inventory=[],
+            known_npc_names=["Mira"],
+            known_npc_refs=[
+                {
+                    "ref_id": "npc-mira",
+                    "name": "Mira",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-market-stalls",
+                    "scene_zone_name": "Marktstaende",
+                    "distance_band_to_player": "near",
+                }
+            ],
+            known_locations=["Marktplatz", "Taverne"],
+            known_location_refs=[{"ref_id": "loc-marktplatz", "name": "Marktplatz"}],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertNotIn("MOVE", action_types)
+        self.assertIn("TALK", action_types)
+        talk_action = next(action for action in intent.actions if action.action_type.value == "TALK")
+        self.assertEqual(talk_action.target_ref, "npc-mira")
+        self.assertEqual(talk_action.parameters.get("target_distance_band"), "near")
+        self.assertIn("Auto-Approach", " ".join(intent.analysis_notes))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,29 +38,37 @@ def analyze_player_input_preview(
     npc_ref_index = _build_ref_index(known_npc_refs or [])
     location_ref_index = _build_ref_index(known_location_refs or [])
 
+    has_talk_verb = _contains_any_verb(lowered, _TALK_VERBS)
     destination = _extract_destination(text)
     if destination:
         canonical_destination = _canonicalize_name(destination, known_locations or [])
         location_meta = _lookup_ref_entry(canonical_destination, location_ref_index) or {}
-        resolved_location_id = str(location_meta.get("ref_id") or "").strip() or None
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.move,
-                destination=canonical_destination,
-                target_ref=resolved_location_id or None,
-                target_kind="location",
-                parameters={
-                    "intent": "move",
-                    "destination_name": canonical_destination,
-                    "destination_id": resolved_location_id,
-                    "target_location_name": str(location_meta.get("location_name") or canonical_destination),
-                    "target_zone_id": str(location_meta.get("scene_zone_id") or "") or None,
-                    "target_zone_name": str(location_meta.get("scene_zone_name") or "") or None,
-                },
-                confidence=0.85,
-            )
+        npc_meta = _lookup_ref_entry(_canonicalize_name(destination, known_npc_names or []), npc_ref_index) or {}
+        looks_like_npc_approach = bool(
+            has_talk_verb and not location_meta and str(npc_meta.get("ref_id") or "").strip()
         )
-        notes.append(f"Bewegungsziel erkannt: {canonical_destination}")
+        if looks_like_npc_approach:
+            notes.append("Bewegung zu NPC erkannt; Orts-MOVE uebersprungen (TALK Auto-Approach).")
+        else:
+            resolved_location_id = str(location_meta.get("ref_id") or "").strip() or None
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.move,
+                    destination=canonical_destination,
+                    target_ref=resolved_location_id or None,
+                    target_kind="location",
+                    parameters={
+                        "intent": "move",
+                        "destination_name": canonical_destination,
+                        "destination_id": resolved_location_id,
+                        "target_location_name": str(location_meta.get("location_name") or canonical_destination),
+                        "target_zone_id": str(location_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(location_meta.get("scene_zone_name") or "") or None,
+                    },
+                    confidence=0.85,
+                )
+            )
+            notes.append(f"Bewegungsziel erkannt: {canonical_destination}")
 
     if _contains_any_verb(lowered, _USE_VERBS):
         matched_item = _match_inventory_item(lowered, inventory)
@@ -116,7 +124,7 @@ def analyze_player_input_preview(
         )
         notes.append(f"Angriff erkannt: {target}")
 
-    if _contains_any_verb(lowered, _TALK_VERBS):
+    if has_talk_verb:
         target = _extract_talk_target(text) or "npc"
         target = _canonicalize_name(target, known_npc_names or [])
         target_meta = _lookup_ref_entry(target, npc_ref_index) or {}

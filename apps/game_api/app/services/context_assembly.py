@@ -127,7 +127,11 @@ def _build_target_catalog(
             location_name=npc.location_name or world.world_seed.start_location_name,
             scene_zone_id=npc.scene_zone_id,
             scene_zone_name=npc.scene_zone_name,
-            distance_band_to_player=_distance_band_for_npc(world=world, npc_zone_id=npc.scene_zone_id),
+            distance_band_to_player=_distance_band_for_entity(
+                world=world,
+                entity_location_name=npc.location_name or world.world_seed.start_location_name,
+                entity_zone_id=npc.scene_zone_id,
+            ),
         )
     for bundle in npc_memory:
         profile = bundle.profile
@@ -140,7 +144,11 @@ def _build_target_catalog(
             location_name=profile.location_name or world.world_seed.start_location_name,
             scene_zone_id=profile.scene_zone_id,
             scene_zone_name=profile.scene_zone_name,
-            distance_band_to_player=_distance_band_for_npc(world=world, npc_zone_id=profile.scene_zone_id),
+            distance_band_to_player=_distance_band_for_entity(
+                world=world,
+                entity_location_name=profile.location_name or world.world_seed.start_location_name,
+                entity_zone_id=profile.scene_zone_id,
+            ),
         )
 
     for item in world.inventory:
@@ -174,7 +182,11 @@ def _build_target_catalog(
             aliases=[],
             source="world_seed",
             location_name=start_location,
-            distance_band_to_player="near" if start_location == current_location else "far",
+            distance_band_to_player=_distance_band_for_entity(
+                world=world,
+                entity_location_name=start_location,
+                entity_zone_id=None,
+            ),
         )
 
     for turn in turns:
@@ -190,6 +202,11 @@ def _build_target_catalog(
                         aliases=[],
                         source="turn_intent",
                         location_name=move_name,
+                        distance_band_to_player=_distance_band_for_entity(
+                            world=world,
+                            entity_location_name=move_name,
+                            entity_zone_id=None,
+                        ),
                     )
 
     return GameTargetCatalog(
@@ -204,12 +221,26 @@ def _location_ref_id_from_name(name: str) -> str:
     return f"loc-{(slug or 'unknown')[:48]}"
 
 
-def _distance_band_for_npc(*, world: WorldSessionResponse, npc_zone_id: str | None) -> str:
-    if not npc_zone_id:
-        return "near"
+def _distance_band_for_entity(
+    *,
+    world: WorldSessionResponse,
+    entity_location_name: str | None,
+    entity_zone_id: str | None,
+) -> str:
+    player_location = (world.character_state.location_name or "").strip()
     player_zone = (world.character_state.scene_zone_id or "").strip()
-    if not player_zone:
+    target_location = (entity_location_name or "").strip()
+    target_zone = (entity_zone_id or "").strip()
+
+    if target_location and player_location and target_location != player_location:
+        return "far"
+
+    if target_zone and player_zone:
+        if target_zone == player_zone:
+            return "adjacent"
         return "near"
-    if npc_zone_id == player_zone:
-        return "adjacent"
-    return "far"
+
+    if target_location and player_location and target_location == player_location:
+        return "near"
+
+    return "near"
