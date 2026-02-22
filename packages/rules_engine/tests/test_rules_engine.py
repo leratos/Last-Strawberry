@@ -654,6 +654,32 @@ class TestRulesEngine(unittest.TestCase):
         result = engine.resolve(intent=intent, character_state=state, inventory=[])
         self.assertIn("inspect_focus_success", [event.code for event in result.system_events])
 
+    def test_broad_inspect_emits_broad_success_event(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
+            attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=10, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich schau mich um.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.inspect,
+                    target_kind="environment",
+                    parameters={"intent": "inspect", "inspect_mode": "broad"},
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        self.assertIn("inspect_broad_success", [event.code for event in result.system_events])
+
 
 if __name__ == "__main__":
     unittest.main()

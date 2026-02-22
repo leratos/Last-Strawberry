@@ -45,3 +45,5 @@ class GameContextResponse(LSBaseModel):
     target_catalog: GameTargetCatalog = Field(default_factory=GameTargetCatalog)
     retrieval_player_input: str | None = Field(default=None, max_length=2000)
     retrieval_notes: list[str] = Field(default_factory=list)
+    hidden_npc_count: int = Field(default=0, ge=0)
+    hidden_scene_point_count: int = Field(default=0, ge=0)

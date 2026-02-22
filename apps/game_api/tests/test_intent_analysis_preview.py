@@ -120,7 +120,52 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(inspect_action.target_kind, "container")
         self.assertEqual(inspect_action.parameters.get("target_name"), "Vorratskiste")
         self.assertEqual(inspect_action.parameters.get("target_kind"), "container")
+        self.assertEqual(inspect_action.parameters.get("inspect_mode"), "focused")
         self.assertIn("Fokussierte Untersuchung", " ".join(intent.analysis_notes))
+
+    def test_maps_schau_mir_x_genauer_an_to_focused_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich schaue mir die Vorratskiste genauer an.",
+            inventory=[],
+            known_scene_point_refs=[{"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}],
+        )
+        inspect_action = next(action for action in intent.actions if action.action_type.value == "INSPECT")
+        self.assertEqual(inspect_action.target_ref, "ctr-market-supplies")
+        self.assertEqual(inspect_action.parameters.get("inspect_mode"), "focused")
+
+    def test_broad_inspect_sets_inspect_mode_broad(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich schau mich um.",
+            inventory=[],
+        )
+        inspect_action = next(action for action in intent.actions if action.action_type.value == "INSPECT")
+        self.assertEqual(inspect_action.parameters.get("inspect_mode"), "broad")
+
+    def test_unknown_targeted_inspect_returns_clarify_instead_of_broad_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich untersuche die versteckte Gestalt am Torbogen.",
+            inventory=[],
+            known_scene_point_refs=[{"ref_id": "poi-board", "name": "Anschlagtafel", "kind": "scene_point"}],
+        )
+        self.assertEqual(intent.actions[0].action_type.value, "CLARIFY")
+        self.assertEqual(intent.actions[0].parameters.get("reason"), "unknown_inspect_target")
+
+    def test_search_environment_phrase_maps_to_broad_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich durchsuche die Umgebung nach Hinweisen.",
+            inventory=[],
+        )
+        inspect_action = next(action for action in intent.actions if action.action_type.value == "INSPECT")
+        self.assertEqual(inspect_action.parameters.get("inspect_mode"), "broad")
+        self.assertEqual(inspect_action.parameters.get("source_verb"), "search_environment")
 
     def test_maps_freetext_open_to_visible_container_target(self):
         intent = analyze_player_input_preview(
@@ -133,6 +178,18 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         open_action = next(action for action in intent.actions if action.action_type.value == "OPEN")
         self.assertEqual(open_action.target_ref, "ctr-market-supplies")
         self.assertEqual(open_action.target_kind, "container")
+
+    def test_unknown_open_target_clarify_mentions_discovery(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich oeffne die Kiste hinter dem Vorhang.",
+            inventory=[],
+            known_scene_point_refs=[],
+        )
+        self.assertEqual(intent.actions[0].action_type.value, "CLARIFY")
+        self.assertEqual(intent.actions[0].parameters.get("reason"), "unknown_open_target")
+        self.assertIn("Schau dich zuerst um", str(intent.actions[0].parameters.get("message")))
 
     def test_maps_freetext_search_to_visible_container_target(self):
         intent = analyze_player_input_preview(
@@ -157,6 +214,18 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         take_action = next(action for action in intent.actions if action.action_type.value == "TAKE")
         self.assertEqual(take_action.target_ref, "obj-market-bag")
         self.assertEqual(take_action.target_kind, "scene_object")
+
+    def test_unknown_take_target_clarify_mentions_discovery(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich nehme den verzierten Koffer.",
+            inventory=[],
+            known_scene_point_refs=[],
+        )
+        self.assertEqual(intent.actions[0].action_type.value, "CLARIFY")
+        self.assertEqual(intent.actions[0].parameters.get("reason"), "unknown_take_target")
+        self.assertIn("Schau dich zuerst um", str(intent.actions[0].parameters.get("message")))
 
     def test_detects_move_phrase_bewege_mich_zu(self):
         intent = analyze_player_input_preview(
