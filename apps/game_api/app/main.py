@@ -99,11 +99,17 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         limit_memories_per_npc=max(1, memory_per_npc),
     )
+    visible_scene_points = repository.list_visible_scene_points_in_location(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        location_name=session.character_state.location_name,
+    )
     context = assemble_game_context(
         world=session,
         turns=turns,
         npc_memory=npc_memory,
         retrieval_player_input=player_input,
+        scene_points=visible_scene_points,
         journal_limit=journal_limit,
         turn_limit=turn_limit,
         memory_per_npc=memory_per_npc,
@@ -116,6 +122,15 @@ def _assemble_context_for_world(
     if hidden_npc_count > 0:
         context.retrieval_notes.append(
             f"Es gibt {hidden_npc_count} unbekannte Praesenz(en) an diesem Ort. Umsehen/Untersuchen kann neue Ziele aufdecken."
+        )
+    hidden_scene_points = repository.count_hidden_scene_points_in_location(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        location_name=session.character_state.location_name,
+    )
+    if hidden_scene_points > 0:
+        context.retrieval_notes.append(
+            f"Es gibt {hidden_scene_points} unerkundete Interaktionspunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
         )
     return context
 

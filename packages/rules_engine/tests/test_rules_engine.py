@@ -624,6 +624,36 @@ class TestRulesEngine(unittest.TestCase):
         reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_aggressive_to_retreat")
         self.assertIn("Beschwoerungsenergie", reaction_event.message)
 
+    def test_inspect_scene_point_emits_focus_success(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
+            attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=10, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich untersuche die Runenspuren.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.inspect,
+                    target_ref="poi-marktplatz-runenspuren",
+                    target_kind="scene_point",
+                    parameters={
+                        "target_name": "Verkohlte Runenspuren",
+                        "target_kind": "scene_point",
+                    },
+                )
+            ],
+        )
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+        self.assertIn("inspect_focus_success", [event.code for event in result.system_events])
+
 
 if __name__ == "__main__":
     unittest.main()

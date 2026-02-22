@@ -113,6 +113,17 @@ export type GameContextResponse = {
       scene_zone_name?: string | null;
       distance_band_to_player?: string | null;
     }>;
+    scene_points: Array<{
+      ref_id: string;
+      kind: string;
+      name: string;
+      source: string;
+      aliases?: string[];
+      location_name?: string | null;
+      scene_zone_id?: string | null;
+      scene_zone_name?: string | null;
+      distance_band_to_player?: string | null;
+    }>;
   };
   retrieval_player_input: string | null;
   retrieval_notes: string[];

@@ -69,3 +69,15 @@
 - G22: Rollenspezifische Reaktionsmeldungen erweitert fuer Haendler, Magier und Beschwoerer (deutsch + englische Alias-Rollen).
 - G22: Preview-Narration hebt Reaktions-Events explizit mit `Reaktion:` hervor statt sie nur implizit in den ersten Eventtexten zu verstecken.
 - G22: Narration-Preview-Test hinzugefuegt (`apps/game_api/tests/test_narration_preview.py`).
+- G23: IP-sicheres Urban-Occult-Preset (Binder/Champion) eingefuehrt; Bootstrap-Preview kann daraus Startwelt/NPCs/Faktionen erzeugen.
+- G23: Rollen-Inferenz fuer freie NPCs erweitert (u.a. Beschwoerer/Magier/Haendler), sodass NPC-Memory seltener `unknown` bleibt.
+- G24/G25: Rollen-Anreden werden auf vorhandene NPCs gemappt (`der Beschwoerer` -> Kael bei Eindeutigkeit); bei Mehrdeutigkeit jetzt `clarify_required` statt neuer Fake-NPC.
+- G25: Deskriptive/generische Zielreferenzen (`zweiter Beschwoerer`, generisches `npc`) erzeugen keine `npc-auto-*`-Muell-NPCs mehr.
+- G26: Discovery-System fuer NPC-Sichtbarkeit pro Welt+Charakter eingefuehrt (`npc_discoveries`). Verborgene NPCs tauchen erst nach `INSPECT`/`schau mich um` im Context/Targeting auf.
+- G26: Dev/Test-NPC-Spawn kann jetzt `revealed_to_player=false` setzen, um Discovery lokal zu testen.
+- G26: Parser erkennt Kurzform `schau` als `INSPECT`; unerkannte NPC-Namen liefern vor Reveal `clarify_required`.
+- G27: Discovery auf sichtbare Interaktionspunkte (Scene Points / POIs) erweitert (`scene_point_discoveries`) mit Reveal durch `INSPECT` im aktuellen Ort.
+- G27: Context/Target-Catalog liefert jetzt `scene_points`; UI zeigt sichtbare Interaktionspunkte + `Inspect`-Quick-Action.
+- G27: Rules Engine akzeptiert `INSPECT` auf `scene_point`-Targets (`inspect_focus_success`) statt Item-Fehler.
+- G27: Retrieval-Notes unterscheiden jetzt unbekannte Praesenzen (NPCs) und unerkundete Interaktionspunkte am Ort.
+- TODO (naechster Schritt): G28 Discovery fuer Objekte/Container/NPC-Rollenwissen verfeinern (z.B. Name sichtbar, Rolle erst nach genauerem Untersuchen/Gespraech).

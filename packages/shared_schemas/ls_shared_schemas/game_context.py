@@ -25,6 +25,7 @@ class GameTargetCatalog(LSBaseModel):
     npcs: list[GameTargetReference] = Field(default_factory=list)
     items: list[GameTargetReference] = Field(default_factory=list)
     locations: list[GameTargetReference] = Field(default_factory=list)
+    scene_points: list[GameTargetReference] = Field(default_factory=list)
 
 
 class RetrievedNpcMemoryBundle(LSBaseModel):

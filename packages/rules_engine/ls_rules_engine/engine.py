@@ -234,7 +234,19 @@ class RulesEngine:
             return True
         item = self._find_item(inventory, target)
         if item is None:
-            events.append(TurnSystemEvent(code="inspect_item_missing", message=f"Item nicht gefunden: {target}", severity="warning"))
+            target_name = str(action.parameters.get("target_name") or target).strip()
+            target_kind = str(action.target_kind or action.parameters.get("target_kind") or "").strip().lower()
+            if target_kind and target_kind != "item":
+                events.append(
+                    TurnSystemEvent(
+                        code="inspect_focus_success",
+                        message=f"Du untersuchst {target_name} genauer.",
+                    )
+                )
+                return True
+            events.append(
+                TurnSystemEvent(code="inspect_item_missing", message=f"Item nicht gefunden: {target}", severity="warning")
+            )
             return False
         events.append(TurnSystemEvent(code="inspect_item_success", message=f"{item.name} untersucht."))
         return True
