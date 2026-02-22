@@ -66,6 +66,35 @@ def _get_world_repository(request: Request) -> WorldRepository:
     return repository
 
 
+def _assemble_context_for_world(
+    *,
+    repository: WorldRepository,
+    world_id: str,
+    player_input: str | None = None,
+    journal_limit: int = 20,
+    turn_limit: int = 10,
+    memory_per_npc: int = 3,
+) -> GameContextResponse:
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+    turns = repository.list_turns(world_id=world_id, limit=max(1, turn_limit))
+    npc_memory = repository.list_npc_memory_bundles(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+        limit_memories_per_npc=max(1, memory_per_npc),
+    )
+    return assemble_game_context(
+        world=session,
+        turns=turns,
+        npc_memory=npc_memory,
+        retrieval_player_input=player_input,
+        journal_limit=journal_limit,
+        turn_limit=turn_limit,
+        memory_per_npc=memory_per_npc,
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {
@@ -86,20 +115,10 @@ def get_world_context(
     memory_per_npc: int = 3,
 ) -> GameContextResponse:
     repository = _get_world_repository(fastapi_request)
-    session = repository.get_world_session(world_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="World session not found.")
-    turns = repository.list_turns(world_id=world_id, limit=max(1, turn_limit))
-    npc_memory = repository.list_npc_memory_bundles(
+    return _assemble_context_for_world(
+        repository=repository,
         world_id=world_id,
-        world_character_id=session.character_state.world_character_id,
-        limit_memories_per_npc=max(1, memory_per_npc),
-    )
-    return assemble_game_context(
-        world=session,
-        turns=turns,
-        npc_memory=npc_memory,
-        retrieval_player_input=player_input,
+        player_input=player_input,
         journal_limit=journal_limit,
         turn_limit=turn_limit,
         memory_per_npc=memory_per_npc,
@@ -130,14 +149,21 @@ def get_world_session(world_id: str, fastapi_request: Request) -> WorldSessionRe
 @app.post("/v1/worlds/{world_id}/turns/analyze/preview", response_model=TurnIntent)
 def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fastapi_request: Request) -> TurnIntent:
     repository = _get_world_repository(fastapi_request)
-    session = repository.get_world_session(world_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="World session not found.")
+    context = _assemble_context_for_world(
+        repository=repository,
+        world_id=world_id,
+        player_input=request.player_input,
+        turn_limit=5,
+        memory_per_npc=3,
+    )
+    session = context.world
     return analyze_player_input_preview(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
         player_input=request.player_input,
         inventory=session.inventory,
+        known_npc_names=[entry.bundle.profile.name for entry in context.npc_memory],
+        known_locations=[session.character_state.location_name, session.world_seed.start_location_name],
     )
 
 
@@ -154,15 +180,25 @@ def narrate_turn_preview(resolution: TurnResolution) -> NarrativeEnvelope:
 @app.post("/v1/worlds/{world_id}/turns/run", response_model=TurnRunResponse)
 def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -> TurnRunResponse:
     repository = _get_world_repository(fastapi_request)
-    session = repository.get_world_session(world_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="World session not found.")
+    context_before = _assemble_context_for_world(
+        repository=repository,
+        world_id=world_id,
+        player_input=request.player_input,
+        turn_limit=8,
+        memory_per_npc=4,
+    )
+    session = context_before.world
+
+    known_npc_names = [entry.bundle.profile.name for entry in context_before.npc_memory]
+    known_locations = [session.character_state.location_name, session.world_seed.start_location_name]
 
     intent = analyze_player_input_preview(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
         player_input=request.player_input,
         inventory=session.inventory,
+        known_npc_names=known_npc_names,
+        known_locations=known_locations,
     )
     resolution = engine.resolve(
         intent=intent,
@@ -176,11 +212,23 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         resolution=resolution,
         narrative=narrative,
     )
+    context_after = None
+    if request.include_context_after_turn:
+        context_after = _assemble_context_for_world(
+            repository=repository,
+            world_id=world_id,
+            player_input=request.player_input,
+            turn_limit=8,
+            memory_per_npc=4,
+        )
     return TurnRunResponse(
         turn=turn_record,
         resulting_character_state=resolution.resulting_character_state,
         resulting_inventory=resolution.resulting_inventory,
         journal_entry_ids=[entry.journal_entry_id for entry in journal_entries],
+        analysis_context_notes=context_before.retrieval_notes,
+        context_before_turn=context_before.model_dump(mode="json") if request.include_context_before_turn else None,
+        context_after_turn=context_after.model_dump(mode="json") if context_after is not None else None,
     )
 
 

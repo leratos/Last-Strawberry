@@ -225,6 +225,12 @@ textarea:focus {
   white-space: pre-wrap;
 }
 
+.analysis-notes {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(180, 205, 227, 0.08);
+}
+
 .turn-actions {
   display: flex;
   gap: 0.6rem;
