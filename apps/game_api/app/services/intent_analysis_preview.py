@@ -26,6 +26,9 @@ _APPROACH_PATTERNS = [
     re.compile(r"\btrete(?:\s+einen)?(?:\s+schritt)?\s+n(?:a|ä)her\s+an\s+([\w _-]+)", re.I),
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
+_OPEN_VERBS = ("oeffne", "öffne", "mache auf", "klappe auf")
+_SEARCH_VERBS = ("durchsuche", "durchforste", "wuehle", "wühle")
+_TAKE_VERBS = ("nimm", "nehme", "hebe", "packe", "pack", "stecke")
 _ATTACK_VERBS = ("greife", "attackiere", "schlage", "haue", "steche")
 _RANGED_ATTACK_VERBS = ("schiesse", "schieße", "zielen", "feuere", "werfe")
 _TALK_VERBS = ("spreche", "rede", "frage", "unterhalte")
@@ -73,6 +76,7 @@ def analyze_player_input_preview(
     known_locations: list[str] | None = None,
     known_npc_refs: list[dict[str, str]] | None = None,
     known_location_refs: list[dict[str, str]] | None = None,
+    known_scene_point_refs: list[dict[str, str]] | None = None,
 ) -> TurnIntent:
     text = unicodedata.normalize("NFC", (player_input or "").strip())
     lowered = text.lower()
@@ -81,6 +85,7 @@ def analyze_player_input_preview(
 
     npc_ref_index = _build_ref_index(known_npc_refs or [])
     location_ref_index = _build_ref_index(known_location_refs or [])
+    scene_point_ref_index = _build_ref_index(known_scene_point_refs or [])
 
     has_talk_verb = _contains_any_verb(lowered, _TALK_VERBS)
     destination = _extract_destination(text)
@@ -308,15 +313,156 @@ def analyze_player_input_preview(
                 notes.append("Rueckzug/Abstand erkannt.")
 
     if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
-        actions.append(
-            TurnIntentAction(
-                action_type=ActionType.inspect,
-                target_kind="environment",
-                parameters={"intent": "inspect"},
-                confidence=0.7,
+        inspect_target = _extract_inspect_target(text)
+        inspect_meta = _resolve_scene_target_reference(inspect_target or "", scene_point_ref_index)
+        inspect_target_id = str(inspect_meta.get("ref_id") or "").strip() or None
+        inspect_target_kind = str(inspect_meta.get("kind") or "").strip() or None
+        if inspect_target and inspect_target_id:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.inspect,
+                    target_ref=inspect_target_id,
+                    target_kind=inspect_target_kind or "scene_point",
+                    parameters={
+                        "intent": "inspect",
+                        "target_id": inspect_target_id,
+                        "target_name": str(inspect_meta.get("name") or inspect_target),
+                        "target_kind": inspect_target_kind or "scene_point",
+                        "target_location_name": str(inspect_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(inspect_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(inspect_meta.get("scene_zone_name") or "") or None,
+                    },
+                    confidence=0.82,
+                )
             )
-        )
-        notes.append("Untersuchungsaktion erkannt.")
+            notes.append(f"Fokussierte Untersuchung erkannt: {inspect_meta.get('name') or inspect_target}")
+        else:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.inspect,
+                    target_kind="environment",
+                    parameters={"intent": "inspect"},
+                    confidence=0.7,
+                )
+            )
+            notes.append("Untersuchungsaktion erkannt.")
+
+    if not actions and _contains_any_verb(lowered, _OPEN_VERBS):
+        open_target = _extract_open_search_target(text)
+        open_meta = _resolve_scene_target_reference(open_target or "", scene_point_ref_index)
+        open_target_id = str(open_meta.get("ref_id") or "").strip() or None
+        open_target_kind = str(open_meta.get("kind") or "").strip() or None
+        if open_target and open_target_id:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.open,
+                    target_ref=open_target_id,
+                    target_kind=open_target_kind or "scene_object",
+                    parameters={
+                        "intent": "open",
+                        "target_id": open_target_id,
+                        "target_name": str(open_meta.get("name") or open_target),
+                        "target_kind": open_target_kind or "scene_object",
+                        "target_location_name": str(open_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(open_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(open_meta.get("scene_zone_name") or "") or None,
+                    },
+                    confidence=0.82,
+                )
+            )
+            notes.append(f"Oeffnen erkannt: {open_meta.get('name') or open_target}")
+        else:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.clarify,
+                    target_kind="environment",
+                    parameters={
+                        "intent": "clarify",
+                        "reason": "unknown_open_target",
+                        "message": "Unklar, was geoeffnet werden soll. Bitte waehle ein sichtbares Objekt/Behaeltnis.",
+                    },
+                    confidence=0.35,
+                )
+            )
+            notes.append("Oeffnen erkannt, aber kein sichtbares Objekt/Behaeltnis zugeordnet.")
+
+    if not actions and _contains_any_verb(lowered, _SEARCH_VERBS):
+        search_target = _extract_open_search_target(text)
+        search_meta = _resolve_scene_target_reference(search_target or "", scene_point_ref_index)
+        search_target_id = str(search_meta.get("ref_id") or "").strip() or None
+        search_target_kind = str(search_meta.get("kind") or "").strip() or None
+        if search_target and search_target_id:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.search,
+                    target_ref=search_target_id,
+                    target_kind=search_target_kind or "scene_object",
+                    parameters={
+                        "intent": "search",
+                        "target_id": search_target_id,
+                        "target_name": str(search_meta.get("name") or search_target),
+                        "target_kind": search_target_kind or "scene_object",
+                        "target_location_name": str(search_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(search_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(search_meta.get("scene_zone_name") or "") or None,
+                    },
+                    confidence=0.82,
+                )
+            )
+            notes.append(f"Durchsuchen erkannt: {search_meta.get('name') or search_target}")
+        else:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.clarify,
+                    target_kind="environment",
+                    parameters={
+                        "intent": "clarify",
+                        "reason": "unknown_search_target",
+                        "message": "Unklar, was durchsucht werden soll. Bitte waehle ein sichtbares Objekt/Behaeltnis.",
+                    },
+                    confidence=0.35,
+                )
+            )
+            notes.append("Durchsuchen erkannt, aber kein sichtbares Objekt/Behaeltnis zugeordnet.")
+
+    if not actions and _contains_any_verb(lowered, _TAKE_VERBS):
+        take_target = _extract_take_target(text)
+        take_meta = _resolve_scene_target_reference(take_target or "", scene_point_ref_index)
+        take_target_id = str(take_meta.get("ref_id") or "").strip() or None
+        take_target_kind = str(take_meta.get("kind") or "").strip() or None
+        if take_target and take_target_id:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.take,
+                    target_ref=take_target_id,
+                    target_kind=take_target_kind or "scene_object",
+                    parameters={
+                        "intent": "take",
+                        "target_id": take_target_id,
+                        "target_name": str(take_meta.get("name") or take_target),
+                        "target_kind": take_target_kind or "scene_object",
+                        "target_location_name": str(take_meta.get("location_name") or "") or None,
+                        "target_zone_id": str(take_meta.get("scene_zone_id") or "") or None,
+                        "target_zone_name": str(take_meta.get("scene_zone_name") or "") or None,
+                    },
+                    confidence=0.78,
+                )
+            )
+            notes.append(f"Aufnehmen erkannt: {take_meta.get('name') or take_target}")
+        else:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.clarify,
+                    target_kind="environment",
+                    parameters={
+                        "intent": "clarify",
+                        "reason": "unknown_take_target",
+                        "message": "Unklar, was aufgenommen werden soll. Bitte waehle ein sichtbares Objekt.",
+                    },
+                    confidence=0.35,
+                )
+            )
+            notes.append("Aufnehmen erkannt, aber kein sichtbares Objekt zugeordnet.")
 
     if not actions:
         actions.append(
@@ -408,6 +554,53 @@ def _extract_talk_target(text: str) -> str | None:
     return target or None
 
 
+def _extract_inspect_target(text: str) -> str | None:
+    patterns = [
+        r"\b(?:untersuche|inspiziere|betrachte)\s+(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)",
+        r"\b(?:schau(?:e)?|sieh)\s+(?:mir\s+)?(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)\s+an\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        normalized = (target or "").strip().lower()
+        if normalized in {"", "mich", "mich um", "um", "umgebung", "die umgebung"}:
+            continue
+        return target
+    return None
+
+
+def _extract_open_search_target(text: str) -> str | None:
+    patterns = [
+        r"\b(?:oeffne|öffne|durchsuche|durchforste|wuehle|wühle)\s+(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)",
+        r"\bmache\s+(?:den|die|das)\s+([\w _-]+)\s+auf\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        if target:
+            return target
+    return None
+
+
+def _extract_take_target(text: str) -> str | None:
+    patterns = [
+        r"\b(?:nimm|nehme|hebe)\s+(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)",
+        r"\b(?:packe?|stecke?)\s+(?:den|die|das|einen|eine)?\s*([\w _-]+)\s+ein\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        if target:
+            return target
+    return None
+
+
 def _trim_entity_phrase(value: str) -> str:
     target = value.strip(" .,!?:;")
     target = re.split(
@@ -454,6 +647,12 @@ def _lookup_ref_entry(name: str, ref_index: RefMetaIndex) -> dict[str, str] | No
         if normalized in known_name or known_name in normalized:
             return ref_entry
     return None
+
+
+def _resolve_scene_target_reference(candidate: str, scene_ref_index: RefMetaIndex) -> dict[str, str]:
+    if not candidate.strip():
+        return {}
+    return _lookup_ref_entry(candidate, scene_ref_index) or {}
 
 
 def _resolve_npc_target_reference(

@@ -64,6 +64,12 @@ class RulesEngine:
             return self._apply_retreat(action, state, delta, events)
         if action.action_type == ActionType.inspect:
             return self._apply_inspect(action, inventory, events)
+        if action.action_type == ActionType.open:
+            return self._apply_open(action, events)
+        if action.action_type == ActionType.search:
+            return self._apply_search(action, events)
+        if action.action_type == ActionType.take:
+            return self._apply_take(action, events)
         if action.action_type == ActionType.talk:
             return self._apply_talk(action, state, delta, events)
         if action.action_type == ActionType.attack:
@@ -250,6 +256,45 @@ class RulesEngine:
             return False
         events.append(TurnSystemEvent(code="inspect_item_success", message=f"{item.name} untersucht."))
         return True
+
+    def _apply_open(self, action: TurnIntentAction, events: list[TurnSystemEvent]) -> bool:
+        target_name = str(action.parameters.get("target_name") or action.target_ref or "Objekt").strip()
+        target_kind = str(action.parameters.get("target_kind") or action.target_kind or "").strip().lower()
+        if target_kind in {"container", "scene_object", "scene_point"}:
+            events.append(TurnSystemEvent(code="open_focus_success", message=f"Du oeffnest {target_name}."))
+            return True
+        events.append(TurnSystemEvent(code="open_target_invalid", message="Dieses Ziel kann nicht geoeffnet werden.", severity="warning"))
+        return False
+
+    def _apply_search(self, action: TurnIntentAction, events: list[TurnSystemEvent]) -> bool:
+        target_name = str(action.parameters.get("target_name") or action.target_ref or "Bereich").strip()
+        target_kind = str(action.parameters.get("target_kind") or action.target_kind or "").strip().lower()
+        if target_kind in {"container", "scene_object", "scene_point"}:
+            events.append(TurnSystemEvent(code="search_focus_success", message=f"Du durchsuchst {target_name}."))
+            return True
+        events.append(
+            TurnSystemEvent(
+                code="search_target_invalid",
+                message="Dieses Ziel kann nicht durchsucht werden.",
+                severity="warning",
+            )
+        )
+        return False
+
+    def _apply_take(self, action: TurnIntentAction, events: list[TurnSystemEvent]) -> bool:
+        target_name = str(action.parameters.get("target_name") or action.target_ref or "Objekt").strip()
+        target_kind = str(action.parameters.get("target_kind") or action.target_kind or "").strip().lower()
+        if target_kind in {"scene_object", "container"}:
+            events.append(TurnSystemEvent(code="take_focus_success", message=f"Du nimmst {target_name} an dich."))
+            return True
+        events.append(
+            TurnSystemEvent(
+                code="take_target_invalid",
+                message="Dieses Ziel kann nicht aufgenommen werden.",
+                severity="warning",
+            )
+        )
+        return False
 
     def _apply_approach(
         self,

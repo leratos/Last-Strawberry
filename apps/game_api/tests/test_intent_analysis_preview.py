@@ -98,6 +98,66 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         action_types = [action.action_type.value for action in intent.actions]
         self.assertIn("INSPECT", action_types)
 
+    def test_maps_freetext_inspect_to_visible_container_target(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich untersuche die Vorratskiste.",
+            inventory=[],
+            known_scene_point_refs=[
+                {
+                    "ref_id": "ctr-market-supplies",
+                    "name": "Vorratskiste",
+                    "kind": "container",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-market-stalls",
+                    "scene_zone_name": "Marktstaende",
+                }
+            ],
+        )
+        inspect_action = next(action for action in intent.actions if action.action_type.value == "INSPECT")
+        self.assertEqual(inspect_action.target_ref, "ctr-market-supplies")
+        self.assertEqual(inspect_action.target_kind, "container")
+        self.assertEqual(inspect_action.parameters.get("target_name"), "Vorratskiste")
+        self.assertEqual(inspect_action.parameters.get("target_kind"), "container")
+        self.assertIn("Fokussierte Untersuchung", " ".join(intent.analysis_notes))
+
+    def test_maps_freetext_open_to_visible_container_target(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich oeffne die Vorratskiste.",
+            inventory=[],
+            known_scene_point_refs=[{"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}],
+        )
+        open_action = next(action for action in intent.actions if action.action_type.value == "OPEN")
+        self.assertEqual(open_action.target_ref, "ctr-market-supplies")
+        self.assertEqual(open_action.target_kind, "container")
+
+    def test_maps_freetext_search_to_visible_container_target(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich durchsuche die Vorratskiste.",
+            inventory=[],
+            known_scene_point_refs=[{"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}],
+        )
+        search_action = next(action for action in intent.actions if action.action_type.value == "SEARCH")
+        self.assertEqual(search_action.target_ref, "ctr-market-supplies")
+        self.assertEqual(search_action.target_kind, "container")
+
+    def test_maps_freetext_take_to_visible_scene_object_target(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich nehme die liegende Tasche.",
+            inventory=[],
+            known_scene_point_refs=[{"ref_id": "obj-market-bag", "name": "Liegende Tasche", "kind": "scene_object"}],
+        )
+        take_action = next(action for action in intent.actions if action.action_type.value == "TAKE")
+        self.assertEqual(take_action.target_ref, "obj-market-bag")
+        self.assertEqual(take_action.target_kind, "scene_object")
+
     def test_detects_move_phrase_bewege_mich_zu(self):
         intent = analyze_player_input_preview(
             world_id="w1",

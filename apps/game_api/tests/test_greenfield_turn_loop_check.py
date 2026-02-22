@@ -10,6 +10,7 @@ from apps.game_api.scripts.check_greenfield_turn_loop import (  # noqa: E402
     _build_structured_approach_action,
     _build_structured_attack_action,
     _build_structured_retreat_action,
+    _build_structured_scene_action,
     _build_structured_talk_action,
     _extract_event_codes,
     _find_npc_bundle,
@@ -103,6 +104,23 @@ class TestGreenfieldTurnLoopQuickcheckHelpers(unittest.TestCase):
         found = _find_npc_bundle(bundles, "npc-mira")
         self.assertIsNotNone(found)
         self.assertEqual(found["relationship"]["standing"], 1)
+
+    def test_build_structured_scene_action_preserves_target_metadata(self):
+        action = _build_structured_scene_action(
+            {
+                "ref_id": "obj-marktplatz-discarded-bag",
+                "name": "Liegende Tasche",
+                "kind": "scene_object",
+                "location_name": "Marktplatz",
+                "scene_zone_id": "zone-poi-marktplatz-bag",
+                "scene_zone_name": "Randbereich",
+            },
+            "take",
+        )
+        self.assertEqual(action["action_type"], "TAKE")
+        self.assertEqual(action["target_ref"], "obj-marktplatz-discarded-bag")
+        self.assertEqual(action["target_kind"], "scene_object")
+        self.assertEqual(action["parameters"]["target_name"], "Liegende Tasche")
 
 
 if __name__ == "__main__":
