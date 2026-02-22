@@ -118,6 +118,77 @@ class TestRulesEngine(unittest.TestCase):
         self.assertIn("auto_approach_for_talk", codes)
         self.assertIn("talk_success", codes)
 
+    def test_attack_auto_approaches_when_target_is_near_or_far(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-center",
+            scene_zone_name="Brunnenplatz",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich greife Mira an.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.attack,
+                    target_ref="npc-mira",
+                    target_kind="npc_or_enemy",
+                    parameters={
+                        "target_id": "npc-mira",
+                        "target_name": "Mira",
+                        "target_location_name": "Marktplatz",
+                        "target_zone_id": "zone-market-stalls",
+                        "target_zone_name": "Marktstaende",
+                        "target_distance_band": "near",
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(result.resulting_character_state.scene_zone_id, "zone-market-stalls")
+        self.assertEqual(result.state_delta.scene_zone_changed_to_id, "zone-market-stalls")
+        self.assertEqual(result.resulting_character_state.resources.stamina, 4)
+        codes = [event.code for event in result.system_events]
+        self.assertIn("auto_approach_for_attack", codes)
+        self.assertIn("attack_resolved", codes)
+
+    def test_attack_rejects_out_of_range_without_position_metadata(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            attributes=CharacterAttributes(strength=12, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich greife den Bogenschuetzen am anderen Ende an.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.attack,
+                    target_ref="Bogenschuetze",
+                    parameters={"target_name": "Bogenschuetze", "target_distance_band": "far"},
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        self.assertEqual(len(result.applied_actions), 0)
+        self.assertEqual(len(result.rejected_actions), 1)
+        self.assertEqual(result.resulting_character_state.resources.stamina, 5)
+        codes = [event.code for event in result.system_events]
+        self.assertIn("attack_out_of_range", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

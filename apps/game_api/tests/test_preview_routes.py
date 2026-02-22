@@ -360,6 +360,69 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual([a["action_type"] for a in applied], ["MOVE", "TALK"])
         self.assertIn("UI structured action override", " ".join(payload["turn"]["intent"]["analysis_notes"]))
 
+    def test_g13_context_marks_same_location_other_zone_as_near_and_attack_auto_approaches(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g13-1",
+                "world_description": "Ein Marktplatz mit Haendlern, Wachen und einer Heilerin an den Marktstaenden.",
+                "character_description": "Eine kampferprobte Reisende, die schnell auf Konflikte reagiert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+
+        mira_ref = next(
+            (entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira"),
+            None,
+        )
+        if mira_ref is None:
+            self.skipTest("Mira nicht im Target-Catalog gefunden.")
+
+        self.assertEqual(mira_ref["location_name"], "Marktplatz")
+        self.assertEqual(mira_ref["distance_band_to_player"], "near")
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Greife Mira an",
+                "actions_override": [
+                    {
+                        "action_type": "ATTACK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "attack",
+                            "target_id": mira_ref["ref_id"],
+                            "target_name": "Mira",
+                            "target_location_name": mira_ref.get("location_name"),
+                            "target_zone_id": mira_ref.get("scene_zone_id"),
+                            "target_zone_name": mira_ref.get("scene_zone_name"),
+                            "target_distance_band": mira_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(run_response.status_code, 200)
+        run_payload = run_response.json()
+        event_codes = [event["code"] for event in run_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("auto_approach_for_attack", event_codes)
+        self.assertIn("attack_resolved", event_codes)
+
+        after_context = run_payload["context_after_turn"]
+        self.assertIsNotNone(after_context)
+        updated_mira_ref = next(
+            (entry for entry in after_context["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"]),
+            None,
+        )
+        self.assertIsNotNone(updated_mira_ref)
+        self.assertEqual(updated_mira_ref["distance_band_to_player"], "adjacent")
+
 
 if __name__ == "__main__":
     unittest.main()

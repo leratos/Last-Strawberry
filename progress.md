@@ -32,3 +32,8 @@
 - G12: Rules Engine `TALK` auto-approacht bei `far` (Zone-Wechsel + Event `auto_approach_for_talk`) statt stiller Fehlinterpretation.
 - G12: Preview-Analyzer erkennt zusaetzlich `bewege mich zu ...` und fuellt Ziel-Metadaten (Zone/Distanz) fuer TALK/ATTACK/MOVE.
 - G12: UI zeigt Spieler-Zone + NPC Ort/Zone/Distanz und hat Quick Action `Gehe+Rede` (TALK mit Auto-Approach).
+- G13: Distanzmodell verfeinert: `same location + other zone` wird nun `near` statt `far`; target_catalog berechnet Distanzband konsistenter aus Ort+Zone.
+- G13: Rules Engine `ATTACK` respektiert Distanz-Metadaten (Auto-Move/Auto-Approach bei `near|far` mit Zielposition, Warnung `attack_out_of_range` ohne Positionsdaten).
+- G13: Preview-Analyzer ueberspringt falschen Orts-MOVE bei Formulierungen wie `bewege mich zu Mira und frage ...` (bekannter NPC + TALK -> TALK Auto-Approach).
+- G13: Web-MVP Queue-UX verbessert (Eintrag hoch/runter/entfernen).
+- G13: Neues lokales API-Script `apps/game_api/scripts/check_greenfield_turn_loop.py` fuer schnellen Turn-Loop-Sanity-Check (TALK via `actions_override`).

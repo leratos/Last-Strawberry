@@ -190,6 +190,27 @@ export function App() {
     setError("");
   }
 
+  function removeQueuedAction(indexToRemove: number): void {
+    setStructuredQueue((current) => current.filter((_, index) => index !== indexToRemove));
+    setLastActionMessage(`Queue-Eintrag ${indexToRemove + 1} entfernt.`);
+    setError("");
+  }
+
+  function moveQueuedAction(indexToMove: number, direction: -1 | 1): void {
+    setStructuredQueue((current) => {
+      const nextIndex = indexToMove + direction;
+      if (indexToMove < 0 || indexToMove >= current.length || nextIndex < 0 || nextIndex >= current.length) {
+        return current;
+      }
+      const clone = [...current];
+      const [entry] = clone.splice(indexToMove, 1);
+      clone.splice(nextIndex, 0, entry);
+      return clone;
+    });
+    setLastActionMessage(`Queue-Reihenfolge aktualisiert.`);
+    setError("");
+  }
+
   async function handleQueueSubmit(): Promise<void> {
     if (structuredQueue.length === 0) {
       setError("Queue ist leer.");
@@ -515,6 +536,32 @@ export function App() {
                     {structuredQueue.map((entry, index) => (
                       <li key={`${entry.label}-${index}`}>
                         <span className="list-title">{index + 1}. {entry.label}</span>
+                        <div className="turn-actions">
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => moveQueuedAction(index, -1)}
+                            disabled={isRunningTurn || index === 0}
+                          >
+                            Hoch
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => moveQueuedAction(index, 1)}
+                            disabled={isRunningTurn || index === structuredQueue.length - 1}
+                          >
+                            Runter
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => removeQueuedAction(index)}
+                            disabled={isRunningTurn}
+                          >
+                            Entfernen
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>

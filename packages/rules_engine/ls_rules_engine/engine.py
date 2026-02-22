@@ -145,7 +145,7 @@ class RulesEngine:
                 )
             )
 
-        if target_distance_band in {"far", "unreachable"} and target_zone_id:
+        if target_distance_band in {"near", "far", "unreachable"} and target_zone_id:
             state.scene_zone_id = target_zone_id
             if target_zone_name:
                 state.scene_zone_name = target_zone_name
@@ -175,6 +175,45 @@ class RulesEngine:
         target_id = str(action.parameters.get("target_id") or "").strip() or None
         target_name = str(action.parameters.get("target_name") or "").strip()
         target = target_name or (action.target_ref or "Ziel").strip()
+        target_distance_band = str(action.parameters.get("target_distance_band") or "").strip().lower()
+        target_zone_id = str(action.parameters.get("target_zone_id") or "").strip()
+        target_zone_name = str(action.parameters.get("target_zone_name") or "").strip()
+        target_location_name = str(action.parameters.get("target_location_name") or "").strip()
+
+        if target_location_name and target_location_name != state.location_name:
+            state.location_name = target_location_name
+            delta.location_changed_to = target_location_name
+            events.append(
+                TurnSystemEvent(
+                    code="auto_move_location_for_attack",
+                    message=f"Automatisch zu {target_location_name} bewegt, um {target} zu erreichen.",
+                )
+            )
+
+        if target_distance_band in {"near", "far", "unreachable"}:
+            if target_zone_id:
+                state.scene_zone_id = target_zone_id
+                if target_zone_name:
+                    state.scene_zone_name = target_zone_name
+                delta.scene_zone_changed_to_id = target_zone_id
+                if target_zone_name:
+                    delta.scene_zone_changed_to_name = target_zone_name
+                events.append(
+                    TurnSystemEvent(
+                        code="auto_approach_for_attack",
+                        message=f"Du naeherst dich {target} an ({target_zone_name or target_zone_id}).",
+                    )
+                )
+            else:
+                events.append(
+                    TurnSystemEvent(
+                        code="attack_out_of_range",
+                        message=f"{target} ist ausser Reichweite fuer einen Nahkampfangriff.",
+                        severity="warning",
+                    )
+                )
+                return False
+
         base_damage = max(1, int(state.attributes.strength / 3))
         stamina_cost = 1
         if state.resources.stamina < stamina_cost:
