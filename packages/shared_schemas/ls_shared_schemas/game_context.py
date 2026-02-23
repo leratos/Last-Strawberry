@@ -13,6 +13,7 @@ class GameTargetReference(LSBaseModel):
     kind: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=120)
     role: str | None = Field(default=None, max_length=80)
+    faction: str | None = Field(default=None, max_length=120)
     aliases: list[str] = Field(default_factory=list)
     source: str = Field(default="derived", min_length=1, max_length=80)
     location_name: str | None = Field(default=None, max_length=120)

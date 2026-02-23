@@ -88,9 +88,21 @@ def _rank_npc_memory_bundles(
         if bundle.relationship is not None:
             reasons.append(f"Standing={bundle.relationship.standing}")
 
+        bundle_for_context = bundle
+        profile_updates: dict[str, object] = {}
+        if not selected_memories and (bundle.profile.role or "").strip().lower() not in {"", "unknown"}:
+            profile_updates["role"] = "unknown"
+        if not selected_memories and (bundle.profile.faction or "").strip():
+            profile_updates["faction"] = None
+        if profile_updates:
+            bundle_for_context = bundle.model_copy(
+                update={"profile": bundle.profile.model_copy(update=profile_updates)}
+            )
+            reasons.append("Rolle noch nicht identifiziert")
+
         results.append(
             RetrievedNpcMemoryBundle(
-                bundle=bundle.model_copy(update={"recent_memories": selected_memories}),
+                bundle=bundle_for_context.model_copy(update={"recent_memories": selected_memories}),
                 relevance_score=round(bundle_score, 4),
                 retrieval_reasons=reasons,
             )
@@ -118,13 +130,15 @@ def _build_target_catalog(
     npc_refs: dict[str, GameTargetReference] = {}
     item_refs: dict[str, GameTargetReference] = {}
     location_refs: dict[str, GameTargetReference] = {}
+    role_revealed_npc_ids = {bundle.profile.npc_id for bundle in npc_memory if bundle.recent_memories}
 
     for npc in world.world_seed.starter_npcs:
         npc_refs[npc.npc_id] = GameTargetReference(
             ref_id=npc.npc_id,
             kind="npc",
             name=npc.name,
-            role=npc.role,
+            role=npc.role if npc.npc_id in role_revealed_npc_ids else "unknown",
+            faction=npc.faction if npc.npc_id in role_revealed_npc_ids else None,
             aliases=[],
             source="world_seed",
             location_name=npc.location_name or world.world_seed.start_location_name,
@@ -142,7 +156,8 @@ def _build_target_catalog(
             ref_id=profile.npc_id,
             kind="npc",
             name=profile.name,
-            role=profile.role,
+            role=profile.role if profile.npc_id in role_revealed_npc_ids else "unknown",
+            faction=profile.faction if profile.npc_id in role_revealed_npc_ids else None,
             aliases=[],
             source="npc_memory",
             location_name=profile.location_name or world.world_seed.start_location_name,

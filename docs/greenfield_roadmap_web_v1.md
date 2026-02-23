@@ -103,3 +103,24 @@ Zeitraum: nach G4
 
 ### Meilenstein G5
 - Beta-Kandidat mit stabiler Architektur und reproduzierbarem Betrieb.
+
+---
+
+## Fortschritt (Micro-Stages G30-G39, Discovery/World-Interaction Ausbau)
+
+### Abgeschlossen
+- G30: Freitext-Inspect auf sichtbare Umweltziele (scene_points/container) gemappt.
+- G31: `OPEN`/`SEARCH` als strukturierte Container-Aktionen mit getrennter Persistenzsemantik (`open` vs `search`).
+- G32: UI-Quick-Actions fuer Container (`Oeffnen`, `Durchsuchen`) hinzugefuegt.
+- G33: Preview-Narration hebt Container-/Loot-Ergebnisse klarer hervor.
+- G34: Discovery-Status im UI (Badges/Counter) verbessert.
+- G35: Rollenwissen fuer NPCs bis zur Interaktion maskiert.
+- G36: Fraktionswissen fuer NPCs bis zur Interaktion maskiert.
+- G37: `TAKE` fuer Szene-Objekte (MVP) mit persistentem `taken`-Zustand und einmaligem Loot.
+- G38: Greenfield-Quickcheck deckt Discovery + Container + Scene-Object-Interaktionen mit ab.
+- G39: Doku/Progress aktualisiert und Batch-Regression durchgefuehrt.
+
+### Ergebnis nach G39
+- Discovery und Sichtbarkeit sind jetzt deutlich naeher an der gewuenschten Spielregel: Spieler kann nicht allein durch Freitext neue NPCs/Objekte "erschaffen" oder alles sofort wissen.
+- Umweltinteraktionen sind als eigene, testbare Aktionen modelliert (`INSPECT`, `OPEN`, `SEARCH`, `TAKE`) statt nur freier Narrativ-Text.
+- Quickcheck deckt neben Kampf/Distanz jetzt auch Exploration-/Loot-Pfade ab.
