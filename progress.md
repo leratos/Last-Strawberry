@@ -209,3 +209,19 @@ pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/t
 pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 316 passed.
 - Hinweis/Tradeoff: Selektiver Intent-LLM im Hybrid-Modus ist bewusst nur per Feature-Flag aktiv (default aus), damit Kosten/Fehlinterpretationsrisiko kontrolliert bleiben. provider_trace/ootstrap_trace macht den tatsaechlich genutzten Provider sichtbar.
 
+
+- G200-G249 Draft (gestartet): Pronomen-/Referenzaufloesung in Mehrfachsatzketten (z.B. 'untersuche die Kiste, dann oeffne sie') plus Folgeverbesserungen fuer natuerliche Turn-Sequenzen. Fokus auf deterministische Preview-Intent-Analyse, Tests und stabile Fallbacks.
+
+- G200-G249 abgeschlossen (Teilfokus mit hohem Nutzwert): Pronomen-/Referenzaufloesung in Mehrfachsatzketten im deterministischen Preview-Analyzer eingefuehrt (Clause-Carryover fuer letzte NPC- und Umweltziele).
+- G200: Mehrfachsatz-Aggregator (`analyze_player_input_preview`) fuehrt jetzt einen Clause-Chain-Context (letztes NPC-Ziel / letztes Umweltziel) ueber Teilklauseln hinweg.
+- G201: Sichere Pronomenauflosung vor der Single-Clause-Analyse fuer Folgeklauseln (`ihn/ihm/sie/ihr/es`) je nach Aktionsfamilie:
+  - NPC-bezogen fuer TALK/ATTACK/APPROACH/RETREAT
+  - Umweltbezogen fuer INSPECT/OPEN/SEARCH/TAKE
+- G202: Konservativer Scope beibehalten (nur innerhalb derselben Mehrfachsatzkette, nur bei zuvor erfolgreich aufgeloesten Zielen; bei Unsicherheit weiterhin `clarify_required` statt stiller Fehlzuordnung).
+- G203: Parser-Regressions-Tests hinzugefuegt:
+  - `untersuche ... dann oeffne sie` -> `INSPECT + OPEN`
+  - `rede mit Kael, dann rede mit ihm` -> zwei TALK-Aktionen auf denselben NPC
+- G204: Route-Integrationstest hinzugefuegt: `rede mit Kael und untersuche die Vorratskiste, dann oeffne sie` fuehrt `talk_success`, `inspect_focus_success`, `open_focus_success` und `container_opened` im selben Turn aus (ohne `clarify_required`).
+- G205-G249: Abschluss-Regression und Frontend-Build erfolgreich; Fokusblock bewusst nicht auf globale Coreference ausgedehnt (keine freie Pronomenmagie ueber Turns/Discovery-Grenzen hinweg).
+- G200-G249 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (42 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g200_run_turn_multiclause_pronoun_carryover_opens_inspected_container -q` (1 passed), `pytest apps/game_api/tests -q` (100 passed), `npm.cmd --prefix apps/web_client run build`, finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 319 passed.
+- Offener Punkt (naechste sinnvolle Ausbaustufe): Pronomenauflosung ist aktuell turn-lokal und klauselbasiert; echte Coreference ueber komplexere Bezuege (`diese`, `jene`, Ellipsen, implizite Ziele) bleibt bewusst offen und sollte nur mit klaren Guardrails erweitert werden.

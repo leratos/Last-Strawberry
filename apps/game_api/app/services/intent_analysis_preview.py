@@ -66,6 +66,7 @@ _DESCRIPTIVE_NPC_REFERENCE_HINTS = (
 
 
 RefMetaIndex = dict[str, dict[str, str]]
+ClauseChainContext = dict[str, dict[str, str]]
 
 
 def analyze_player_input_preview(
@@ -99,12 +100,16 @@ def analyze_player_input_preview(
     aggregated_notes: list[str] = [f"Mehrteilige Eingabe erkannt: {len(clauses)} Teilabschnitte."]
     parsed_clause_count = 0
     unparsed_clauses: list[str] = []
+    chain_context = _new_clause_chain_context()
 
     for idx, clause in enumerate(clauses, start=1):
+        clause_input, carryover_note = _apply_clause_chain_carryover(clause, chain_context)
+        if carryover_note:
+            aggregated_notes.append(f"Teil {idx}: {carryover_note}")
         clause_result = _analyze_player_input_preview_single_clause(
             world_id=world_id,
             world_character_id=world_character_id,
-            player_input=clause,
+            player_input=clause_input,
             inventory=inventory,
             known_npc_names=known_npc_names,
             known_locations=known_locations,
@@ -119,6 +124,7 @@ def analyze_player_input_preview(
         if non_clarify_actions:
             parsed_clause_count += 1
             aggregated_actions.extend(clause_result.actions)
+            _update_clause_chain_context(chain_context, non_clarify_actions)
         else:
             unparsed_clauses.append(clause)
 
@@ -713,6 +719,104 @@ def _split_preview_action_clauses(text: str) -> list[str]:
     for part in explicit_parts or [normalized]:
         final_parts.extend(_split_clause_on_safe_und(part))
     return final_parts or [normalized]
+
+
+def _new_clause_chain_context() -> ClauseChainContext:
+    return {"npc": {}, "scene": {}}
+
+
+def _apply_clause_chain_carryover(clause: str, chain_context: ClauseChainContext) -> tuple[str, str | None]:
+    original = (clause or "").strip()
+    if not original:
+        return original, None
+    lowered = original.lower()
+    if not re.search(r"\b(?:ihn|ihm|sie|ihr|es)\b", lowered, re.I):
+        return original, None
+
+    rewritten = original
+    notes: list[str] = []
+    categories = _clause_action_categories(original)
+
+    npc_context = chain_context.get("npc") or {}
+    npc_name = str(npc_context.get("target_name") or "").strip()
+    if npc_name and categories & {"talk", "attack", "approach", "retreat"}:
+        candidate = rewritten
+        candidate = re.sub(r"\b(mit|zu|von)\s+(?:ihm|ihr)\b", rf"\1 {npc_name}", candidate, flags=re.I)
+        candidate = re.sub(
+            r"\b(spreche|rede|frage|unterhalte)\s+(?:ihn|sie|ihm|ihr)\b",
+            rf"\1 {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(greife|attackiere|schlage|haue|steche|schiesse|schieße|feuere|werfe)\s+auf\s+(?:ihn|sie)\b",
+            rf"\1 auf {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(greife|attackiere|schlage|haue|steche)\s+(?:ihn|sie)\b",
+            rf"\1 {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(?:an|auf)\s+(?:ihn|sie)\s+zu\b",
+            lambda m: m.group(0).split()[0] + f" {npc_name} zu",
+            candidate,
+            flags=re.I,
+        )
+        if candidate != rewritten:
+            rewritten = candidate
+            notes.append(f"Pronomenziel (NPC) auf {npc_name} aufgeloest")
+
+    scene_context = chain_context.get("scene") or {}
+    scene_name = str(scene_context.get("target_name") or "").strip()
+    if scene_name and categories & {"inspect", "open", "search", "take"}:
+        candidate = rewritten
+        candidate = re.sub(
+            r"\b(untersuche|inspiziere|betrachte|oeffne|öffne|durchsuche|durchforste|wuehle|wühle|nimm|nehme|hebe)\s+(?:sie|ihn|es)\b",
+            rf"\1 {scene_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\bmache\s+(?:sie|ihn|es)\s+auf\b",
+            f"mache {scene_name} auf",
+            candidate,
+            flags=re.I,
+        )
+        if candidate != rewritten:
+            rewritten = candidate
+            notes.append(f"Pronomenziel (Umwelt) auf {scene_name} aufgeloest")
+
+    if rewritten == original:
+        return original, None
+    return rewritten, "; ".join(notes)
+
+
+def _update_clause_chain_context(chain_context: ClauseChainContext, actions: list[TurnIntentAction]) -> None:
+    for action in actions:
+        action_type = action.action_type
+        params = action.parameters or {}
+        if action_type in {ActionType.talk, ActionType.attack, ActionType.approach, ActionType.retreat}:
+            target_name = str(params.get("target_name") or "").strip()
+            if target_name and target_name.lower() not in _GENERIC_NPC_TARGET_WORDS:
+                chain_context["npc"] = {
+                    "target_name": target_name,
+                    "target_id": str(params.get("target_id") or action.target_ref or "") or "",
+                    "target_role": str(params.get("target_role") or "") or "",
+                    "target_kind": str(action.target_kind or "npc"),
+                }
+        elif action_type in {ActionType.inspect, ActionType.open, ActionType.search, ActionType.take}:
+            target_name = str(params.get("target_name") or "").strip()
+            target_kind = str(params.get("target_kind") or action.target_kind or "").strip()
+            if target_name and target_kind in {"scene_point", "scene_object", "container"}:
+                chain_context["scene"] = {
+                    "target_name": target_name,
+                    "target_id": str(params.get("target_id") or action.target_ref or "") or "",
+                    "target_kind": target_kind,
+                }
 
 
 def _split_clause_on_safe_und(text: str) -> list[str]:

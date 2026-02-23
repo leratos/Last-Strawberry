@@ -1073,6 +1073,38 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("inspect_focus_success", event_codes)
         self.assertNotIn("clarify_required", event_codes)
 
+    def test_g200_run_turn_multiclause_pronoun_carryover_opens_inspected_container(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g200-1",
+                "world_description": "Ein urbaner Markt mit Binder, Kisten und Spuren eines Rituals.",
+                "character_description": "Eine Ermittlerin, die in Sequenzen spricht, untersucht und dann handelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Kael und untersuche die Vorratskiste, dann oeffne sie."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertIn("open_focus_success", event_codes)
+        self.assertIn("container_opened", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+        self.assertIn("Pronomenziel", " ".join(payload["turn"]["intent"]["analysis_notes"]))
+
     def test_g11_run_turn_accepts_multi_action_override_queue(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

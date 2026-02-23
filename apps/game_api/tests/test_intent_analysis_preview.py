@@ -306,6 +306,39 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertNotIn("CLARIFY", action_types)
         self.assertIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
 
+    def test_multiclause_resolves_scene_pronoun_from_previous_clause(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich untersuche die Vorratskiste, dann oeffne sie.",
+            inventory=[],
+            known_scene_point_refs=[
+                {"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("INSPECT", action_types)
+        self.assertIn("OPEN", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        open_action = next(action for action in intent.actions if action.action_type.value == "OPEN")
+        self.assertEqual(open_action.target_ref, "ctr-market-supplies")
+        self.assertIn("Pronomenziel (Umwelt)", " ".join(intent.analysis_notes))
+
+    def test_multiclause_resolves_npc_pronoun_from_previous_clause(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael, dann rede mit ihm.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+        )
+        talk_actions = [action for action in intent.actions if action.action_type.value == "TALK"]
+        self.assertEqual(len(talk_actions), 2)
+        self.assertTrue(all(action.target_ref == "npc-kael" for action in talk_actions))
+        self.assertNotIn("CLARIFY", [action.action_type.value for action in intent.actions])
+        self.assertIn("Pronomenziel (NPC)", " ".join(intent.analysis_notes))
+
     def test_does_not_split_talk_chain_with_und_frage(self):
         intent = analyze_player_input_preview(
             world_id="w1",
