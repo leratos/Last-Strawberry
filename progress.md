@@ -225,3 +225,12 @@ pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/t
 - G205-G249: Abschluss-Regression und Frontend-Build erfolgreich; Fokusblock bewusst nicht auf globale Coreference ausgedehnt (keine freie Pronomenmagie ueber Turns/Discovery-Grenzen hinweg).
 - G200-G249 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (42 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g200_run_turn_multiclause_pronoun_carryover_opens_inspected_container -q` (1 passed), `pytest apps/game_api/tests -q` (100 passed), `npm.cmd --prefix apps/web_client run build`, finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 319 passed.
 - Offener Punkt (naechste sinnvolle Ausbaustufe): Pronomenauflosung ist aktuell turn-lokal und klauselbasiert; echte Coreference ueber komplexere Bezuege (`diese`, `jene`, Ellipsen, implizite Ziele) bleibt bewusst offen und sollte nur mit klaren Guardrails erweitert werden.
+
+- G250-G259 Draft (gestartet): Narration Quality Debt dokumentieren (reporthafte/auflistende Erzaehlweise im Hybrid-Modus), Zielbild + Regeln + spaetere Architektur festhalten; bewusst ohne aktive Narration-Optimierung (Token sparen waehrend Entwicklungs-/Testphase).
+- G250-G259 abgeschlossen: Narration-Qualitaetsbaustelle verbindlich dokumentiert (kein aktiver Code-Ausbau, bewusst token-/zeitschonend waehrend Entwicklungs-/Testphase).
+- Neue Doku: `docs/narration_quality_debt_v1.md` mit vier Blo¨cken: `Narration Quality Debt`, `Zielbild`, `Regeln`, `spaetere Architektur`.
+- Dokumentiert: Problem (reporthafte/auflistende Narration, Sprachmischung, schwacher Szenenfluss), Beispieltext, Zielbild mit szenischer/kausal verknuepfter Erzaehlweise und klarer Anschlussfrage.
+- Verbindliche Regeln festgelegt: DE-only, keine Eventlistenform, keine erfundenen Zustandsaenderungen, relevante Fakten priorisieren, `clarify_required`/Teilparse nicht narrativ "wegraeten".
+- Spaeteres Grundprinzip festgelegt (ohne Implementierung): `Rules/Persistenz -> Story Beat Composer -> Narrator` statt direkte rohe Eventlisten-Narration.
+- Greenfield-Roadmap ergaenzt um aktiven Tech-Debt-/Quality-Debt-Punkt mit Verweis auf `docs/narration_quality_debt_v1.md`.
+- Tests/Build: keine Ausfuehrung erforderlich (nur Doku-Aenderungen).
