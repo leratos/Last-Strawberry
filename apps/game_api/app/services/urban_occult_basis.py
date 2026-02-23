@@ -163,6 +163,7 @@ def resolve_unique_role_title_npc_reference(
         }
 
     if len(role_matches) > 1:
+        role_matches = sorted(role_matches, key=lambda entry: str(entry.get("name") or "").strip().lower())
         candidate_names = sorted(
             {str(entry.get("name") or "").strip() for entry in role_matches if str(entry.get("name") or "").strip()}
         )

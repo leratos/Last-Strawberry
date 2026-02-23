@@ -130,6 +130,10 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         location_name=session.character_state.location_name,
     )
+    context.discovery_counts["visible_scene_point_count"] = int(len(context.target_catalog.scene_points))
+    context.discovery_counts["detail_verified_scene_point_count"] = int(
+        sum(1 for point in context.target_catalog.scene_points if int(point.detail_level or 0) >= 2)
+    )
     context.discovery_counts["hidden_scene_point_count"] = int(hidden_scene_points)
     if hidden_scene_points > 0:
         context.hidden_scene_point_count = hidden_scene_points

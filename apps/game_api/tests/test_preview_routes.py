@@ -285,6 +285,49 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         ]
         self.assertEqual(auto_plain_beschwoerer, [])
 
+    def test_g60_ordinal_role_reference_resolves_second_visible_beschwoerer(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g60-second-summoner",
+                "world_description": "Eine okkulte Stadt mit mehreren Beschwoerern auf dem Marktplatz.",
+                "character_description": "Eine Beobachterin, die gezielt die zweite Person anspricht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        self.client.post(
+            f"/v1/devtest/worlds/{world_id}/npcs/spawn",
+            json={
+                "npc_id": "npc-liora-second",
+                "name": "Liora",
+                "role": "beschwoerer",
+                "location_name": "Marktplatz",
+                "revealed_to_player": True,
+            },
+        )
+
+        # G35 hides NPC roles until interaction. Prime both Beschwoerer as known/identified first.
+        for player_input in ("Ich rede mit Kael.", "Ich rede mit Liora."):
+            prime_response = self.client.post(
+                f"/v1/worlds/{world_id}/turns/run",
+                json={"player_input": player_input},
+            )
+            self.assertEqual(prime_response.status_code, 200)
+
+        response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich spreche den zweiten Beschwoerer an."},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+        applied_talk = next(action for action in payload["turn"]["resolution"]["applied_actions"] if action["action_type"] == "TALK")
+        self.assertEqual(applied_talk["target_ref"], "npc-liora-second")
+
     def test_devtest_spawn_npc_endpoint_creates_visible_npc_profile(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
@@ -850,6 +893,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("discovery_counts", payload)
         self.assertIn("hidden_npc_count", payload["discovery_counts"])
         self.assertIn("hidden_scene_point_count", payload["discovery_counts"])
+        self.assertIn("visible_scene_point_count", payload["discovery_counts"])
+        self.assertIn("detail_verified_scene_point_count", payload["discovery_counts"])
 
         top_bundle = payload["npc_memory"][0]
         self.assertIn("bundle", top_bundle)
