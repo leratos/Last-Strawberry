@@ -788,13 +788,11 @@ def _resolve_scene_target_reference_with_candidates(
     matches = _find_scene_ref_matches(candidate, scene_ref_index)
     if not matches:
         return {}, []
-    ordinal_index = _extract_ordinal_index(candidate)
-    if ordinal_index is not None:
-        if 0 <= ordinal_index < len(matches):
-            return matches[ordinal_index], []
+    selected_index = _select_candidate_index(candidate, len(matches))
+    if selected_index is not None:
+        if 0 <= selected_index < len(matches):
+            return matches[selected_index], []
         return {}, matches[:8]
-    if _contains_last_reference(candidate):
-        return matches[-1], []
     if len(matches) == 1:
         return matches[0], []
     return {}, matches[:8]
@@ -814,18 +812,13 @@ def _resolve_npc_target_reference(
     role_resolution = resolve_unique_role_title_npc_reference(candidate, known_npc_refs)
     if not role_resolution:
         return canonical_name, {}, None
-    ordinal_index = _extract_ordinal_index(candidate)
+    selected_index = _select_candidate_index(candidate, None)
     if str(role_resolution.get("status")) == "ambiguous":
         raw_entries = role_resolution.get("candidate_entries") or []
         if isinstance(raw_entries, list):
-            if ordinal_index is not None and 0 <= ordinal_index < len(raw_entries):
-                selected = raw_entries[ordinal_index]
-                if isinstance(selected, dict):
-                    selected_entry = {str(k): str(v) for k, v in selected.items() if v is not None}
-                    selected_name = str(selected_entry.get("name") or canonical_name).strip() or canonical_name
-                    return selected_name, selected_entry, None
-            if _contains_last_reference(candidate) and raw_entries:
-                selected = raw_entries[-1]
+            resolved_index = _select_candidate_index(candidate, len(raw_entries))
+            if resolved_index is not None and 0 <= resolved_index < len(raw_entries):
+                selected = raw_entries[resolved_index]
                 if isinstance(selected, dict):
                     selected_entry = {str(k): str(v) for k, v in selected.items() if v is not None}
                     selected_name = str(selected_entry.get("name") or canonical_name).strip() or canonical_name
@@ -841,13 +834,13 @@ def _resolve_npc_target_reference(
         return canonical_name, {}, f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren."
 
     matched_entry = dict(role_resolution.get("entry") or {})
-    if ordinal_index is not None and ordinal_index > 0:
+    if selected_index is not None and selected_index > 0:
         role_name = str(role_resolution.get("role") or "npc")
         matched_name = str(matched_entry.get("name") or canonical_name).strip() or canonical_name
         return (
             canonical_name,
             {},
-            f"Es gibt keinen {ordinal_index + 1}. sichtbaren {role_name}. Sichtbar ist aktuell: {matched_name}.",
+            f"Es gibt keinen {selected_index + 1}. sichtbaren {role_name}. Sichtbar ist aktuell: {matched_name}.",
         )
     matched_name = str(matched_entry.get("name") or canonical_name).strip() or canonical_name
     return matched_name, matched_entry, None
@@ -1018,7 +1011,7 @@ def _normalize_scene_target_candidate(candidate: str) -> str:
         return ""
     normalized = re.sub(r"^(?:der|die|das|dem|den|des|ein|eine|einer|einem|einen)\s+", "", normalized, flags=re.I)
     normalized = re.sub(
-        r"^(?:erste|erster|erstem|ersten|erstes|zweite|zweiter|zweitem|zweiten|zweites|dritte|dritter|drittem|dritten|drittes|vierte|vierter|viertem|vierten|viertes|letzte|letzter|letztem|letzten|letztes)\s+",
+        r"^(?:erste|erster|erstem|ersten|erstes|zweite|zweiter|zweitem|zweiten|zweites|dritte|dritter|drittem|dritten|drittes|vierte|vierter|viertem|vierten|viertes|letzte|letzter|letztem|letzten|letztes|andere|anderer|anderem|anderen|anderes)\s+",
         "",
         normalized,
         flags=re.I,
@@ -1075,6 +1068,24 @@ def _scene_clarify_candidates(entries: list[dict[str, str]], *, action_type: str
 
 def _contains_last_reference(text: str) -> bool:
     return bool(re.search(r"\b(letzte|letzter|letztem|letzten|letztes)\b", (text or ""), re.I))
+
+
+def _contains_other_reference(text: str) -> bool:
+    return bool(re.search(r"\b(andere|anderer|anderem|anderen|anderes)\b", (text or ""), re.I))
+
+
+def _select_candidate_index(text: str, candidate_count: int | None) -> int | None:
+    ordinal_index = _extract_ordinal_index(text)
+    if ordinal_index is not None:
+        return ordinal_index
+    if _contains_last_reference(text):
+        if candidate_count is None or candidate_count <= 0:
+            return 0
+        return candidate_count - 1
+    if _contains_other_reference(text):
+        # "der andere ..." maps to the alternate visible candidate in common 2-candidate cases.
+        return 1
+    return None
 
 
 def _requires_existing_npc_resolution(*, target: str, target_meta: dict[str, str]) -> bool:

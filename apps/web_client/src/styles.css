@@ -251,6 +251,41 @@ textarea:focus {
   padding: 0.75rem;
 }
 
+.clarify-panel {
+  margin-bottom: 0.9rem;
+  border-color: rgba(241, 188, 103, 0.18);
+  background: linear-gradient(180deg, rgba(241, 188, 103, 0.04), rgba(0, 0, 0, 0.12));
+}
+
+.clarify-groups {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.4rem;
+}
+
+.clarify-group-card {
+  border: 1px solid rgba(180, 205, 227, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.clarify-candidate-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.clarify-candidate-row {
+  border: 1px solid rgba(180, 205, 227, 0.06);
+  border-radius: 8px;
+  padding: 0.4rem;
+  display: grid;
+  gap: 0.3rem;
+  background: rgba(255, 255, 255, 0.015);
+}
+
 .list {
   list-style: none;
   padding: 0;

@@ -480,10 +480,10 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         before_payload = context_before.json()
         before_npc_ids = [entry["ref_id"] for entry in before_payload["target_catalog"]["npcs"]]
         self.assertNotIn("npc-hidden-lyra", before_npc_ids)
-        self.assertGreaterEqual(before_payload["hidden_npc_count"], 1)
+        self.assertGreaterEqual(before_payload["discovery_counts"]["hidden_npc_count"], 1)
         self.assertTrue(any("unbekannte Praesenz" in note for note in before_payload["retrieval_notes"]))
         self.assertEqual(before_payload["target_catalog"]["scene_points"], [])
-        self.assertGreaterEqual(before_payload["hidden_scene_point_count"], 1)
+        self.assertGreaterEqual(before_payload["discovery_counts"]["hidden_scene_point_count"], 1)
         self.assertTrue(any("Interaktions-/Objektpunkt" in note for note in before_payload["retrieval_notes"]))
 
         inspect_response = self.client.post(
@@ -501,9 +501,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         after_payload = context_after.json()
         after_npc_ids = [entry["ref_id"] for entry in after_payload["target_catalog"]["npcs"]]
         self.assertIn("npc-hidden-lyra", after_npc_ids)
-        self.assertEqual(after_payload["hidden_npc_count"], 0)
+        self.assertEqual(after_payload["discovery_counts"]["hidden_npc_count"], 0)
         self.assertGreaterEqual(len(after_payload["target_catalog"]["scene_points"]), 1)
-        self.assertEqual(after_payload["hidden_scene_point_count"], 0)
+        self.assertEqual(after_payload["discovery_counts"]["hidden_scene_point_count"], 0)
         visible_scene_point_kinds = {entry["kind"] for entry in after_payload["target_catalog"]["scene_points"]}
         self.assertIn("scene_point", visible_scene_point_kinds)
         self.assertTrue({"container", "scene_object"} & visible_scene_point_kinds)
