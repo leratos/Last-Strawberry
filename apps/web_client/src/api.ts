@@ -42,6 +42,22 @@ export type GameContextResponse = {
       created_at: string;
     }>;
   };
+  quests: Array<{
+    quest_id: string;
+    title: string;
+    description: string;
+    status: string;
+    current_stage: string;
+    objectives: Array<{
+      objective_id: string;
+      title: string;
+      status: string;
+      hint: string;
+    }>;
+    tags: string[];
+    updated_at: string;
+    completed_at?: string | null;
+  }>;
   recent_turns: Array<{
     turn_id: string;
     raw_player_input: string;

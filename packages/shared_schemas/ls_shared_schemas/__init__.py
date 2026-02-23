@@ -2,6 +2,7 @@ from .character import CharacterAttributes, CharacterResources, CharacterState, 
 from .game_context import GameContextResponse, RetrievedNpcMemoryBundle
 from .inventory import InventoryItemInstance, ItemEffect, ItemUseMode
 from .npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
+from .quests import QuestObjectiveState, WorldQuestState
 from .turns import (
     ActionType,
     LlmCapabilityTrace,
@@ -35,6 +36,7 @@ __all__ = [
     "NPCMemoryEntry",
     "NPCProfile",
     "NPCRelationship",
+    "QuestObjectiveState",
     "RetrievedNpcMemoryBundle",
     "PersistedTurnRecord",
     "StateDelta",
@@ -48,6 +50,7 @@ __all__ = [
     "WorldBootstrapRequest",
     "WorldBootstrapResult",
     "WorldCharacterSeed",
+    "WorldQuestState",
     "WorldSeed",
     "WorldSessionResponse",
 ]

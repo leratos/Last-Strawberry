@@ -231,6 +231,131 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         ]
         self.assertEqual(auto_beschwoerer, [])
 
+    def test_g260_urban_occult_starter_quest_progresses_via_kael_crate_mira(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g260-quest",
+                "world_description": (
+                    "Eine moderne Stadt mit geheimer Magie, einem fehlgeschlagenen Binder-Ritual und rivalisierenden Zirkeln."
+                ),
+                "character_description": "Ein Ermittler, der den Vorfall am Marktplatz untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        self.assertGreaterEqual(len(context_payload["quests"]), 1)
+        quest = context_payload["quests"][0]
+        self.assertEqual(quest["current_stage"], "investigate_scene")
+        kael_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Kael")
+        mira_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+        self.assertEqual(kael_ref.get("discovery_state", {}).get("dialog_state"), "quest_hook")
+
+        talk_kael = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Kael",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": kael_ref["ref_id"],
+                            "target_name": kael_ref["name"],
+                            "target_role": kael_ref.get("role"),
+                            "target_location_name": kael_ref.get("location_name"),
+                            "target_zone_id": kael_ref.get("scene_zone_id"),
+                            "target_zone_name": kael_ref.get("scene_zone_name"),
+                            "target_distance_band": kael_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_kael.status_code, 200)
+        ctx_after_kael = talk_kael.json()["context_after_turn"]
+        quest_after_kael = ctx_after_kael["quests"][0]
+        objective_states_after_kael = {obj["objective_id"]: obj["status"] for obj in quest_after_kael["objectives"]}
+        self.assertEqual(objective_states_after_kael["speak_with_kael"], "completed")
+        self.assertEqual(objective_states_after_kael["inspect_supply_crate"], "pending")
+
+        broad_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "ich schau mich um"},
+        )
+        self.assertEqual(broad_inspect.status_code, 200)
+        ctx_after_broad = broad_inspect.json()["context_after_turn"]
+        crate_ref = next(
+            entry for entry in ctx_after_broad["target_catalog"]["scene_points"] if "supply-crate" in entry["ref_id"]
+        )
+
+        inspect_crate = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Vorratskiste",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": crate_ref["ref_id"],
+                        "target_kind": crate_ref["kind"],
+                        "parameters": {
+                            "intent": "inspect",
+                            "target_id": crate_ref["ref_id"],
+                            "target_name": crate_ref["name"],
+                            "target_kind": crate_ref["kind"],
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(inspect_crate.status_code, 200)
+        ctx_after_crate = inspect_crate.json()["context_after_turn"]
+        quest_after_crate = ctx_after_crate["quests"][0]
+        objective_states_after_crate = {obj["objective_id"]: obj["status"] for obj in quest_after_crate["objectives"]}
+        self.assertEqual(objective_states_after_crate["speak_with_kael"], "completed")
+        self.assertEqual(objective_states_after_crate["inspect_supply_crate"], "completed")
+        self.assertEqual(quest_after_crate["current_stage"], "report_to_mira")
+
+        mira_ref_after = next(entry for entry in ctx_after_crate["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_ref_after.get("discovery_state", {}).get("dialog_state"), "quest_report")
+
+        talk_mira = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref_after["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref_after["ref_id"],
+                            "target_name": mira_ref_after["name"],
+                            "target_role": mira_ref_after.get("role"),
+                            "target_location_name": mira_ref_after.get("location_name"),
+                            "target_zone_id": mira_ref_after.get("scene_zone_id"),
+                            "target_zone_name": mira_ref_after.get("scene_zone_name"),
+                            "target_distance_band": mira_ref_after.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_mira.status_code, 200)
+        talk_mira_payload = talk_mira.json()
+        quest_codes = [event["code"] for event in talk_mira_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("quest_completed", quest_codes)
+        final_quest = talk_mira_payload["context_after_turn"]["quests"][0]
+        self.assertEqual(final_quest["status"], "completed")
+        self.assertTrue(all(obj["status"] == "completed" for obj in final_quest["objectives"]))
+
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

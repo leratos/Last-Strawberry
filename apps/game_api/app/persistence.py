@@ -9,11 +9,16 @@ from pathlib import Path
 from uuid import uuid4
 
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
+from apps.game_api.app.services.quest_authoring import (
+    advance_quests_for_turn,
+    initial_quest_states_for_world_seed,
+)
 from apps.game_api.app.services.scene_point_catalog import build_scene_point_targets_for_location
 from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
+from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import (
     ActionType,
     NarrativeEnvelope,
@@ -139,6 +144,12 @@ class WorldRepository:
                         timestamp=created_at,
                     )
                 self._insert_journal_entries(conn, journal_entries)
+                self._insert_initial_world_quest_states(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                    quests=initial_quest_states_for_world_seed(world_seed),
+                )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -211,6 +222,11 @@ class WorldRepository:
                 character_row = self._get_primary_character_row(conn, world_id)
                 if character_row is None:
                     raise KeyError("world_character_not_found")
+                current_quests = self._list_world_quest_states_conn(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                )
 
                 newly_revealed_npcs, newly_revealed_scene_points = self._apply_npc_discovery_updates(
                     conn=conn,
@@ -263,6 +279,19 @@ class WorldRepository:
                             severity="info",
                         )
                     )
+                if current_quests:
+                    quest_progress = advance_quests_for_turn(
+                        quests=current_quests,
+                        intent=intent,
+                        resolution=resolution,
+                    )
+                    self._apply_world_quest_updates(
+                        conn=conn,
+                        world_id=world_id,
+                        world_character_id=resolution.world_character_id,
+                        quests=quest_progress.quests,
+                    )
+                    resolution.system_events.extend(quest_progress.system_events)
 
                 conn.execute(
                     """
@@ -340,6 +369,19 @@ class WorldRepository:
                 (world_id, safe_limit),
             ).fetchall()
         return [self._turn_from_row(row) for row in rows]
+
+    def list_world_quest_states(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+    ) -> list[WorldQuestState]:
+        with self._connect() as conn:
+            return self._list_world_quest_states_conn(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+            )
 
     def get_world_context(self, world_id: str) -> tuple[WorldSessionResponse | None, CharacterState | None, list[InventoryItemInstance]]:
         session = self.get_world_session(world_id)
@@ -597,6 +639,84 @@ class WorldRepository:
                     entry.created_at.isoformat(),
                 ),
             )
+
+    def _insert_initial_world_quest_states(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        quests: list[WorldQuestState],
+    ) -> None:
+        if not quests:
+            return
+        timestamp = _utc_iso_now()
+        for quest in quests:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO world_quest_states (
+                    world_id, world_character_id, quest_id, quest_state_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    world_id,
+                    world_character_id,
+                    quest.quest_id,
+                    quest.model_dump_json(),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+
+    def _apply_world_quest_updates(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        quests: list[WorldQuestState],
+    ) -> None:
+        if not quests:
+            return
+        timestamp = _utc_iso_now()
+        for quest in quests:
+            conn.execute(
+                """
+                INSERT INTO world_quest_states (
+                    world_id, world_character_id, quest_id, quest_state_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(world_id, world_character_id, quest_id)
+                DO UPDATE SET
+                    quest_state_json = excluded.quest_state_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    world_id,
+                    world_character_id,
+                    quest.quest_id,
+                    quest.model_dump_json(),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+
+    def _list_world_quest_states_conn(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+    ) -> list[WorldQuestState]:
+        rows = conn.execute(
+            """
+            SELECT quest_state_json
+            FROM world_quest_states
+            WHERE world_id = ? AND world_character_id = ?
+            ORDER BY quest_id ASC
+            """,
+            (world_id, world_character_id),
+        ).fetchall()
+        return [WorldQuestState.model_validate_json(str(row["quest_state_json"])) for row in rows]
 
     def _apply_npc_discovery_updates(
         self,

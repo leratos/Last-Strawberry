@@ -11,6 +11,7 @@ from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.llm_runtime import build_llm_runtime
+from apps.game_api.app.services.quest_authoring import build_npc_dialog_hints_for_context
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.game_context import GameContextResponse
@@ -101,6 +102,10 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         limit_memories_per_npc=max(1, memory_per_npc),
     )
+    quests = repository.list_world_quest_states(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+    )
     visible_scene_points = repository.list_visible_scene_points_in_location(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
@@ -110,6 +115,7 @@ def _assemble_context_for_world(
         world=session,
         turns=turns,
         npc_memory=npc_memory,
+        quests=quests,
         retrieval_player_input=player_input,
         scene_points=visible_scene_points,
         journal_limit=journal_limit,
@@ -140,6 +146,15 @@ def _assemble_context_for_world(
         context.retrieval_notes.append(
             f"Es gibt {hidden_scene_points} unerkundete Interaktions-/Objektpunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
         )
+    for npc_ref in context.target_catalog.npcs:
+        hints = build_npc_dialog_hints_for_context(
+            quests=context.quests,
+            npc_id=npc_ref.ref_id,
+            npc_name=npc_ref.name,
+            npc_role=npc_ref.role,
+        )
+        if hints:
+            npc_ref.discovery_state.update(hints)
     return context
 
 

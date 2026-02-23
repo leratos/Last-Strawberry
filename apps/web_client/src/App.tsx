@@ -554,6 +554,14 @@ export function App() {
     () => (lastBootstrapTrace ? formatCapabilityTraceSummary(lastBootstrapTrace) : ""),
     [lastBootstrapTrace],
   );
+  const activeQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() !== "completed"),
+    [context],
+  );
+  const completedQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() === "completed"),
+    [context],
+  );
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -1060,6 +1068,12 @@ export function App() {
                 ) : null}
                 {bootstrapTraceSummary ? (
                   <p className="list-subtle analysis-notes">Bootstrap-Trace: {bootstrapTraceSummary}</p>
+                ) : null}
+                {context.quests.length > 0 ? (
+                  <div className="npc-badge-row">
+                    <span className="npc-badge npc-badge-distance">Quests aktiv: {activeQuests.length}</span>
+                    <span className="npc-badge npc-badge-vorsichtig">Quests erledigt: {completedQuests.length}</span>
+                  </div>
                 ) : null}
                 {(context.discovery_counts?.hidden_npc_count || 0) > 0 ||
                 (context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (
@@ -1568,6 +1582,31 @@ export function App() {
                   </li>
                 ))}
               </ul>
+              {context.quests.length > 0 ? (
+                <>
+                  <h3>Questlog (MVP)</h3>
+                  <ul className="list">
+                    {context.quests.map((quest) => (
+                      <li key={quest.quest_id}>
+                        <p className="list-title">
+                          {quest.title} ({quest.status})
+                        </p>
+                        <p className="list-subtle">Stage: {quest.current_stage}</p>
+                        <ul className="list list-tight">
+                          {quest.objectives.map((objective) => (
+                            <li key={objective.objective_id}>
+                              <span>
+                                [{objective.status}] {objective.title}
+                              </span>
+                              {objective.hint ? <p className="list-subtle">{objective.hint}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
             </>
           )}
         </article>
@@ -1677,6 +1716,10 @@ export function App() {
                           </span>
                         </div>
                         <p className="list-subtle">{distanceActionHint(npcDistance)}</p>
+                        {typeof npcRef?.discovery_state?.dialog_hint === "string" &&
+                        npcRef.discovery_state.dialog_hint.trim() ? (
+                          <p className="list-subtle">Hinweis: {String(npcRef.discovery_state.dialog_hint)}</p>
+                        ) : null}
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                         ) : null}
