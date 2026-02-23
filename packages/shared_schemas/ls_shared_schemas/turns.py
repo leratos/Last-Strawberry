@@ -61,6 +61,10 @@ class ClarifyCandidate(LSBaseModel):
     name: str | None = Field(default=None, max_length=120)
     role: str | None = Field(default=None, max_length=80)
     kind: str | None = Field(default=None, max_length=40)
+    faction: str | None = Field(default=None, max_length=80)
+    location_name: str | None = Field(default=None, max_length=120)
+    scene_zone_name: str | None = Field(default=None, max_length=120)
+    distance_band_to_player: str | None = Field(default=None, max_length=40)
 
 
 class ClarifyPayload(LSBaseModel):

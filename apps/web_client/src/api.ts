@@ -63,6 +63,10 @@ export type GameContextResponse = {
             name?: string | null;
             role?: string | null;
             kind?: string | null;
+            faction?: string | null;
+            location_name?: string | null;
+            scene_zone_name?: string | null;
+            distance_band_to_player?: string | null;
           }>;
         } | null;
       }>;

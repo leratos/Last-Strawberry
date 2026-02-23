@@ -44,6 +44,10 @@ type ClarifyCandidate = {
   name?: string;
   role?: string;
   kind?: string;
+  faction?: string;
+  location_name?: string;
+  scene_zone_name?: string;
+  distance_band_to_player?: string;
 };
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 
@@ -258,6 +262,10 @@ function parseClarifyCandidates(
           name: candidate.name ? String(candidate.name) : undefined,
           role: candidate.role ? String(candidate.role) : undefined,
           kind: candidate.kind ? String(candidate.kind) : undefined,
+          faction: candidate.faction ? String(candidate.faction) : undefined,
+          location_name: candidate.location_name ? String(candidate.location_name) : undefined,
+          scene_zone_name: candidate.scene_zone_name ? String(candidate.scene_zone_name) : undefined,
+          distance_band_to_player: candidate.distance_band_to_player ? String(candidate.distance_band_to_player) : undefined,
         };
       })
       .filter((entry) => entry.action_type && entry.target_ref);
@@ -283,10 +291,78 @@ function normalizeClarifyCandidates(
         name: candidate.name ? String(candidate.name) : undefined,
         role: candidate.role ? String(candidate.role) : undefined,
         kind: candidate.kind ? String(candidate.kind) : undefined,
+        faction: candidate.faction ? String(candidate.faction) : undefined,
+        location_name: candidate.location_name ? String(candidate.location_name) : undefined,
+        scene_zone_name: candidate.scene_zone_name ? String(candidate.scene_zone_name) : undefined,
+        distance_band_to_player: candidate.distance_band_to_player ? String(candidate.distance_band_to_player) : undefined,
       }))
       .filter((entry) => entry.action_type && entry.target_ref);
   }
   return parseClarifyCandidates(event.metadata);
+}
+
+function clarifyReasonLabel(reason?: string | null): string {
+  const normalized = (reason || "").trim().toLowerCase();
+  if (!normalized) {
+    return "Rueckfrage";
+  }
+  if (normalized.includes("ambiguous") || normalized.includes("mehrdeutig")) {
+    return "Mehrdeutig";
+  }
+  if (normalized.includes("unknown") || normalized.includes("unbekannt")) {
+    return "Unbekannt";
+  }
+  return normalized.replace(/_/g, " ");
+}
+
+function clarifyCandidateGroupLabel(candidate: ClarifyCandidate): string {
+  const kind = (candidate.target_kind || candidate.kind || "").toLowerCase();
+  if (kind === "npc") {
+    return "NPCs";
+  }
+  if (kind === "container") {
+    return "Container";
+  }
+  if (kind === "scene_object") {
+    return "Objekte";
+  }
+  if (kind === "scene_point") {
+    return "Interaktionspunkte";
+  }
+  return "Ziele";
+}
+
+function groupClarifyCandidates(candidates: ClarifyCandidate[]): Array<{ label: string; items: ClarifyCandidate[] }> {
+  const grouped = new Map<string, ClarifyCandidate[]>();
+  for (const candidate of candidates) {
+    const group = clarifyCandidateGroupLabel(candidate);
+    grouped.set(group, [...(grouped.get(group) || []), candidate]);
+  }
+  return Array.from(grouped.entries()).map(([label, items]) => ({ label, items }));
+}
+
+function clarifyCandidateSubtitle(candidate: ClarifyCandidate): string {
+  const parts: string[] = [];
+  if (candidate.role) {
+    parts.push(`Rolle: ${candidate.role}`);
+  }
+  if (candidate.kind && candidate.kind !== candidate.target_kind) {
+    parts.push(`Typ: ${candidate.kind}`);
+  } else if (candidate.target_kind && candidate.target_kind !== "npc") {
+    parts.push(`Typ: ${candidate.target_kind}`);
+  }
+  if (candidate.location_name || candidate.scene_zone_name) {
+    parts.push(
+      `Ort/Zone: ${candidate.location_name || "?"}${candidate.scene_zone_name ? ` / ${candidate.scene_zone_name}` : ""}`,
+    );
+  }
+  if (candidate.distance_band_to_player) {
+    parts.push(`Distanz: ${distanceBandDisplayLabel(candidate.distance_band_to_player)}`);
+  }
+  if (candidate.faction) {
+    parts.push(`Fraktion: ${candidate.faction}`);
+  }
+  return parts.join(" | ");
 }
 
 function getStructuredTargets(
@@ -718,6 +794,10 @@ export function App() {
         target_id: candidate.target_ref,
         target_name: targetName,
         target_kind: candidate.target_kind || candidate.kind || null,
+        target_role: candidate.role || null,
+        target_location_name: candidate.location_name || null,
+        target_zone_name: candidate.scene_zone_name || null,
+        target_distance_band: candidate.distance_band_to_player || null,
       },
       confidence: 0.99,
     };
@@ -1109,11 +1189,26 @@ export function App() {
                                   {event.code === "clarify_required" ? (
                                     (() => {
                                       const candidates = normalizeClarifyCandidates(event);
-                                      const suggestedAction = typeof event.metadata?.suggested_action === "string"
-                                        ? event.metadata.suggested_action
-                                        : "";
+                                      const suggestedAction =
+                                        typeof event.clarify?.suggested_action === "string"
+                                          ? event.clarify.suggested_action
+                                          : typeof event.metadata?.suggested_action === "string"
+                                            ? event.metadata.suggested_action
+                                            : "";
+                                      const clarifyReason =
+                                        typeof event.clarify?.reason === "string"
+                                          ? event.clarify.reason
+                                          : typeof event.metadata?.reason === "string"
+                                            ? event.metadata.reason
+                                            : "";
+                                      const groupedCandidates = groupClarifyCandidates(candidates);
                                       return (
                                         <div className="turn-actions">
+                                          {clarifyReason ? (
+                                            <span className="npc-badge npc-badge-vorsichtig">
+                                              Rueckfrage: {clarifyReasonLabel(clarifyReason)}
+                                            </span>
+                                          ) : null}
                                           {suggestedAction === "inspect_broad" ? (
                                             <button
                                               type="button"
@@ -1124,26 +1219,48 @@ export function App() {
                                               Umsehen
                                             </button>
                                           ) : null}
-                                          {candidates.slice(0, 4).map((candidate, candidateIndex) => (
-                                            <button
-                                              key={`${turn.turn_id}-${event.code}-${index}-cand-${candidateIndex}`}
-                                              type="button"
-                                              className="secondary-btn"
-                                              disabled={isRunningTurn}
-                                              onClick={() =>
-                                                void executeStructuredActions(
-                                                  [
-                                                    {
-                                                      label: `Clarify: ${candidate.label || candidate.name || candidate.target_ref}`,
-                                                      action: buildClarifyCandidateAction(candidate),
-                                                    },
-                                                  ],
-                                                  "Quick Action",
-                                                )
-                                              }
-                                            >
-                                              {candidate.label || candidate.name || candidate.target_ref}
-                                            </button>
+                                          {groupedCandidates.map((group, groupIndex) => (
+                                            <div key={`${turn.turn_id}-${event.code}-${index}-group-${groupIndex}`} className="clarify-group">
+                                              <span className="list-subtle">{group.label}</span>
+                                              <div className="turn-actions">
+                                                {group.items.slice(0, 4).map((candidate, candidateIndex) => (
+                                                  <button
+                                                    key={`${turn.turn_id}-${event.code}-${index}-cand-${groupIndex}-${candidateIndex}`}
+                                                    type="button"
+                                                    className="secondary-btn"
+                                                    disabled={isRunningTurn}
+                                                    title={clarifyCandidateSubtitle(candidate) || undefined}
+                                                    onClick={() =>
+                                                      void executeStructuredActions(
+                                                        [
+                                                          {
+                                                            label: `Clarify: ${candidate.label || candidate.name || candidate.target_ref}`,
+                                                            action: buildClarifyCandidateAction(candidate),
+                                                          },
+                                                        ],
+                                                        "Quick Action",
+                                                      )
+                                                    }
+                                                  >
+                                                    {candidate.label || candidate.name || candidate.target_ref}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                              {group.items.slice(0, 2).map((candidate, subtitleIndex) => {
+                                                const subtitle = clarifyCandidateSubtitle(candidate);
+                                                if (!subtitle) {
+                                                  return null;
+                                                }
+                                                return (
+                                                  <p
+                                                    key={`${turn.turn_id}-${event.code}-${index}-sub-${groupIndex}-${subtitleIndex}`}
+                                                    className="list-subtle"
+                                                  >
+                                                    {candidate.label || candidate.name || candidate.target_ref}: {subtitle}
+                                                  </p>
+                                                );
+                                              })}
+                                            </div>
                                           ))}
                                         </div>
                                       );

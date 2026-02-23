@@ -143,6 +143,10 @@ class RulesEngine:
                                 name=str(entry.get("name") or "").strip() or None,
                                 role=str(entry.get("role") or "").strip() or None,
                                 kind=str(entry.get("kind") or "").strip() or None,
+                                faction=str(entry.get("faction") or "").strip() or None,
+                                location_name=str(entry.get("location_name") or "").strip() or None,
+                                scene_zone_name=str(entry.get("scene_zone_name") or "").strip() or None,
+                                distance_band_to_player=str(entry.get("distance_band_to_player") or "").strip() or None,
                             )
                         )
             except json.JSONDecodeError:

@@ -120,3 +120,16 @@
 - G69: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
 - G60-G69 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (26 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (30 passed), `pytest packages/rules_engine/tests/test_rules_engine.py -q` (19 passed), `pytest apps/game_api/tests -q` (74 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 292 passed.
 - Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration kann das String-Feld entfernt werden.
+
+- G70-G79 Draft (gestartet): Fokus auf Clarify-Kandidaten-UX (Gruppierung/Status), bessere Rückfrageauflösung im UI und Discovery-/Zielauflösung-Finetuning mit Teiltests + Build + Regressionstest.
+- G70-G79 abgeschlossen: Clarify-Kandidaten tragen jetzt mehr Kontextdaten (Rolle/Fraktion/Ort-Zone/Distanz) von Parser -> Rules -> Event-Schema -> UI; die Rueckfrage-Buttons koennen dadurch sinnvollere Tooltips/Infos zeigen.
+- G70/G71: `ClarifyCandidate` im Shared Schema erweitert (`faction`, `location_name`, `scene_zone_name`, `distance_band_to_player`); Rules Engine uebernimmt diese Felder in `event.clarify.candidates`.
+- G72/G73: Parser encodiert erweiterte Kandidateninfos fuer NPC- und Scene-Target-CLARIFYs (`_npc_visible_candidates`, Rollen-Anreden, Scene-Targets).
+- G74: Web-UI rendert `clarify_required` jetzt gruppiert nach Kandidatentyp (NPCs/Container/Objekte/Interaktionspunkte) statt flacher Button-Liste.
+- G75: Clarify-UI zeigt zusaetzliche Kontextinfos/Tooltips pro Kandidat (Rolle, Typ, Ort/Zone, Distanz, Fraktion wenn bekannt).
+- G76: `buildClarifyCandidateAction()` uebernimmt jetzt Kandidaten-Metadaten (`target_role`, Distanz/Ort) in strukturierte Quick-Actions.
+- G77: Parser kann jetzt auch `letzte/letzter ...`-Referenzen auf sichtbare Kandidaten aufloesen (NPC-Rollenanreden und Szenenziele wie `letzte Kiste`).
+- G78: Szenenziel-Normalisierung entfernt nun auch `letzte*`-Ordinalwoerter vor dem Matching; vermeidet falsches `unknown_open_target` bei `letzte Kiste`.
+- G79: Route-/Parsertests fuer `letzte ...`-Referenzen und strukturierte Clarify-Payloads erweitert; Frontend-CSS fuer Clarify-Gruppenlayout hinzugefuegt.
+- G70-G79 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (28 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (30 passed), `pytest packages/rules_engine/tests/test_rules_engine.py -q` (19 passed), `pytest apps/game_api/tests -q` (76 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 294 passed.
+- Annahme (dokumentiert): In G24-Mehrdeutigkeits-Route-Tests kann der Clarify-Reason je nach G35-Rollenmaskierung `ambiguous_npc_role_title` oder `unknown_or_ambiguous_npc_talk_target` sein; beide sind fachlich korrekt, solange kein Fake-NPC entsteht.
