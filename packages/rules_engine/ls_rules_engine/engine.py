@@ -301,9 +301,11 @@ class RulesEngine:
         inventory: list[InventoryItemInstance],
         events: list[TurnSystemEvent],
     ) -> bool:
+        inspect_mode = str(action.parameters.get("inspect_mode") or "").strip().lower()
         target = (action.item_ref or action.target_ref or "").strip()
         if not target:
-            events.append(TurnSystemEvent(code="inspect_success", message="Umgebung aufmerksam untersucht."))
+            event_code = "inspect_broad_success" if inspect_mode in {"", "broad"} else "inspect_success"
+            events.append(TurnSystemEvent(code=event_code, message="Umgebung aufmerksam untersucht."))
             return True
         item = self._find_item(inventory, target)
         if item is None:

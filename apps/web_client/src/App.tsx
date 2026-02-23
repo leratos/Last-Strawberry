@@ -50,6 +50,8 @@ type ClarifyCandidate = {
   distance_band_to_player?: string;
 };
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
+type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
+type ScenePointSort = "name" | "detail" | "zone";
 
 const QUEUE_MACROS_STORAGE_KEY = "ls_web_queue_macros_v1";
 
@@ -430,6 +432,8 @@ export function App() {
   const [structuredQueue, setStructuredQueue] = useState<QueuedStructuredAction[]>([]);
   const [queueMacros, setQueueMacros] = useState<QueueMacro[]>(() => loadQueueMacrosFromStorage());
   const [queueMacroName, setQueueMacroName] = useState<string>("");
+  const [scenePointFilter, setScenePointFilter] = useState<ScenePointFilter>("all");
+  const [scenePointSort, setScenePointSort] = useState<ScenePointSort>("name");
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -463,6 +467,32 @@ export function App() {
     }
     return "";
   }, [composerActionKind, selectedComposerTarget]);
+
+  const scenePointsForDisplay = useMemo(() => {
+    if (!context) {
+      return [];
+    }
+    const filtered = context.target_catalog.scene_points.filter((point) => {
+      if (scenePointFilter === "all") {
+        return true;
+      }
+      if (scenePointFilter === "unknown") {
+        return (point.detail_level || 1) < 2;
+      }
+      return point.kind === scenePointFilter;
+    });
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (scenePointSort === "detail") {
+        return (b.detail_level || 1) - (a.detail_level || 1) || a.name.localeCompare(b.name);
+      }
+      if (scenePointSort === "zone") {
+        return (a.scene_zone_name || "").localeCompare(b.scene_zone_name || "") || a.name.localeCompare(b.name);
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [context, scenePointFilter, scenePointSort]);
 
   async function loadContext(targetWorldId: string, retrievalHint?: string): Promise<void> {
     setIsReloading(true);
@@ -1578,21 +1608,44 @@ export function App() {
               </ul>
 
               <h3>Interaktionspunkte (sichtbar)</h3>
+              <p className="list-subtle">
+                Sichtbar: {context.target_catalog.scene_points.length} | Detail verifiziert:{" "}
+                {context.target_catalog.scene_points.filter((point) => (point.detail_level || 1) >= 2).length}
+                {" | "}Verborgene Punkte: {context.hidden_scene_point_count} | Verborgene NPCs: {context.hidden_npc_count}
+              </p>
               {context.target_catalog.scene_points.length > 0 ? (
-                <p className="list-subtle">
-                  Sichtbar: {context.target_catalog.scene_points.length} | Detail verifiziert:{" "}
-                  {context.target_catalog.scene_points.filter((point) => (point.detail_level || 1) >= 2).length}
-                </p>
+                <div className="turn-actions">
+                  <label className="list-subtle">
+                    Filter{" "}
+                    <select value={scenePointFilter} onChange={(e) => setScenePointFilter(e.target.value as ScenePointFilter)}>
+                      <option value="all">Alle</option>
+                      <option value="unknown">Nur unklar</option>
+                      <option value="container">Container</option>
+                      <option value="scene_object">Objekte</option>
+                      <option value="scene_point">Punkte</option>
+                    </select>
+                  </label>
+                  <label className="list-subtle">
+                    Sortierung{" "}
+                    <select value={scenePointSort} onChange={(e) => setScenePointSort(e.target.value as ScenePointSort)}>
+                      <option value="name">Name</option>
+                      <option value="detail">Detail</option>
+                      <option value="zone">Zone</option>
+                    </select>
+                  </label>
+                </div>
               ) : null}
               <ul className="list list-tight">
-                {context.target_catalog.scene_points.length === 0 ? (
+                {scenePointsForDisplay.length === 0 ? (
                   <li>
                     <span className="list-subtle">
-                      Keine sichtbaren Interaktionspunkte. Umsehen/Untersuchen kann neue Punkte aufdecken.
+                      {context.target_catalog.scene_points.length === 0
+                        ? "Keine sichtbaren Interaktionspunkte. Umsehen/Untersuchen kann neue Punkte aufdecken."
+                        : "Keine Interaktionspunkte fuer den aktuellen Filter."}
                     </span>
                   </li>
                 ) : null}
-                {context.target_catalog.scene_points.map((point) => (
+                {scenePointsForDisplay.map((point) => (
                   <li key={point.ref_id}>
                     <span className="list-title">{point.name}</span>
                     <span className="list-subtle">
@@ -1638,12 +1691,18 @@ export function App() {
                       <p className="list-subtle">Untersuche den Punkt gezielt, um Typ und Details zu bestaetigen.</p>
                     )}
                     <div className="turn-actions">
-                      {point.kind === "scene_object" && (point.detail_level || 1) >= 2 ? (
+                      {point.kind === "scene_object" ? (
                         <button
                           type="button"
                           className="secondary-btn"
-                          disabled={isRunningTurn || Boolean(point.discovery_state?.taken)}
-                          title={point.discovery_state?.taken ? "Objekt wurde bereits mitgenommen." : undefined}
+                          disabled={isRunningTurn || (point.detail_level || 1) < 2 || Boolean(point.discovery_state?.taken)}
+                          title={
+                            (point.detail_level || 1) < 2
+                              ? "Erst gezielt untersuchen, um das Objekt sicher zu identifizieren."
+                              : point.discovery_state?.taken
+                                ? "Objekt wurde bereits mitgenommen."
+                                : undefined
+                          }
                           onClick={() =>
                             void executeStructuredActions(
                               [
@@ -1658,6 +1717,7 @@ export function App() {
                                       target_id: point.ref_id,
                                       target_name: point.name,
                                       target_kind: "scene_object",
+                                      target_detail_level: point.detail_level || 1,
                                     },
                                     confidence: 0.99,
                                   },
@@ -1667,16 +1727,22 @@ export function App() {
                             )
                           }
                         >
-                          Nehmen
+                          {(point.detail_level || 1) < 2 ? "Nehmen (erst Inspect)" : "Nehmen"}
                         </button>
                       ) : null}
-                      {point.kind === "container" && (point.detail_level || 1) >= 2 ? (
+                      {point.kind === "container" ? (
                         <>
                           <button
                             type="button"
                             className="secondary-btn"
-                            disabled={isRunningTurn || Boolean(point.discovery_state?.opened)}
-                            title={point.discovery_state?.opened ? "Container ist bereits geoeffnet." : undefined}
+                            disabled={isRunningTurn || (point.detail_level || 1) < 2 || Boolean(point.discovery_state?.opened)}
+                            title={
+                              (point.detail_level || 1) < 2
+                                ? "Erst gezielt untersuchen, um den Behaelter sicher zu identifizieren."
+                                : point.discovery_state?.opened
+                                  ? "Container ist bereits geoeffnet."
+                                  : undefined
+                            }
                             onClick={() =>
                               void executeStructuredActions(
                                 [
@@ -1691,6 +1757,7 @@ export function App() {
                                         target_id: point.ref_id,
                                         target_name: point.name,
                                         target_kind: "container",
+                                        target_detail_level: point.detail_level || 1,
                                       },
                                       confidence: 0.99,
                                     },
@@ -1700,12 +1767,17 @@ export function App() {
                               )
                             }
                           >
-                            Oeffnen
+                            {(point.detail_level || 1) < 2 ? "Oeffnen (erst Inspect)" : "Oeffnen"}
                           </button>
                           <button
                             type="button"
                             className="secondary-btn"
-                            disabled={isRunningTurn}
+                            disabled={isRunningTurn || (point.detail_level || 1) < 2}
+                            title={
+                              (point.detail_level || 1) < 2
+                                ? "Erst gezielt untersuchen, um den Behaelter sicher zu identifizieren."
+                                : undefined
+                            }
                             onClick={() =>
                               void executeStructuredActions(
                                 [
@@ -1720,6 +1792,7 @@ export function App() {
                                         target_id: point.ref_id,
                                         target_name: point.name,
                                         target_kind: "container",
+                                        target_detail_level: point.detail_level || 1,
                                       },
                                       confidence: 0.99,
                                     },
@@ -1729,7 +1802,7 @@ export function App() {
                               )
                             }
                           >
-                            Durchsuchen
+                            {(point.detail_level || 1) < 2 ? "Durchsuchen (erst Inspect)" : "Durchsuchen"}
                           </button>
                         </>
                       ) : null}
@@ -1751,6 +1824,7 @@ export function App() {
                                     target_id: point.ref_id,
                                     target_name: point.name,
                                     target_kind: "scene_point",
+                                    inspect_mode: "focused",
                                   },
                                   confidence: 0.99,
                                 },

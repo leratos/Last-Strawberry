@@ -480,8 +480,10 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         before_payload = context_before.json()
         before_npc_ids = [entry["ref_id"] for entry in before_payload["target_catalog"]["npcs"]]
         self.assertNotIn("npc-hidden-lyra", before_npc_ids)
+        self.assertGreaterEqual(before_payload["hidden_npc_count"], 1)
         self.assertTrue(any("unbekannte Praesenz" in note for note in before_payload["retrieval_notes"]))
         self.assertEqual(before_payload["target_catalog"]["scene_points"], [])
+        self.assertGreaterEqual(before_payload["hidden_scene_point_count"], 1)
         self.assertTrue(any("Interaktions-/Objektpunkt" in note for note in before_payload["retrieval_notes"]))
 
         inspect_response = self.client.post(
@@ -499,7 +501,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         after_payload = context_after.json()
         after_npc_ids = [entry["ref_id"] for entry in after_payload["target_catalog"]["npcs"]]
         self.assertIn("npc-hidden-lyra", after_npc_ids)
+        self.assertEqual(after_payload["hidden_npc_count"], 0)
         self.assertGreaterEqual(len(after_payload["target_catalog"]["scene_points"]), 1)
+        self.assertEqual(after_payload["hidden_scene_point_count"], 0)
         visible_scene_point_kinds = {entry["kind"] for entry in after_payload["target_catalog"]["scene_points"]}
         self.assertIn("scene_point", visible_scene_point_kinds)
         self.assertTrue({"container", "scene_object"} & visible_scene_point_kinds)
@@ -754,6 +758,36 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(intent_actions[0]["target_kind"], "container")
         event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
         self.assertIn("inspect_focus_success", event_codes)
+
+    def test_g42_repeated_broad_inspect_emits_discovery_nothing_new(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g42-broad-repeat",
+                "world_description": "Eine urban-okkulte Marktszene mit versteckten Praesenzen und Objekten.",
+                "character_description": "Eine aufmerksame Ermittlerin, die ihre Umgebung wiederholt scannt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        first_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(first_inspect.status_code, 200)
+        first_codes = [event["code"] for event in first_inspect.json()["turn"]["resolution"]["system_events"]]
+        self.assertIn("inspect_broad_success", first_codes)
+        self.assertTrue("discovery_revealed_npcs" in first_codes or "discovery_revealed_scene_points" in first_codes)
+
+        second_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(second_inspect.status_code, 200)
+        second_codes = [event["code"] for event in second_inspect.json()["turn"]["resolution"]["system_events"]]
+        self.assertIn("inspect_broad_success", second_codes)
+        self.assertIn("discovery_nothing_new", second_codes)
 
     def test_g31_open_then_search_container_preserves_open_and_loot_sequence(self):
         create_response = self.client.post(
