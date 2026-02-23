@@ -4,6 +4,7 @@ import {
   GAME_API_BASE_URL,
   GameContextResponse,
   getWorldContext,
+  LlmCapabilityTraceView,
   runTurn,
   StructuredTurnAction,
   TurnRunResponse,
@@ -202,6 +203,14 @@ function reactionStyleBadgeClass(role: string | undefined, standing: number | un
     return "npc-badge-freundlich";
   }
   return "npc-badge-vorsichtig";
+}
+
+function formatCapabilityTraceSummary(trace: LlmCapabilityTraceView): string {
+  const modelSuffix = trace.model ? ` (${trace.model})` : "";
+  const fallbackSuffix = trace.fallback_used
+    ? ` -> fallback${trace.fallback_reason ? `:${trace.fallback_reason}` : ""}`
+    : "";
+  return `${trace.capability}: ${trace.provider_used}${modelSuffix}${fallbackSuffix}`;
 }
 
 function eventGroupLabel(eventCode: string): string {
@@ -491,6 +500,7 @@ export function App() {
   const [error, setError] = useState<string>("");
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [lastProviderTrace, setLastProviderTrace] = useState<TurnProviderTraceView | null>(null);
+  const [lastBootstrapTrace, setLastBootstrapTrace] = useState<LlmCapabilityTraceView | null>(null);
   const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
   const [composerAttackMode, setComposerAttackMode] = useState<"melee" | "ranged">("melee");
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
@@ -538,16 +548,12 @@ export function App() {
     if (!lastProviderTrace) {
       return "";
     }
-    return [lastProviderTrace.intent, lastProviderTrace.narration]
-      .map((trace) => {
-        const modelSuffix = trace.model ? ` (${trace.model})` : "";
-        const fallbackSuffix = trace.fallback_used
-          ? ` -> fallback${trace.fallback_reason ? `:${trace.fallback_reason}` : ""}`
-          : "";
-        return `${trace.capability}: ${trace.provider_used}${modelSuffix}${fallbackSuffix}`;
-      })
-      .join(" | ");
+    return [lastProviderTrace.intent, lastProviderTrace.narration].map(formatCapabilityTraceSummary).join(" | ");
   }, [lastProviderTrace]);
+  const bootstrapTraceSummary = useMemo(
+    () => (lastBootstrapTrace ? formatCapabilityTraceSummary(lastBootstrapTrace) : ""),
+    [lastBootstrapTrace],
+  );
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -598,6 +604,7 @@ export function App() {
       return;
     }
     setLastActionMessage("");
+    setLastBootstrapTrace(null);
     await loadContext(worldIdInput.trim());
     setLastActionMessage(`Welt geladen: ${worldIdInput.trim()}`);
   }
@@ -607,6 +614,7 @@ export function App() {
     setIsBootstrapping(true);
     setError("");
     setLastActionMessage("");
+    setLastBootstrapTrace(null);
     try {
       const created = await createWorldBootstrap({
         user_id: bootstrapForm.userId.trim(),
@@ -616,6 +624,7 @@ export function App() {
       await loadContext(created.world_id);
     setAnalysisNotes([]);
     setLastProviderTrace(null);
+      setLastBootstrapTrace(created.bootstrap_trace || null);
       setLastActionMessage(`Neue Welt erstellt: ${created.world_id}`);
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : "Bootstrap fehlgeschlagen.");
@@ -1048,6 +1057,9 @@ export function App() {
                 ) : null}
                 {providerTraceSummary ? (
                   <p className="list-subtle analysis-notes">Provider-Trace: {providerTraceSummary}</p>
+                ) : null}
+                {bootstrapTraceSummary ? (
+                  <p className="list-subtle analysis-notes">Bootstrap-Trace: {bootstrapTraceSummary}</p>
                 ) : null}
                 {(context.discovery_counts?.hidden_npc_count || 0) > 0 ||
                 (context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (

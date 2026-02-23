@@ -29,6 +29,7 @@ class TestLlmRuntime(unittest.TestCase):
             public_game_domain="last-strawberry.com",
             llm_mode="preview",
             llm_fallback_to_preview=True,
+            hybrid_intent_llm_for_complex_inputs=False,
             openrouter_api_key="",
             openrouter_base_url="https://openrouter.ai/api/v1",
             openrouter_timeout_seconds=20.0,
@@ -47,6 +48,7 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertEqual(status.intent_provider, "preview")
         self.assertEqual(status.narration_provider, "preview")
         self.assertFalse(status.openrouter_configured)
+        self.assertFalse(status.hybrid_intent_llm_for_complex_inputs)
 
     def test_openrouter_mode_without_key_falls_back_to_preview(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key=""))
@@ -116,6 +118,68 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertEqual(narration_trace.provider_policy, "openrouter")
         self.assertEqual(narration_trace.provider_used, "openrouter")
         self.assertEqual(narration_trace.model, "model-narr")
+
+    def test_hybrid_complex_intent_feature_flag_uses_openrouter_for_complex_input(self):
+        runtime = LlmRuntime(
+            self._base_settings(
+                llm_mode="hybrid",
+                hybrid_intent_llm_for_complex_inputs=True,
+                llm_fallback_to_preview=True,
+                openrouter_api_key="test-key",
+            )
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "actions": [
+                    {"action_type": "TALK", "target_ref": "Zorak"},
+                    {"action_type": "INSPECT", "target_ref": "ctr-kiste", "target_kind": "container"},
+                ],
+                "analysis_notes": ["llm-complex"],
+            }
+        )
+        runtime._openrouter_client = fake_client
+
+        _intent, trace = runtime.analyze_intent_with_trace(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Zorak, dann untersuche die Kiste.",
+            inventory=[],
+            known_npc_names=["Zorak"],
+            known_locations=["Marktplatz"],
+            known_npc_refs=[{"ref_id": "npc-zorak", "name": "Zorak"}],
+            known_scene_point_refs=[{"ref_id": "ctr-kiste", "name": "Kiste", "kind": "container"}],
+            context=None,
+        )
+        self.assertEqual(trace.provider_policy, "openrouter")
+        self.assertEqual(trace.provider_used, "openrouter")
+        self.assertFalse(trace.fallback_used)
+
+    def test_hybrid_complex_intent_feature_flag_keeps_preview_for_simple_input(self):
+        runtime = LlmRuntime(
+            self._base_settings(
+                llm_mode="hybrid",
+                hybrid_intent_llm_for_complex_inputs=True,
+                llm_fallback_to_preview=True,
+                openrouter_api_key="test-key",
+            )
+        )
+        runtime._openrouter_client = mock.Mock()
+
+        intent, trace = runtime.analyze_intent_with_trace(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Zorak.",
+            inventory=[],
+            known_npc_names=["Zorak"],
+            known_locations=["Marktplatz"],
+            known_npc_refs=[{"ref_id": "npc-zorak", "name": "Zorak"}],
+            context=None,
+        )
+        self.assertEqual(intent.actions[0].action_type, ActionType.talk)
+        self.assertEqual(trace.provider_policy, "preview")
+        self.assertEqual(trace.provider_used, "preview")
+        runtime._openrouter_client.chat_completion.assert_not_called()
 
     def test_bootstrap_enrichment_falls_back_to_preview_when_openrouter_unconfigured(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=True, openrouter_api_key=""))

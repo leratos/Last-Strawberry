@@ -143,9 +143,11 @@ def _assemble_context_for_world(
     return context
 
 
-def _build_bootstrap_result_with_llm(request: WorldBootstrapRequest) -> WorldBootstrapResult:
+def _build_bootstrap_result_with_llm(
+    request: WorldBootstrapRequest,
+) -> tuple[WorldBootstrapResult, LlmCapabilityTrace]:
     preview = build_world_bootstrap_preview(request)
-    return llm_runtime.enrich_world_bootstrap_preview(request=request, preview=preview)
+    return llm_runtime.enrich_world_bootstrap_preview_with_trace(request=request, preview=preview)
 
 
 @app.get("/health")
@@ -158,6 +160,7 @@ def health() -> dict[str, str]:
         "public_game_domain": settings.public_game_domain,
         "llm_mode": llm_status.mode,
         "llm_fallback_to_preview": str(llm_status.fallback_to_preview).lower(),
+        "hybrid_intent_llm_for_complex_inputs": str(llm_status.hybrid_intent_llm_for_complex_inputs).lower(),
         "bootstrap_provider": llm_status.bootstrap_provider,
         "intent_provider": llm_status.intent_provider,
         "narration_provider": llm_status.narration_provider,
@@ -191,14 +194,16 @@ def get_world_context(
 
 @app.post("/v1/worlds/bootstrap/preview", response_model=WorldBootstrapResult)
 def world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootstrapResult:
-    return _build_bootstrap_result_with_llm(request)
+    result, trace = _build_bootstrap_result_with_llm(request)
+    return result.model_copy(update={"bootstrap_trace": trace})
 
 
 @app.post("/v1/worlds/bootstrap", response_model=WorldSessionResponse)
 def world_bootstrap_create(request: WorldBootstrapRequest, fastapi_request: Request) -> WorldSessionResponse:
-    bootstrap_result = _build_bootstrap_result_with_llm(request)
+    bootstrap_result, bootstrap_trace = _build_bootstrap_result_with_llm(request)
     repository = _get_world_repository(fastapi_request)
-    return repository.create_world_session(request=request, bootstrap=bootstrap_result)
+    session = repository.create_world_session(request=request, bootstrap=bootstrap_result)
+    return session.model_copy(update={"bootstrap_trace": bootstrap_trace})
 
 
 @app.get("/v1/worlds/{world_id}", response_model=WorldSessionResponse)

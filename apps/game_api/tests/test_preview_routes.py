@@ -39,6 +39,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("bootstrap_provider", payload)
         self.assertIn("intent_provider", payload)
         self.assertIn("narration_provider", payload)
+        self.assertIn("hybrid_intent_llm_for_complex_inputs", payload)
 
     def test_world_bootstrap_preview(self):
         response = self.client.post(
@@ -53,6 +54,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         payload = response.json()
         self.assertIn("world_seed", payload)
         self.assertIn("initial_narrative", payload)
+        self.assertIn("bootstrap_trace", payload)
+        self.assertEqual(payload["bootstrap_trace"]["capability"], "bootstrap")
 
     def test_g23_world_bootstrap_preview_uses_ip_safe_urban_occult_preset(self):
         response = self.client.post(
@@ -99,6 +102,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(created["character_state"]["location_name"], created["world_seed"]["start_location_name"])
         self.assertGreaterEqual(len(created["inventory"]), 1)
         self.assertGreaterEqual(len(created["journal"]), 1)
+        self.assertIn("bootstrap_trace", created)
+        self.assertEqual(created["bootstrap_trace"]["capability"], "bootstrap")
 
         get_response = self.client.get(f"/v1/worlds/{world_id}")
         self.assertEqual(get_response.status_code, 200)
@@ -106,6 +111,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(fetched["world_id"], world_id)
         self.assertEqual(fetched["world_seed"]["world_id"], world_id)
         self.assertEqual(fetched["initial_narrative"], created["initial_narrative"])
+        self.assertIsNone(fetched.get("bootstrap_trace"))
 
     def test_get_world_session_returns_404_for_unknown_world(self):
         response = self.client.get("/v1/worlds/world-does-not-exist")

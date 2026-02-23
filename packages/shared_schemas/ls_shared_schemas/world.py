@@ -8,6 +8,7 @@ from .character import CharacterState, CharacterTemplateSeed, WorldCharacterSeed
 from .common import LSBaseModel, utc_now
 from .inventory import InventoryItemInstance
 from .npc_memory import NPCProfile
+from .turns import LlmCapabilityTrace
 
 
 class WorldBootstrapRequest(LSBaseModel):
@@ -37,6 +38,7 @@ class WorldBootstrapResult(LSBaseModel):
     world_seed: WorldSeed
     initial_narrative: str = Field(min_length=1, max_length=8000)
     player_orientation: list[str] = Field(default_factory=list)
+    bootstrap_trace: LlmCapabilityTrace | None = None
 
 
 class JournalEntryRecord(LSBaseModel):
@@ -58,4 +60,5 @@ class WorldSessionResponse(LSBaseModel):
     character_state: CharacterState
     inventory: list[InventoryItemInstance] = Field(default_factory=list)
     journal: list[JournalEntryRecord] = Field(default_factory=list)
+    bootstrap_trace: LlmCapabilityTrace | None = None
     created_at: datetime = Field(default_factory=utc_now)

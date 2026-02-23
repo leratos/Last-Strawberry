@@ -80,6 +80,7 @@ _OPENROUTER_BOOTSTRAP_JSON_SCHEMA: dict[str, Any] = {
 class LlmRuntimeStatus:
     mode: str
     fallback_to_preview: bool
+    hybrid_intent_llm_for_complex_inputs: bool
     bootstrap_provider: str
     intent_provider: str
     narration_provider: str
@@ -166,6 +167,7 @@ class LlmRuntime:
         return LlmRuntimeStatus(
             mode=self.settings.llm_mode,
             fallback_to_preview=self.settings.llm_fallback_to_preview,
+            hybrid_intent_llm_for_complex_inputs=self.settings.hybrid_intent_llm_for_complex_inputs,
             bootstrap_provider=bootstrap_provider,
             intent_provider=intent_provider,
             narration_provider=narration_provider,
@@ -181,15 +183,52 @@ class LlmRuntime:
         request: WorldBootstrapRequest,
         preview: WorldBootstrapResult,
     ) -> WorldBootstrapResult:
-        if not self._should_use_openrouter_for_capability("bootstrap"):
-            return preview
+        enriched, _trace = self.enrich_world_bootstrap_preview_with_trace(request=request, preview=preview)
+        return enriched
+
+    def enrich_world_bootstrap_preview_with_trace(
+        self,
+        *,
+        request: WorldBootstrapRequest,
+        preview: WorldBootstrapResult,
+    ) -> tuple[WorldBootstrapResult, LlmCapabilityTrace]:
+        provider_policy = "openrouter" if self._should_use_openrouter_for_capability("bootstrap") else "preview"
+        if provider_policy == "preview":
+            return (
+                preview,
+                self._build_capability_trace(
+                    capability="bootstrap",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                ),
+            )
 
         try:
-            return self._bootstrap_openrouter(request=request, preview=preview)
-        except Exception:
+            enriched = self._bootstrap_openrouter(request=request, preview=preview)
+            return (
+                enriched,
+                self._build_capability_trace(
+                    capability="bootstrap",
+                    provider_policy=provider_policy,
+                    provider_used="openrouter",
+                    model=self.settings.openrouter_bootstrap_model,
+                ),
+            )
+        except Exception as exc:
             if not self.settings.llm_fallback_to_preview:
                 raise
-            return preview
+            return (
+                preview,
+                self._build_capability_trace(
+                    capability="bootstrap",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                    fallback_used=True,
+                    fallback_reason=type(exc).__name__,
+                ),
+            )
 
     def analyze_intent(
         self,
@@ -236,7 +275,7 @@ class LlmRuntime:
         known_scene_point_refs: list[dict[str, str]] | None = None,
         context: GameContextResponse | None = None,
     ) -> tuple[TurnIntent, LlmCapabilityTrace]:
-        provider_policy = "openrouter" if self._should_use_openrouter_for_capability("intent") else "preview"
+        provider_policy = self._intent_provider_policy_for_request(player_input=player_input)
         if provider_policy == "preview":
             intent = self._analyze_preview(
                 world_id=world_id,
@@ -725,6 +764,43 @@ class LlmRuntime:
         if mode == "hybrid":
             return capability in {"bootstrap", "narration"}
         return False
+
+    def _intent_provider_policy_for_request(self, *, player_input: str) -> str:
+        if self._should_use_openrouter_for_capability("intent"):
+            return "openrouter"
+        mode = (self.settings.llm_mode or "preview").strip().lower()
+        if mode != "hybrid":
+            return "preview"
+        if not self.settings.hybrid_intent_llm_for_complex_inputs:
+            return "preview"
+        if self._looks_like_complex_intent_input(player_input):
+            return "openrouter"
+        return "preview"
+
+    def _looks_like_complex_intent_input(self, player_input: str) -> bool:
+        text = (player_input or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        if re.search(r"\b(dann|danach|anschlie(?:ss|ß)end)\b", lowered):
+            return True
+        if ";" in text:
+            return True
+        action_verb_hits = len(
+            re.findall(
+                (
+                    r"\b(?:gehe|geh|laufe|reise|betrete|bewege|begib|"
+                    r"rede|spreche|frage|unterhalte|"
+                    r"untersuche|schaue|schau|suche|durchsuche|oeffne|öffne|nimm|nehme|"
+                    r"greife|attackiere|schlage|haue|steche|schiesse|schieße|feuere|werfe|"
+                    r"benutze|verwende|nutze|trinke|iss|aktiviere|"
+                    r"entferne|halte|weiche|naehere|nähere|annaehern|annähern|trete)\b"
+                ),
+                lowered,
+                flags=re.I,
+            )
+        )
+        return action_verb_hits >= 2 and " und " in f" {lowered} "
 
     def _provider_name_for_capability(self, capability: str, *, openrouter_ready: bool) -> str:
         wants_openrouter = self._should_use_openrouter_for_capability(capability)

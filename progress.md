@@ -195,3 +195,17 @@ arration: openrouter, inkl. Fallback-Hinweis) und setzt/cleart Trace beim Weltwe
 pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 314 passed.
 - Technische Schuld (weiter offen): Clarify-Kandidaten werden weiterhin doppelt transportiert (event.clarify.candidates + metadata.candidates_json); nach kompletter UI-Migration Legacy-String entfernen. Provider-Trace existiert derzeit pro Turn, Bootstrap-Provider-Trace nur indirekt ueber /health sichtbar.
 
+
+- G150-G199 Draft (gestartet): (1) Selektiver Intent-LLM-Einsatz nur bei komplexen Mehrfachsaetzen im Hybrid-Modus (Feature-Flag + Tracing), (2) Bootstrap-Provider-Trace pro /v1/worlds/bootstrap/preview und /v1/worlds/bootstrap sichtbar machen (API + UI/Debug).
+
+- G150-G199 abgeschlossen: (1) Selektiver Intent-LLM-Einsatz im Hybrid-Modus fuer komplexe Inputs (Feature-Flag), (2) Bootstrap-Provider-Trace pro Preview/Create im API-Response + UI sichtbar gemacht.
+- G150-G159: Settings erweitert um LS_GREENFIELD_HYBRID_INTENT_LLM_FOR_COMPLEX_INPUTS (hybrid_intent_llm_for_complex_inputs, default false) und /health um Flag-Status erweitert.
+- G160-G169: LlmRuntime erweitert: enrich_world_bootstrap_preview_with_trace() (Bootstrap + Trace) und selektive Intent-Provider-Policy im Hybrid-Modus (openrouter nur bei komplexen Inputs; sonst preview). Komplexitaetsheuristik: Sequenzmarker (dann/danach/anschliessend), Semikolon oder mehrere Aktionsverben mit und.
+- G170-G179: main.py verdrahtet Bootstrap-Trace in /v1/worlds/bootstrap/preview und /v1/worlds/bootstrap (optionales Feld ootstrap_trace), un_turn bleibt mit provider_trace aus G110-G149 kompatibel.
+- G180-G189: Shared-Schemas erweitert (WorldBootstrapResult.bootstrap_trace, WorldSessionResponse.bootstrap_trace, Reuse LlmCapabilityTrace), Frontend-API-Typen angepasst.
+- G190-G199: Web-UI zeigt Bootstrap-Trace im Story-Panel nach Welterstellung und beherrscht Provider-Trace + Bootstrap-Trace gleichzeitig. Bootstrap-Trace wird bei Weltwechsel/Neustart zurueckgesetzt.
+- Tests erweitert: Runtime-Unit-Tests fuer Hybrid-Complex-Intent-Flag (komplex -> OpenRouter, einfach -> Preview), Route-Tests fuer ootstrap_trace in Preview/Create und Health-Flag sowie bestehende Provider-Trace-Assertions im Turn-Flow.
+- G150-G199 Tests/Builds: pytest apps/game_api/tests/test_llm_runtime.py -q (13 passed), gezielte Route-Tests fuer Health/Bootstrap/Create/G2 (4 passed), 
+pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 316 passed.
+- Hinweis/Tradeoff: Selektiver Intent-LLM im Hybrid-Modus ist bewusst nur per Feature-Flag aktiv (default aus), damit Kosten/Fehlinterpretationsrisiko kontrolliert bleiben. provider_trace/ootstrap_trace macht den tatsaechlich genutzten Provider sichtbar.
+
