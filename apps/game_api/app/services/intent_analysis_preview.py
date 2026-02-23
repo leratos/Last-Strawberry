@@ -80,6 +80,105 @@ def analyze_player_input_preview(
     known_scene_point_refs: list[dict[str, str]] | None = None,
 ) -> TurnIntent:
     text = unicodedata.normalize("NFC", (player_input or "").strip())
+    clauses = _split_preview_action_clauses(text)
+    if len(clauses) <= 1:
+        return _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=text,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+
+    aggregated_actions: list[TurnIntentAction] = []
+    aggregated_notes: list[str] = [f"Mehrteilige Eingabe erkannt: {len(clauses)} Teilabschnitte."]
+    parsed_clause_count = 0
+    unparsed_clauses: list[str] = []
+
+    for idx, clause in enumerate(clauses, start=1):
+        clause_result = _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=clause,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+        for note in clause_result.analysis_notes:
+            aggregated_notes.append(f"Teil {idx}: {note}")
+
+        non_clarify_actions = [action for action in clause_result.actions if action.action_type != ActionType.clarify]
+        if non_clarify_actions:
+            parsed_clause_count += 1
+            aggregated_actions.extend(clause_result.actions)
+        else:
+            unparsed_clauses.append(clause)
+
+    if parsed_clause_count == 0:
+        return _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=text,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+
+    if unparsed_clauses:
+        preview_unparsed = "; ".join(unparsed_clauses[:2])
+        aggregated_actions.append(
+            TurnIntentAction(
+                action_type=ActionType.clarify,
+                target_kind="system",
+                parameters={
+                    "intent": "clarify",
+                    "reason": "partial_multiclause_parse",
+                    "message": (
+                        "Mehrteilige Eingabe wurde nur teilweise verarbeitet. "
+                        "Bitte den restlichen Teil einzeln senden oder die Struktur-Queue nutzen."
+                    ),
+                    "suggested_action": "use_structured_queue",
+                    "unparsed_preview": preview_unparsed[:240],
+                },
+                confidence=0.4,
+            )
+        )
+        aggregated_notes.append(
+            f"Teilweise verarbeitet: {parsed_clause_count}/{len(clauses)} Teilabschnitte. Unklar: {preview_unparsed}"
+        )
+
+    return TurnIntent(
+        world_id=world_id,
+        world_character_id=world_character_id,
+        raw_player_input=text,
+        actions=aggregated_actions,
+        analysis_notes=aggregated_notes,
+    )
+
+
+def _analyze_player_input_preview_single_clause(
+    *,
+    world_id: str,
+    world_character_id: str,
+    player_input: str,
+    inventory: list[InventoryItemInstance],
+    known_npc_names: list[str] | None = None,
+    known_locations: list[str] | None = None,
+    known_npc_refs: list[dict[str, str]] | None = None,
+    known_location_refs: list[dict[str, str]] | None = None,
+    known_scene_point_refs: list[dict[str, str]] | None = None,
+) -> TurnIntent:
+    text = unicodedata.normalize("NFC", (player_input or "").strip())
     lowered = text.lower()
     actions: list[TurnIntentAction] = []
     notes: list[str] = []
@@ -597,6 +696,19 @@ def analyze_player_input_preview(
         actions=actions,
         analysis_notes=notes,
     )
+
+
+def _split_preview_action_clauses(text: str) -> list[str]:
+    normalized = (text or "").strip()
+    if not normalized:
+        return []
+    # Conservative splitting: explicit sequence markers and sentence separators.
+    split_pattern = re.compile(
+        r"(?:\s*,\s*|\s+)(?:dann|danach|anschlie(?:ss|ß)end)(?:\s+|$)|[;]+",
+        re.I,
+    )
+    parts = [part.strip(" \t\r\n,.;") for part in split_pattern.split(normalized) if part and part.strip(" \t\r\n,.;")]
+    return parts or [normalized]
 
 
 def _extract_destination(text: str) -> str | None:

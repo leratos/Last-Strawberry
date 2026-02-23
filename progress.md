@@ -1,4 +1,4 @@
-ï»¿Original prompt: Weiter mit G4 (Context Assembly + NPC Memory Retrieval + Web-Anbindung Start)
+Original prompt: Weiter mit G4 (Context Assembly + NPC Memory Retrieval + Web-Anbindung Start)
 - G4 gestartet: Backend Context Assembly + NPC Memory Retrieval zuerst, danach Web-Anbindung.
 - Hinweis: develop-web-game Skill nur teilweise angewandt; Playwright-Loop wird verschoben bis echte interaktive Game-Loop/Deterministic Hooks vorhanden sind.
 - G4 Backend: /v1/worlds/{world_id}/context mit Retrieval-Sortierung fuer NPC-Memory implementiert.
@@ -54,9 +54,9 @@
 - G17: `APPROACH` ist gestuft: `far -> near -> adjacent`, `adjacent` liefert `approach_not_needed`.
 - G17: Web-UI hat Quick Action `Annaehern` bei NPCs; Distanzaktionen sind kontextsensitiv (z. B. `Annaehern` aus bei `adjacent`).
 - G17: Quickcheck-Script erweitert auf zwei APPROACHs nach `far` und prueft `distance_after_approach_second == adjacent`.
-- G17.1: Parser-Hotfix fuer umgangssprachliche Annaeherungs-Phrasen (`naeher/nÃ¤her mich ...`) inkl. Unicode-NFC-Normalisierung und Regressionstests.
+- G17.1: Parser-Hotfix fuer umgangssprachliche Annaeherungs-Phrasen (`naeher/näher mich ...`) inkl. Unicode-NFC-Normalisierung und Regressionstests.
 - G18: Web-UI zeigt klarere Distanzhinweise im NPC-Panel und im Struktur-Composer (adjacent/near/far/unreachable mit Handlungs-Hinweis).
-- G18: `APPROACH`/`RETREAT` werden im UI kontextsensitiv deaktiviert (z. B. `Annaehern` bei `adjacent`, `Abstand` bei `far/unreachable`) statt unnÃ¶tige `*_not_needed` Turns zu erzeugen.
+- G18: `APPROACH`/`RETREAT` werden im UI kontextsensitiv deaktiviert (z. B. `Annaehern` bei `adjacent`, `Abstand` bei `far/unreachable`) statt unnötige `*_not_needed` Turns zu erzeugen.
 - G19: Parser erweitert fuer weitere Distanzphrasen (`halte Abstand zu ...`, `halte mich von ... fern`, `trete einen Schritt naeher an ...`).
 - G19: Erste optionale NPC-Reaktions-Events auf Distanzaktionen (standing-basiert via `target_standing` in `APPROACH`/`RETREAT`-Actions).
 - G19: Distanz-Quick-Buttons zeigen sichtbare Statuslabels (`Annaehern (direkt dran)`, `Abstand (max)`) statt nur disabled.
@@ -102,7 +102,7 @@
 - G32: UI-Quick-Actions fuer Container erweitert (`Oeffnen`, `Durchsuchen`) mit Status-Disable bei bereits geoeffnetem Container.
 - G33: Preview-Narration hebt Container-/Loot-Ergebnisse expliziter hervor (`Fund:` / `Behaeltnis:`), statt sie nur implizit im Eventtext zu mischen.
 - G34: Discovery-UI fuer Interaktionspunkte verbessert (Counter `sichtbar/detail verifiziert`, Discovery-Badges pro Punkt).
-- G35: NPC-Rollenwissen wird im Context maskiert (`unknown`) bis echte Interaktion/Memory vorliegt; bloÃŸes Entdecken reicht nicht mehr fuer Rollenerkennung.
+- G35: NPC-Rollenwissen wird im Context maskiert (`unknown`) bis echte Interaktion/Memory vorliegt; bloßes Entdecken reicht nicht mehr fuer Rollenerkennung.
 - G36: Fraktionswissen folgt demselben Prinzip wie Rollenwissen (erst nach Interaktion sichtbar); UI zeigt Fraktion nur wenn bekannt.
 - G37: Neuer Action-Typ `TAKE` fuer `scene_object`-Ziele (Freitext + strukturierte Aktion), inklusive persistenter Objektzustand `taken` und einmaligem Loot-MVP.
 - G37: UI-Quick-Action `Nehmen` bei detailverifizierten Szene-Objekten, mit Statusanzeige `verfuegbar/mitgenommen`.
@@ -132,7 +132,7 @@
 - G60-G69 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (26 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (30 passed), `pytest packages/rules_engine/tests/test_rules_engine.py -q` (19 passed), `pytest apps/game_api/tests -q` (74 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 292 passed.
 - Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration kann das String-Feld entfernt werden.
 
-- G70-G79 Draft (gestartet): Fokus auf Clarify-Kandidaten-UX (Gruppierung/Status), bessere RÃ¼ckfrageauflÃ¶sung im UI und Discovery-/ZielauflÃ¶sung-Finetuning mit Teiltests + Build + Regressionstest.
+- G70-G79 Draft (gestartet): Fokus auf Clarify-Kandidaten-UX (Gruppierung/Status), bessere Rückfrageauflösung im UI und Discovery-/Zielauflösung-Finetuning mit Teiltests + Build + Regressionstest.
 - G70-G79 abgeschlossen: Clarify-Kandidaten tragen jetzt mehr Kontextdaten (Rolle/Fraktion/Ort-Zone/Distanz) von Parser -> Rules -> Event-Schema -> UI; die Rueckfrage-Buttons koennen dadurch sinnvollere Tooltips/Infos zeigen.
 - G70/G71: `ClarifyCandidate` im Shared Schema erweitert (`faction`, `location_name`, `scene_zone_name`, `distance_band_to_player`); Rules Engine uebernimmt diese Felder in `event.clarify.candidates`.
 - G72/G73: Parser encodiert erweiterte Kandidateninfos fuer NPC- und Scene-Target-CLARIFYs (`_npc_visible_candidates`, Rollen-Anreden, Scene-Targets).
@@ -168,3 +168,13 @@
 - G99: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
 - G90-G99 Tests/Builds: `pytest apps/game_api/tests/test_llm_runtime.py -q` (10 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 307 passed.
 - Empfehlung (Betrieb): Fuer erste echte KI-Nutzung `LS_GREENFIELD_LLM_MODE=hybrid` + `LS_GREENFIELD_LLM_FALLBACK_TO_PREVIEW=true`, damit Intent stabil bleibt und Bootstrap/Narration bereits KI-Mehrwert liefern.
+
+- G100-G109 abgeschlossen: Preview-Analyzer verarbeitet Mehrfachsatz-Eingaben mit Sequenzmarkern (`dann`/`danach`/`anschliessend`) jetzt als Teilabschnitte und aggregiert mehrere Aktionen pro TurnIntent.
+- G100/G101: Clause-Splitting eingefuehrt (`_split_preview_action_clauses`) und Single-Clause-Analyse in internen Helper ausgelagert (`_analyze_player_input_preview_single_clause`).
+- G102: Mehrteilige Eingaben mit teilweise unverstandenen Teilabschnitten fuehren jetzt zu zusaetzlichem `CLARIFY`-Warnhinweis (`reason=partial_multiclause_parse`) statt stillem Teilverlust.
+- G103: Warnhinweis enthaelt `suggested_action=use_structured_queue` als klaren UX-Hinweis fuer komplexe Eingaben.
+- G104/G105: Parser-Tests fuer Mehrfachsatz (`... dann untersuche ...`) und Partial-Parse-Warnung hinzugefuegt.
+- G106: Route-Integrationstest hinzugefuegt: `run_turn` fuehrt bei `... rede ..., dann untersuche ...` sowohl `talk_success` als auch `inspect_focus_success` im selben Turn aus.
+- G107-G109: Abschluss-Regression erfolgreich; bestehende Deterministik/Rules bleiben unveraendert, nur Intent-Vorverarbeitung verbessert.
+- G100-G109 Tests: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (38 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g100_run_turn_multiclause_dann_executes_talk_and_inspect -q` (1 passed), `pytest apps/game_api/tests -q` (91 passed), finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 310 passed.
+- Hinweis: Splitter ist aktuell bewusst konservativ (explizite Sequenzmarker); `und`-Ketten ohne Marker bleiben ein separater Ausbau-Schritt (um Fehlsplits bei z.B. `rede ... und frage ...` zu vermeiden).

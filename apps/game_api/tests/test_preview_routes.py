@@ -1004,6 +1004,37 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         zorak_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == zorak_ref["ref_id"])
         self.assertEqual(zorak_bundle["relationship"]["standing"], 1)
 
+    def test_g100_run_turn_multiclause_dann_executes_talk_and_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g100-1",
+                "world_description": "Ein Markt mit Kisten und einem angespannten Beschwoerer am Brunnen.",
+                "character_description": "Eine vorsichtige Ermittlerin, die spricht und dann gezielt untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        # Broad inspect first so a container becomes visible for the second clause.
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich gehe zu Kael und rede mit ihm, dann untersuche die Vorratskiste."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+        self.assertIn("Mehrteilige Eingabe erkannt", " ".join(payload["turn"]["intent"]["analysis_notes"]))
+
     def test_g11_run_turn_accepts_multi_action_override_queue(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",
