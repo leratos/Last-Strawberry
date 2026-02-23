@@ -52,6 +52,19 @@ export type GameContextResponse = {
         message: string;
         severity: string;
         metadata?: Record<string, string | number | boolean | null>;
+        clarify?: {
+          reason?: string | null;
+          suggested_action?: string | null;
+          candidates: Array<{
+            action_type: string;
+            target_ref: string;
+            target_kind?: string | null;
+            label?: string | null;
+            name?: string | null;
+            role?: string | null;
+            kind?: string | null;
+          }>;
+        } | null;
       }>;
     };
   }>;
@@ -145,6 +158,8 @@ export type GameContextResponse = {
   discovery_counts?: {
     hidden_npc_count?: number;
     hidden_scene_point_count?: number;
+    visible_scene_point_count?: number;
+    detail_verified_scene_point_count?: number;
   };
 };
 

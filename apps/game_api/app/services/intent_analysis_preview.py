@@ -619,11 +619,18 @@ def _extract_target_after_verb(text: str, verbs: tuple[str, ...]) -> str | None:
 
 
 def _extract_talk_target(text: str) -> str | None:
-    match = re.search(r"\b(?:mit|zu)\s+(?:dem|der|den|einem|einer)?\s*([\w _-]+)", text, re.I)
-    if not match:
-        return None
-    target = _trim_entity_phrase(match.group(1))
-    return target or None
+    patterns = [
+        r"\b(?:mit|zu)\s+(?:dem|der|den|einem|einer)?\s*([\w _-]+)",
+        r"\b(?:spreche|rede|frage)\s+(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+?)\s+an\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        target = _trim_entity_phrase(match.group(1))
+        if target:
+            return target
+    return None
 
 
 def _extract_inspect_target(text: str) -> str | None:
@@ -730,6 +737,11 @@ def _resolve_scene_target_reference_with_candidates(
     matches = _find_scene_ref_matches(candidate, scene_ref_index)
     if not matches:
         return {}, []
+    ordinal_index = _extract_ordinal_index(candidate)
+    if ordinal_index is not None:
+        if 0 <= ordinal_index < len(matches):
+            return matches[ordinal_index], []
+        return {}, matches[:8]
     if len(matches) == 1:
         return matches[0], []
     return {}, matches[:8]
@@ -749,7 +761,16 @@ def _resolve_npc_target_reference(
     role_resolution = resolve_unique_role_title_npc_reference(candidate, known_npc_refs)
     if not role_resolution:
         return canonical_name, {}, None
+    ordinal_index = _extract_ordinal_index(candidate)
     if str(role_resolution.get("status")) == "ambiguous":
+        raw_entries = role_resolution.get("candidate_entries") or []
+        if isinstance(raw_entries, list):
+            if ordinal_index is not None and 0 <= ordinal_index < len(raw_entries):
+                selected = raw_entries[ordinal_index]
+                if isinstance(selected, dict):
+                    selected_entry = {str(k): str(v) for k, v in selected.items() if v is not None}
+                    selected_name = str(selected_entry.get("name") or canonical_name).strip() or canonical_name
+                    return selected_name, selected_entry, None
         role_name = str(role_resolution.get("role") or "npc")
         candidates = [str(name) for name in (role_resolution.get("candidates") or []) if str(name).strip()]
         if candidates:
@@ -761,6 +782,14 @@ def _resolve_npc_target_reference(
         return canonical_name, {}, f"Mehrdeutige Rollen-Anrede erkannt ({role_name}). Bitte praezisieren."
 
     matched_entry = dict(role_resolution.get("entry") or {})
+    if ordinal_index is not None and ordinal_index > 0:
+        role_name = str(role_resolution.get("role") or "npc")
+        matched_name = str(matched_entry.get("name") or canonical_name).strip() or canonical_name
+        return (
+            canonical_name,
+            {},
+            f"Es gibt keinen {ordinal_index + 1}. sichtbaren {role_name}. Sichtbar ist aktuell: {matched_name}.",
+        )
     matched_name = str(matched_entry.get("name") or canonical_name).strip() or canonical_name
     return matched_name, matched_entry, None
 
@@ -890,7 +919,7 @@ def _encode_clarify_candidates(entries: list[dict[str, str]]) -> str | None:
 
 
 def _find_scene_ref_matches(candidate: str, scene_ref_index: RefMetaIndex) -> list[dict[str, str]]:
-    normalized = candidate.strip().lower()
+    normalized = _normalize_scene_target_candidate(candidate)
     if not normalized:
         return []
     exact = ref_index_entry = scene_ref_index.get(normalized)
@@ -909,7 +938,45 @@ def _find_scene_ref_matches(candidate: str, scene_ref_index: RefMetaIndex) -> li
         ref_id = str(entry.get("ref_id") or "").strip()
         if ref_id and ref_id not in unique_by_ref:
             unique_by_ref[ref_id] = entry
-    return list(unique_by_ref.values())
+    return sorted(unique_by_ref.values(), key=lambda entry: str(entry.get("name") or "").strip().lower())
+
+
+def _normalize_scene_target_candidate(candidate: str) -> str:
+    normalized = candidate.strip().lower()
+    if not normalized:
+        return ""
+    normalized = re.sub(r"^(?:der|die|das|dem|den|des|ein|eine|einer|einem|einen)\s+", "", normalized, flags=re.I)
+    normalized = re.sub(
+        r"^(?:erste|erster|erstem|ersten|erstes|zweite|zweiter|zweitem|zweiten|zweites|dritte|dritter|drittem|dritten|drittes|vierte|vierter|viertem|vierten|viertes)\s+",
+        "",
+        normalized,
+        flags=re.I,
+    )
+    return normalized.strip()
+
+
+def _extract_ordinal_index(text: str) -> int | None:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return None
+    ordinal_patterns = [
+        (re.compile(r"\b(erste|erster|erstem|ersten|erstes)\b", re.I), 0),
+        (re.compile(r"\b(zweite|zweiter|zweitem|zweiten|zweites)\b", re.I), 1),
+        (re.compile(r"\b(dritte|dritter|drittem|dritten|drittes)\b", re.I), 2),
+        (re.compile(r"\b(vierte|vierter|viertem|vierten|viertes)\b", re.I), 3),
+    ]
+    for pattern, index in ordinal_patterns:
+        if pattern.search(lowered):
+            return index
+    numeric_match = re.search(r"\b(\d+)\.\b", lowered)
+    if numeric_match:
+        try:
+            number = int(numeric_match.group(1))
+        except ValueError:
+            return None
+        if number >= 1:
+            return number - 1
+    return None
 
 
 def _scene_clarify_candidates(entries: list[dict[str, str]], *, action_type: str) -> list[dict[str, str]]:

@@ -266,6 +266,29 @@ function parseClarifyCandidates(
   }
 }
 
+function normalizeClarifyCandidates(
+  event: {
+    metadata?: Record<string, string | number | boolean | null>;
+    clarify?: { candidates?: Array<Record<string, unknown>> | null } | null;
+  },
+): ClarifyCandidate[] {
+  const structured = event.clarify?.candidates;
+  if (Array.isArray(structured) && structured.length > 0) {
+    return structured
+      .map((candidate) => ({
+        action_type: String(candidate.action_type || "").toUpperCase() as ClarifyCandidate["action_type"],
+        target_ref: String(candidate.target_ref || ""),
+        target_kind: candidate.target_kind ? String(candidate.target_kind) : undefined,
+        label: candidate.label ? String(candidate.label) : undefined,
+        name: candidate.name ? String(candidate.name) : undefined,
+        role: candidate.role ? String(candidate.role) : undefined,
+        kind: candidate.kind ? String(candidate.kind) : undefined,
+      }))
+      .filter((entry) => entry.action_type && entry.target_ref);
+  }
+  return parseClarifyCandidates(event.metadata);
+}
+
 function getStructuredTargets(
   context: GameContextResponse,
   composerActionKind: StructuredActionKind,
@@ -1085,7 +1108,7 @@ export function App() {
                                   <span className="event-message">{event.message}</span>
                                   {event.code === "clarify_required" ? (
                                     (() => {
-                                      const candidates = parseClarifyCandidates(event.metadata);
+                                      const candidates = normalizeClarifyCandidates(event);
                                       const suggestedAction = typeof event.metadata?.suggested_action === "string"
                                         ? event.metadata.suggested_action
                                         : "";

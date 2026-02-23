@@ -4,7 +4,16 @@ import json
 
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode
-from ls_shared_schemas.turns import ActionType, StateDelta, TurnIntent, TurnIntentAction, TurnResolution, TurnSystemEvent
+from ls_shared_schemas.turns import (
+    ActionType,
+    ClarifyCandidate,
+    ClarifyPayload,
+    StateDelta,
+    TurnIntent,
+    TurnIntentAction,
+    TurnResolution,
+    TurnSystemEvent,
+)
 
 
 class RulesEngine:
@@ -82,13 +91,14 @@ class RulesEngine:
             return self._apply_skill_check(action, state, events)
         if action.action_type == ActionType.clarify:
             message = str(action.parameters.get("message") or "").strip() or "Die Eingabe war nicht eindeutig genug. Bitte praezisieren."
-            metadata = self._clarify_event_metadata(action)
+            metadata, clarify_payload = self._clarify_event_details(action)
             events.append(
                 TurnSystemEvent(
                     code="clarify_required",
                     message=message,
                     severity="warning",
                     metadata=metadata,
+                    clarify=clarify_payload,
                 )
             )
             return False
@@ -99,8 +109,11 @@ class RulesEngine:
         return False
 
     @staticmethod
-    def _clarify_event_metadata(action: TurnIntentAction) -> dict[str, str | int | float | bool | None]:
+    def _clarify_event_details(
+        action: TurnIntentAction,
+    ) -> tuple[dict[str, str | int | float | bool | None], ClarifyPayload | None]:
         metadata: dict[str, str | int | float | bool | None] = {}
+        clarify_candidates: list[ClarifyCandidate] = []
         reason = str(action.parameters.get("reason") or "").strip()
         if reason:
             metadata["reason"] = reason
@@ -114,9 +127,34 @@ class RulesEngine:
                 parsed = json.loads(candidates_json)
                 if isinstance(parsed, list):
                     metadata["candidate_count"] = len(parsed)
+                    for entry in parsed:
+                        if not isinstance(entry, dict):
+                            continue
+                        action_type = str(entry.get("action_type") or "").strip()
+                        target_ref = str(entry.get("target_ref") or "").strip()
+                        if not action_type or not target_ref:
+                            continue
+                        clarify_candidates.append(
+                            ClarifyCandidate(
+                                action_type=action_type,
+                                target_ref=target_ref,
+                                target_kind=str(entry.get("target_kind") or "").strip() or None,
+                                label=str(entry.get("label") or "").strip() or None,
+                                name=str(entry.get("name") or "").strip() or None,
+                                role=str(entry.get("role") or "").strip() or None,
+                                kind=str(entry.get("kind") or "").strip() or None,
+                            )
+                        )
             except json.JSONDecodeError:
                 pass
-        return metadata
+        clarify_payload = None
+        if reason or suggested_action or clarify_candidates:
+            clarify_payload = ClarifyPayload(
+                reason=reason or None,
+                suggested_action=suggested_action or None,
+                candidates=clarify_candidates,
+            )
+        return metadata, clarify_payload
 
     @staticmethod
     def _append_distance_reaction_event(

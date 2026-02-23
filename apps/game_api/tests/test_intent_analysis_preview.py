@@ -435,6 +435,42 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertNotIn("TALK", action_types)
         self.assertIn("CLARIFY", action_types)
 
+    def test_resolves_second_role_title_reference_when_multiple_visible_candidates_exist(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich spreche den zweiten Beschwoerer an.",
+            inventory=[],
+            known_npc_names=["Kael", "Liora"],
+            known_npc_refs=[
+                {"ref_id": "npc-kael", "name": "Kael", "role": "beschwoerer"},
+                {"ref_id": "npc-liora", "name": "Liora", "role": "beschwoerer"},
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("TALK", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        talk_action = next(action for action in intent.actions if action.action_type.value == "TALK")
+        self.assertEqual(talk_action.target_ref, "npc-liora")
+        self.assertEqual(talk_action.parameters.get("target_name"), "Liora")
+
+    def test_resolves_second_scene_target_reference_by_ordinal(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich oeffne die zweite Kiste.",
+            inventory=[],
+            known_scene_point_refs=[
+                {"ref_id": "ctr-a", "name": "Ritualkiste", "kind": "container"},
+                {"ref_id": "ctr-b", "name": "Vorratskiste", "kind": "container"},
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("OPEN", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        open_action = next(action for action in intent.actions if action.action_type.value == "OPEN")
+        self.assertEqual(open_action.target_ref, "ctr-b")
+
 
 if __name__ == "__main__":
     unittest.main()

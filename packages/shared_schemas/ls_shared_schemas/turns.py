@@ -53,11 +53,28 @@ class TurnIntent(LSBaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class ClarifyCandidate(LSBaseModel):
+    action_type: str = Field(min_length=1, max_length=40)
+    target_ref: str = Field(min_length=1, max_length=120)
+    target_kind: str | None = Field(default=None, max_length=40)
+    label: str | None = Field(default=None, max_length=160)
+    name: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, max_length=80)
+    kind: str | None = Field(default=None, max_length=40)
+
+
+class ClarifyPayload(LSBaseModel):
+    reason: str | None = Field(default=None, max_length=120)
+    suggested_action: str | None = Field(default=None, max_length=80)
+    candidates: list[ClarifyCandidate] = Field(default_factory=list)
+
+
 class TurnSystemEvent(LSBaseModel):
     code: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=1000)
     severity: str = Field(default="info", pattern="^(info|warning|error)$")
     metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    clarify: ClarifyPayload | None = None
 
 
 class StateDelta(LSBaseModel):
