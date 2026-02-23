@@ -141,6 +141,11 @@ def _assemble_context_for_world(
     return context
 
 
+def _build_bootstrap_result_with_llm(request: WorldBootstrapRequest) -> WorldBootstrapResult:
+    preview = build_world_bootstrap_preview(request)
+    return llm_runtime.enrich_world_bootstrap_preview(request=request, preview=preview)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     llm_status = llm_runtime.status()
@@ -151,9 +156,11 @@ def health() -> dict[str, str]:
         "public_game_domain": settings.public_game_domain,
         "llm_mode": llm_status.mode,
         "llm_fallback_to_preview": str(llm_status.fallback_to_preview).lower(),
+        "bootstrap_provider": llm_status.bootstrap_provider,
         "intent_provider": llm_status.intent_provider,
         "narration_provider": llm_status.narration_provider,
         "openrouter_configured": str(llm_status.openrouter_configured).lower(),
+        "openrouter_bootstrap_model": llm_status.bootstrap_model,
         "openrouter_intent_model": llm_status.intent_model,
         "openrouter_narrator_model": llm_status.narrator_model,
         "openrouter_json_repair_attempts": str(settings.openrouter_json_repair_attempts),
@@ -182,12 +189,12 @@ def get_world_context(
 
 @app.post("/v1/worlds/bootstrap/preview", response_model=WorldBootstrapResult)
 def world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootstrapResult:
-    return build_world_bootstrap_preview(request)
+    return _build_bootstrap_result_with_llm(request)
 
 
 @app.post("/v1/worlds/bootstrap", response_model=WorldSessionResponse)
 def world_bootstrap_create(request: WorldBootstrapRequest, fastapi_request: Request) -> WorldSessionResponse:
-    bootstrap_result = build_world_bootstrap_preview(request)
+    bootstrap_result = _build_bootstrap_result_with_llm(request)
     repository = _get_world_repository(fastapi_request)
     return repository.create_world_session(request=request, bootstrap=bootstrap_result)
 

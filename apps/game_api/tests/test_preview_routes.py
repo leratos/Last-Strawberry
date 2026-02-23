@@ -34,7 +34,11 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
     def test_health(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "ok")
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("bootstrap_provider", payload)
+        self.assertIn("intent_provider", payload)
+        self.assertIn("narration_provider", payload)
 
     def test_world_bootstrap_preview(self):
         response = self.client.post(

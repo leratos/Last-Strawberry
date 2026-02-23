@@ -156,3 +156,15 @@
 - G89: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
 - G80-G89 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (36 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `pytest apps/game_api/tests -q` (85 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 304 passed.
 - Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration String-Feld entfernen.
+- G90-G99 Draft (gestartet): Groesserer KI-Aktivierungsschritt (OpenRouter dort nutzen, wo es stabil Mehrwert bringt) mit deterministischem Regelkern als Autoritaet. Fokus: LLM-gestuetzter World-Bootstrap/Narration, Intent optional/hybrid mit robustem Fallback, plus Tests fuer Fallback-/Konfigurationspfade.
+- G90-G99 abgeschlossen: Kontrollierte KI-Aktivierung (OpenRouter dort, wo sinnvoll) eingefuehrt, ohne den deterministischen Regelkern zu lockern.
+- G90: Neuer `hybrid`-LLM-Modus in `LlmRuntime`/Settings. Policy: `bootstrap` + `narration` via OpenRouter, `intent` weiter Preview (robust) mit bestehendem Fallback-Konzept.
+- G91: `LlmRuntimeStatus`/`/health` erweitert um `bootstrap_provider` und `openrouter_bootstrap_model` (sichtbar fuer Ops/Debugging).
+- G92/G93: LLM-gestuetztes World-Bootstrap-Enrichment eingefuehrt (`enrich_world_bootstrap_preview`) mit OpenRouter-JSON-Schema und sicherem Merge nur auf Text-/Listenfelder (World-Name, Hook, Fraktionen, Threads, Initial-Narrativ, Orientierung).
+- G94: `main.py` verdrahtet Bootstrap-Preview und World-Create auf `_build_bootstrap_result_with_llm()` (Preview-Basis + optionales LLM-Enrichment).
+- G95: Fallback-Verhalten fuer Bootstrap analog zu Narration/Intent (bei Fehlern oder fehlendem Key -> Preview, sofern Fallback aktiv).
+- G96/G97: Runtime-Tests fuer Hybrid-Status, Bootstrap-Fallback und Bootstrap-OpenRouter-Merge hinzugefuegt (`apps/game_api/tests/test_llm_runtime.py`).
+- G98: Route-Health-Test erweitert (Bootstrap-/Intent-/Narration-Provider-Felder vorhanden).
+- G99: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
+- G90-G99 Tests/Builds: `pytest apps/game_api/tests/test_llm_runtime.py -q` (10 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 307 passed.
+- Empfehlung (Betrieb): Fuer erste echte KI-Nutzung `LS_GREENFIELD_LLM_MODE=hybrid` + `LS_GREENFIELD_LLM_FALLBACK_TO_PREVIEW=true`, damit Intent stabil bleibt und Bootstrap/Narration bereits KI-Mehrwert liefern.

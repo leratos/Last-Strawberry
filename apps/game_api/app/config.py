@@ -18,6 +18,7 @@ class Settings:
     openrouter_json_repair_attempts: int = 1
     openrouter_intent_model: str = "qwen/qwen3-next-80b-a3b-instruct"
     openrouter_narrator_model: str = "meta-llama/llama-3.3-70b-instruct"
+    openrouter_bootstrap_model: str = "meta-llama/llama-3.3-70b-instruct"
     cors_allowed_origins: tuple[str, ...] = (
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -62,6 +63,10 @@ class Settings:
             or "qwen/qwen3-next-80b-a3b-instruct",
             openrouter_narrator_model=(
                 os.getenv("LS_GREENFIELD_OPENROUTER_NARRATOR_MODEL") or "meta-llama/llama-3.3-70b-instruct"
+            ).strip()
+            or "meta-llama/llama-3.3-70b-instruct",
+            openrouter_bootstrap_model=(
+                os.getenv("LS_GREENFIELD_OPENROUTER_BOOTSTRAP_MODEL") or "meta-llama/llama-3.3-70b-instruct"
             ).strip()
             or "meta-llama/llama-3.3-70b-instruct",
             cors_allowed_origins=cors_allowed_origins,

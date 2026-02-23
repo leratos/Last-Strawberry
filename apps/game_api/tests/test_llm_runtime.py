@@ -11,10 +11,12 @@ sys.path.insert(0, str(REPO_ROOT / "packages" / "shared_schemas"))
 sys.path.insert(0, str(REPO_ROOT / "packages" / "rules_engine"))
 
 from apps.game_api.app.config import Settings  # noqa: E402
+from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview  # noqa: E402
 from apps.game_api.app.services.llm_runtime import LlmRuntime, build_llm_runtime  # noqa: E402
 from ls_shared_schemas.character import CharacterAttributes, CharacterResources, CharacterState  # noqa: E402
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode  # noqa: E402
 from ls_shared_schemas.turns import ActionType, TurnResolution, TurnSystemEvent  # noqa: E402
+from ls_shared_schemas.world import WorldBootstrapRequest  # noqa: E402
 
 
 class TestLlmRuntime(unittest.TestCase):
@@ -33,6 +35,7 @@ class TestLlmRuntime(unittest.TestCase):
             openrouter_json_repair_attempts=1,
             openrouter_intent_model="model-intent",
             openrouter_narrator_model="model-narr",
+            openrouter_bootstrap_model="model-bootstrap",
             cors_allowed_origins=("http://127.0.0.1:3001",),
         )
         defaults.update(overrides)
@@ -58,6 +61,56 @@ class TestLlmRuntime(unittest.TestCase):
         )
         self.assertEqual(intent.actions[0].action_type, ActionType.talk)
         self.assertEqual(intent.actions[0].target_ref, "Zorak")
+
+    def test_status_hybrid_mode_uses_openrouter_only_for_bootstrap_and_narration(self):
+        runtime = build_llm_runtime(
+            self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=True, openrouter_api_key="test-key")
+        )
+        status = runtime.status()
+        self.assertEqual(status.bootstrap_provider, "openrouter")
+        self.assertEqual(status.intent_provider, "preview")
+        self.assertEqual(status.narration_provider, "openrouter")
+
+    def test_bootstrap_enrichment_falls_back_to_preview_when_openrouter_unconfigured(self):
+        runtime = LlmRuntime(self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=True, openrouter_api_key=""))
+        request = WorldBootstrapRequest(
+            user_id="u1",
+            world_description="Eine moderne Stadt mit Ritualen und geheimer Magie.",
+            character_description="Ein Binder auf der Suche nach Hinweisen.",
+        )
+        preview = build_world_bootstrap_preview(request)
+        enriched = runtime.enrich_world_bootstrap_preview(request=request, preview=preview)
+        self.assertEqual(enriched.world_seed.name, preview.world_seed.name)
+        self.assertEqual(enriched.initial_narrative, preview.initial_narrative)
+
+    def test_bootstrap_enrichment_merges_openrouter_text_fields(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=False, openrouter_api_key="test-key")
+        )
+        request = WorldBootstrapRequest(
+            user_id="u1",
+            world_description="Eine moderne Stadt mit Ritualen und geheimer Magie.",
+            character_description="Ein Binder auf der Suche nach Hinweisen.",
+        )
+        preview = build_world_bootstrap_preview(request)
+        runtime._openrouter_client = mock.Mock()
+        runtime._openrouter_client.chat_completion.return_value = json.dumps(
+            {
+                "world_name": "Nachtkreis-Fuyora",
+                "start_hook": "Ein stoerendes Nachbeben erschuettert den Ritualort.",
+                "factions": ["Aegis-Archiv", "Binder-Konklave", "Nachtwache"],
+                "open_threads": ["Wer sabotierte den Kreis?", "Warum reagieren die Lichter?"],
+                "initial_narrative": "Du trittst auf den Marktplatz, waehrend kalte Funken ueber den Brunnen tanzen.",
+                "player_orientation": ["Der Brunnen wirkt instabil.", "Beobachter halten Abstand."],
+            }
+        )
+
+        enriched = runtime.enrich_world_bootstrap_preview(request=request, preview=preview)
+        self.assertEqual(enriched.world_seed.name, "Nachtkreis-Fuyora")
+        self.assertIn("Aegis-Archiv", enriched.world_seed.factions)
+        self.assertIn("kalte Funken", enriched.initial_narrative)
+        self.assertGreaterEqual(len(enriched.player_orientation), 2)
+        self.assertEqual(enriched.world_seed.starter_npcs, preview.world_seed.starter_npcs)
 
     def test_narrate_fallback_preview_when_openrouter_unconfigured(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key=""))

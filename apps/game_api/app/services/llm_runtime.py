@@ -13,6 +13,7 @@ from apps.game_api.app.services.narration_preview import build_narrative_from_re
 from apps.game_api.app.services.urban_occult_basis import resolve_unique_role_title_npc_reference
 from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.turns import NarrativeEnvelope, TurnIntent, TurnIntentAction, TurnResolution
+from ls_shared_schemas.world import WorldBootstrapRequest, WorldBootstrapResult
 
 
 class LlmRuntimeError(RuntimeError):
@@ -52,14 +53,38 @@ _OPENROUTER_INTENT_JSON_SCHEMA: dict[str, Any] = {
     },
 }
 
+_OPENROUTER_BOOTSTRAP_JSON_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "world_bootstrap_enrichment",
+        "strict": False,
+        "schema": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "world_name": {"type": ["string", "null"]},
+                "start_hook": {"type": ["string", "null"]},
+                "factions": {"type": ["array", "null"], "items": {"type": "string"}},
+                "open_threads": {"type": ["array", "null"], "items": {"type": "string"}},
+                "initial_narrative": {"type": ["string", "null"]},
+                "player_orientation": {"type": ["array", "null"], "items": {"type": "string"}},
+                "design_notes": {"type": ["array", "null"], "items": {"type": "string"}},
+            },
+            "required": ["initial_narrative"],
+        },
+    },
+}
+
 
 @dataclass(frozen=True)
 class LlmRuntimeStatus:
     mode: str
     fallback_to_preview: bool
+    bootstrap_provider: str
     intent_provider: str
     narration_provider: str
     openrouter_configured: bool
+    bootstrap_model: str
     intent_model: str
     narrator_model: str
 
@@ -135,20 +160,36 @@ class LlmRuntime:
 
     def status(self) -> LlmRuntimeStatus:
         openrouter_ready = bool(self.settings.openrouter_api_key)
-        requested_openrouter = self.settings.llm_mode == "openrouter"
-        active_openrouter = requested_openrouter and openrouter_ready
-        provider_name = "openrouter" if active_openrouter else "preview"
-        if requested_openrouter and not openrouter_ready and not self.settings.llm_fallback_to_preview:
-            provider_name = "unavailable"
+        bootstrap_provider = self._provider_name_for_capability("bootstrap", openrouter_ready=openrouter_ready)
+        intent_provider = self._provider_name_for_capability("intent", openrouter_ready=openrouter_ready)
+        narration_provider = self._provider_name_for_capability("narration", openrouter_ready=openrouter_ready)
         return LlmRuntimeStatus(
             mode=self.settings.llm_mode,
             fallback_to_preview=self.settings.llm_fallback_to_preview,
-            intent_provider=provider_name,
-            narration_provider=provider_name,
+            bootstrap_provider=bootstrap_provider,
+            intent_provider=intent_provider,
+            narration_provider=narration_provider,
             openrouter_configured=openrouter_ready,
+            bootstrap_model=self.settings.openrouter_bootstrap_model,
             intent_model=self.settings.openrouter_intent_model,
             narrator_model=self.settings.openrouter_narrator_model,
         )
+
+    def enrich_world_bootstrap_preview(
+        self,
+        *,
+        request: WorldBootstrapRequest,
+        preview: WorldBootstrapResult,
+    ) -> WorldBootstrapResult:
+        if not self._should_use_openrouter_for_capability("bootstrap"):
+            return preview
+
+        try:
+            return self._bootstrap_openrouter(request=request, preview=preview)
+        except Exception:
+            if not self.settings.llm_fallback_to_preview:
+                raise
+            return preview
 
     def analyze_intent(
         self,
@@ -165,7 +206,7 @@ class LlmRuntime:
         known_scene_point_refs: list[dict[str, str]] | None = None,
         context: GameContextResponse | None = None,
     ) -> TurnIntent:
-        if self.settings.llm_mode != "openrouter":
+        if not self._should_use_openrouter_for_capability("intent"):
             return self._analyze_preview(
                 world_id=world_id,
                 world_character_id=world_character_id,
@@ -217,7 +258,7 @@ class LlmRuntime:
         resolution: TurnResolution,
         context_before: GameContextResponse | None = None,
     ) -> NarrativeEnvelope:
-        if self.settings.llm_mode != "openrouter":
+        if not self._should_use_openrouter_for_capability("narration"):
             return build_narrative_from_resolution(resolution)
 
         try:
@@ -229,6 +270,64 @@ class LlmRuntime:
 
     def _analyze_preview(self, **kwargs: Any) -> TurnIntent:
         return analyze_player_input_preview(**kwargs)
+
+    def _bootstrap_openrouter(
+        self,
+        *,
+        request: WorldBootstrapRequest,
+        preview: WorldBootstrapResult,
+    ) -> WorldBootstrapResult:
+        system_prompt = (
+            "You generate an IP-safe German RPG world bootstrap enrichment. "
+            "Keep all mechanics deterministic and only enrich text/lists. "
+            "Return strict JSON with keys world_name, start_hook, factions, open_threads, initial_narrative, player_orientation."
+        )
+        user_prompt = (
+            f"world_request={request.model_dump_json()}\n"
+            f"preview_bootstrap={preview.model_dump_json()}\n"
+            "Constraints:\n"
+            "- Keep it IP-safe and original.\n"
+            "- Preserve the setting concept, but do not invent canon IP names.\n"
+            "- German text.\n"
+            "- 3-6 Orientierungspunkte, 2-6 Fraktionen/Threads.\n"
+            "- Return JSON only."
+        )
+        payload = self._request_openrouter_json(
+            model=self.settings.openrouter_bootstrap_model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            purpose="bootstrap_enrichment",
+            response_format_candidates=[_OPENROUTER_BOOTSTRAP_JSON_SCHEMA, {"type": "json_object"}],
+        )
+
+        world_seed_updates: dict[str, Any] = {}
+        world_name = self._safe_text(payload.get("world_name"), max_len=120)
+        if world_name:
+            world_seed_updates["name"] = world_name
+        start_hook = self._safe_text(payload.get("start_hook"), max_len=2000)
+        if start_hook:
+            world_seed_updates["start_hook"] = start_hook
+        factions = self._safe_text_list(payload.get("factions"), max_items=8, max_len=120)
+        if factions:
+            world_seed_updates["factions"] = factions
+        open_threads = self._safe_text_list(payload.get("open_threads"), max_items=8, max_len=240)
+        if open_threads:
+            world_seed_updates["open_threads"] = open_threads
+
+        world_seed = preview.world_seed.model_copy(update=world_seed_updates) if world_seed_updates else preview.world_seed
+
+        initial_narrative = self._safe_text(payload.get("initial_narrative"), max_len=8000) or preview.initial_narrative
+        player_orientation = (
+            self._safe_text_list(payload.get("player_orientation"), max_items=8, max_len=240) or preview.player_orientation
+        )
+
+        return preview.model_copy(
+            update={
+                "world_seed": world_seed,
+                "initial_narrative": initial_narrative,
+                "player_orientation": player_orientation,
+            }
+        )
 
     def _analyze_openrouter(
         self,
@@ -510,6 +609,43 @@ class LlmRuntime:
             if len(normalized) >= 5:
                 break
         return normalized
+
+    def _safe_text(self, value: Any, *, max_len: int) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return text[:max_len].strip()
+
+    def _safe_text_list(self, raw: Any, *, max_items: int, max_len: int) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        for item in raw:
+            text = self._safe_text(item, max_len=max_len)
+            if not text:
+                continue
+            out.append(text)
+            if len(out) >= max_items:
+                break
+        return out
+
+    def _should_use_openrouter_for_capability(self, capability: str) -> bool:
+        mode = (self.settings.llm_mode or "preview").strip().lower()
+        if mode == "preview":
+            return False
+        if mode == "openrouter":
+            return True
+        if mode == "hybrid":
+            return capability in {"bootstrap", "narration"}
+        return False
+
+    def _provider_name_for_capability(self, capability: str, *, openrouter_ready: bool) -> str:
+        wants_openrouter = self._should_use_openrouter_for_capability(capability)
+        if wants_openrouter and openrouter_ready:
+            return "openrouter"
+        if wants_openrouter and not openrouter_ready and not self.settings.llm_fallback_to_preview:
+            return "unavailable"
+        return "preview"
 
     def _normalize_openrouter_action_refs(
         self,
