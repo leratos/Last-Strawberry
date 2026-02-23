@@ -173,6 +173,26 @@ export type TurnRunResponse = {
   };
   journal_entry_ids: string[];
   analysis_context_notes: string[];
+  provider_trace?: {
+    intent: {
+      capability: string;
+      mode: string;
+      provider_policy: string;
+      provider_used: string;
+      model?: string | null;
+      fallback_used: boolean;
+      fallback_reason?: string | null;
+    };
+    narration: {
+      capability: string;
+      mode: string;
+      provider_policy: string;
+      provider_used: string;
+      model?: string | null;
+      fallback_used: boolean;
+      fallback_reason?: string | null;
+    };
+  } | null;
   context_before_turn: GameContextResponse | null;
   context_after_turn: GameContextResponse | null;
 };

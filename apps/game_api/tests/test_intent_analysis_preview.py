@@ -290,6 +290,35 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(clarify_action.parameters.get("reason"), "partial_multiclause_parse")
         self.assertEqual(clarify_action.parameters.get("suggested_action"), "use_structured_queue")
 
+    def test_multiclause_with_safe_und_splits_talk_and_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael und untersuche die Vorratskiste.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+            known_scene_point_refs=[{"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("TALK", action_types)
+        self.assertIn("INSPECT", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        self.assertIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
+
+    def test_does_not_split_talk_chain_with_und_frage(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael und frage nach dem Ritual.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+        )
+        talk_actions = [action for action in intent.actions if action.action_type.value == "TALK"]
+        self.assertEqual(len(talk_actions), 1)
+        self.assertNotIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
+
     def test_skips_location_move_when_phrase_targets_known_npc_for_talk(self):
         intent = analyze_player_input_preview(
             world_id="w1",

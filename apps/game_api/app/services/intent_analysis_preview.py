@@ -27,6 +27,7 @@ _APPROACH_PATTERNS = [
     re.compile(r"\btrete(?:\s+einen)?(?:\s+schritt)?\s+n(?:a|ä)her\s+an\s+([\w _-]+)", re.I),
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
+_MOVE_PATTERNS_VERB_HINTS = ("gehe", "geh", "laufe", "reise", "betrete", "bewege", "begib")
 _OPEN_VERBS = ("oeffne", "öffne", "mache auf", "klappe auf")
 _SEARCH_VERBS = ("durchsuche", "durchforste", "wuehle", "wühle")
 _TAKE_VERBS = ("nimm", "nehme", "hebe", "packe", "pack", "stecke")
@@ -707,8 +708,137 @@ def _split_preview_action_clauses(text: str) -> list[str]:
         r"(?:\s*,\s*|\s+)(?:dann|danach|anschlie(?:ss|ß)end)(?:\s+|$)|[;]+",
         re.I,
     )
-    parts = [part.strip(" \t\r\n,.;") for part in split_pattern.split(normalized) if part and part.strip(" \t\r\n,.;")]
-    return parts or [normalized]
+    explicit_parts = [part.strip(" \t\r\n,.;") for part in split_pattern.split(normalized) if part and part.strip(" \t\r\n,.;")]
+    final_parts: list[str] = []
+    for part in explicit_parts or [normalized]:
+        final_parts.extend(_split_clause_on_safe_und(part))
+    return final_parts or [normalized]
+
+
+def _split_clause_on_safe_und(text: str) -> list[str]:
+    clause = (text or "").strip(" \t\r\n,.;")
+    if not clause:
+        return []
+    parts = [clause]
+    changed = True
+    while changed:
+        changed = False
+        next_parts: list[str] = []
+        for part in parts:
+            split_index = _find_safe_und_split_index(part)
+            if split_index is None:
+                next_parts.append(part)
+                continue
+            left = part[:split_index].strip(" \t\r\n,.;")
+            right = part[split_index:].strip(" \t\r\n,.;")
+            if not left or not right:
+                next_parts.append(part)
+                continue
+            next_parts.extend([left, right])
+            changed = True
+        parts = next_parts
+    return parts
+
+
+def _find_safe_und_split_index(text: str) -> int | None:
+    for match in re.finditer(r"\bund\b", text, re.I):
+        left = text[: match.start()].strip()
+        right = text[match.end() :].strip()
+        if _should_split_on_und(left=left, right=right):
+            return match.start()
+    return None
+
+
+def _should_split_on_und(*, left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if not _starts_with_action_verb(right):
+        return False
+    right_categories = _clause_action_categories(right)
+    left_categories = _clause_action_categories(left)
+    if not right_categories or not left_categories:
+        return False
+    # Keep talk chains together: "rede ... und frage ..." often refers to one dialogue action.
+    if right_categories <= {"talk"}:
+        return False
+    # Avoid splitting into an incomplete prefix (e.g. "oeffne und durchsuche die Kiste").
+    if not _looks_like_complete_clause(left):
+        return False
+    return True
+
+
+def _starts_with_action_verb(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    return bool(
+        re.match(
+            (
+                r"^(?:ich\s+)?(?:gehe|geh|laufe|reise|betrete|bewege|begib|"
+                r"benutze|verwende|nutze|trinke|iss|aktiviere|"
+                r"oeffne|öffne|mache\s+auf|klappe\s+auf|"
+                r"durchsuche|durchforste|wuehle|wühle|"
+                r"nimm|nehme|hebe|packe|pack|"
+                r"greife|attackiere|schlage|haue|steche|schiesse|schieße|feuere|werfe|"
+                r"spreche|rede|frage|unterhalte|"
+                r"untersuche|umschauen|umsehen|betrachte|inspiziere|schaue|schau|suche|"
+                r"entferne|weiche|halte|"
+                r"naehere|nähere|annaehern|annähern|naeher|näher|trete|komme)\b"
+            ),
+            lowered,
+            re.I,
+        )
+    )
+
+
+def _clause_action_categories(text: str) -> set[str]:
+    lowered = (text or "").lower()
+    categories: set[str] = set()
+    if _contains_any_verb(lowered, _MOVE_PATTERNS_VERB_HINTS):
+        categories.add("move")
+    if _contains_any_verb(lowered, _TALK_VERBS):
+        categories.add("talk")
+    if _contains_any_verb(lowered, _INSPECT_VERBS):
+        categories.add("inspect")
+    if _contains_any_verb(lowered, _OPEN_VERBS):
+        categories.add("open")
+    if _contains_any_verb(lowered, _SEARCH_VERBS):
+        categories.add("search")
+    if _contains_any_verb(lowered, _TAKE_VERBS):
+        categories.add("take")
+    if _contains_any_verb(lowered, _USE_VERBS):
+        categories.add("use_item")
+    if _contains_any_verb(lowered, _ATTACK_VERBS + _RANGED_ATTACK_VERBS):
+        categories.add("attack")
+    if _contains_any_verb(lowered, _APPROACH_VERBS):
+        categories.add("approach")
+    if _contains_any_verb(lowered, _RETREAT_VERBS):
+        categories.add("retreat")
+    return categories
+
+
+def _looks_like_complete_clause(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if _extract_destination(stripped):
+        return True
+    if _extract_talk_target(stripped):
+        return True
+    if _extract_target_after_verb(stripped, _ATTACK_VERBS + _RANGED_ATTACK_VERBS):
+        return True
+    if _extract_approach_target(stripped):
+        return True
+    if _extract_retreat_target(stripped):
+        return True
+    if _extract_inspect_target(stripped):
+        return True
+    if _extract_open_search_target(stripped):
+        return True
+    if _contains_any_verb(lowered, _INSPECT_VERBS):
+        return True  # broad inspect / umsehen
+    return False
 
 
 def _extract_destination(text: str) -> str | None:

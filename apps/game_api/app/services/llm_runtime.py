@@ -12,7 +12,7 @@ from apps.game_api.app.services.intent_analysis_preview import analyze_player_in
 from apps.game_api.app.services.narration_preview import build_narrative_from_resolution
 from apps.game_api.app.services.urban_occult_basis import resolve_unique_role_title_npc_reference
 from ls_shared_schemas.game_context import GameContextResponse
-from ls_shared_schemas.turns import NarrativeEnvelope, TurnIntent, TurnIntentAction, TurnResolution
+from ls_shared_schemas.turns import LlmCapabilityTrace, NarrativeEnvelope, TurnIntent, TurnIntentAction, TurnResolution
 from ls_shared_schemas.world import WorldBootstrapRequest, WorldBootstrapResult
 
 
@@ -206,8 +206,39 @@ class LlmRuntime:
         known_scene_point_refs: list[dict[str, str]] | None = None,
         context: GameContextResponse | None = None,
     ) -> TurnIntent:
-        if not self._should_use_openrouter_for_capability("intent"):
-            return self._analyze_preview(
+        intent, _trace = self.analyze_intent_with_trace(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=player_input,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_item_refs=known_item_refs,
+            known_scene_point_refs=known_scene_point_refs,
+            context=context,
+        )
+        return intent
+
+    def analyze_intent_with_trace(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+        player_input: str,
+        inventory: list,
+        known_npc_names: list[str] | None = None,
+        known_locations: list[str] | None = None,
+        known_npc_refs: list[dict[str, str]] | None = None,
+        known_location_refs: list[dict[str, str]] | None = None,
+        known_item_refs: list[dict[str, str]] | None = None,
+        known_scene_point_refs: list[dict[str, str]] | None = None,
+        context: GameContextResponse | None = None,
+    ) -> tuple[TurnIntent, LlmCapabilityTrace]:
+        provider_policy = "openrouter" if self._should_use_openrouter_for_capability("intent") else "preview"
+        if provider_policy == "preview":
+            intent = self._analyze_preview(
                 world_id=world_id,
                 world_character_id=world_character_id,
                 player_input=player_input,
@@ -218,9 +249,15 @@ class LlmRuntime:
                 known_location_refs=known_location_refs,
                 known_scene_point_refs=known_scene_point_refs,
             )
+            return intent, self._build_capability_trace(
+                capability="intent",
+                provider_policy=provider_policy,
+                provider_used="preview",
+                model=None,
+            )
 
         try:
-            return self._analyze_openrouter(
+            intent = self._analyze_openrouter(
                 world_id=world_id,
                 world_character_id=world_character_id,
                 player_input=player_input,
@@ -232,6 +269,12 @@ class LlmRuntime:
                 known_item_refs=known_item_refs or [],
                 known_scene_point_refs=known_scene_point_refs or [],
                 context=context,
+            )
+            return intent, self._build_capability_trace(
+                capability="intent",
+                provider_policy=provider_policy,
+                provider_used="openrouter",
+                model=self.settings.openrouter_intent_model,
             )
         except Exception as exc:
             if not self.settings.llm_fallback_to_preview:
@@ -250,7 +293,14 @@ class LlmRuntime:
             preview_intent.analysis_notes.append(
                 f"OpenRouter-Fallback auf Preview-Analyzer wegen Fehler: {type(exc).__name__}"
             )
-            return preview_intent
+            return preview_intent, self._build_capability_trace(
+                capability="intent",
+                provider_policy=provider_policy,
+                provider_used="preview",
+                model=None,
+                fallback_used=True,
+                fallback_reason=type(exc).__name__,
+            )
 
     def narrate(
         self,
@@ -258,15 +308,52 @@ class LlmRuntime:
         resolution: TurnResolution,
         context_before: GameContextResponse | None = None,
     ) -> NarrativeEnvelope:
-        if not self._should_use_openrouter_for_capability("narration"):
-            return build_narrative_from_resolution(resolution)
+        narrative, _trace = self.narrate_with_trace(resolution=resolution, context_before=context_before)
+        return narrative
+
+    def narrate_with_trace(
+        self,
+        *,
+        resolution: TurnResolution,
+        context_before: GameContextResponse | None = None,
+    ) -> tuple[NarrativeEnvelope, LlmCapabilityTrace]:
+        provider_policy = "openrouter" if self._should_use_openrouter_for_capability("narration") else "preview"
+        if provider_policy == "preview":
+            return (
+                build_narrative_from_resolution(resolution),
+                self._build_capability_trace(
+                    capability="narration",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                ),
+            )
 
         try:
-            return self._narrate_openrouter(resolution=resolution, context_before=context_before)
-        except Exception:
+            narrative = self._narrate_openrouter(resolution=resolution, context_before=context_before)
+            return (
+                narrative,
+                self._build_capability_trace(
+                    capability="narration",
+                    provider_policy=provider_policy,
+                    provider_used="openrouter",
+                    model=self.settings.openrouter_narrator_model,
+                ),
+            )
+        except Exception as exc:
             if not self.settings.llm_fallback_to_preview:
                 raise
-            return build_narrative_from_resolution(resolution)
+            return (
+                build_narrative_from_resolution(resolution),
+                self._build_capability_trace(
+                    capability="narration",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                    fallback_used=True,
+                    fallback_reason=type(exc).__name__,
+                ),
+            )
 
     def _analyze_preview(self, **kwargs: Any) -> TurnIntent:
         return analyze_player_input_preview(**kwargs)
@@ -646,6 +733,26 @@ class LlmRuntime:
         if wants_openrouter and not openrouter_ready and not self.settings.llm_fallback_to_preview:
             return "unavailable"
         return "preview"
+
+    def _build_capability_trace(
+        self,
+        *,
+        capability: str,
+        provider_policy: str,
+        provider_used: str,
+        model: str | None,
+        fallback_used: bool = False,
+        fallback_reason: str | None = None,
+    ) -> LlmCapabilityTrace:
+        return LlmCapabilityTrace(
+            capability=capability,
+            mode=self.settings.llm_mode,
+            provider_policy=provider_policy,
+            provider_used=provider_used,
+            model=(model if provider_used == "openrouter" else None),
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+        )
 
     def _normalize_openrouter_action_refs(
         self,

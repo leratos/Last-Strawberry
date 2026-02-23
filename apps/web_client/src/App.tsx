@@ -55,6 +55,7 @@ type ActiveClarifyState = {
   rawPlayerInput: string;
   event: TurnSystemEventView;
 };
+type TurnProviderTraceView = NonNullable<TurnRunResponse["provider_trace"]>;
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -489,6 +490,7 @@ export function App() {
   const [lastActionMessage, setLastActionMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
+  const [lastProviderTrace, setLastProviderTrace] = useState<TurnProviderTraceView | null>(null);
   const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
   const [composerAttackMode, setComposerAttackMode] = useState<"melee" | "ranged">("melee");
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
@@ -532,6 +534,20 @@ export function App() {
   }, [composerActionKind, selectedComposerTarget]);
 
   const activeClarify = useMemo(() => findLatestClarifyState(context), [context]);
+  const providerTraceSummary = useMemo(() => {
+    if (!lastProviderTrace) {
+      return "";
+    }
+    return [lastProviderTrace.intent, lastProviderTrace.narration]
+      .map((trace) => {
+        const modelSuffix = trace.model ? ` (${trace.model})` : "";
+        const fallbackSuffix = trace.fallback_used
+          ? ` -> fallback${trace.fallback_reason ? `:${trace.fallback_reason}` : ""}`
+          : "";
+        return `${trace.capability}: ${trace.provider_used}${modelSuffix}${fallbackSuffix}`;
+      })
+      .join(" | ");
+  }, [lastProviderTrace]);
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -567,6 +583,9 @@ export function App() {
       setContext(nextContext);
       setWorldId(targetWorldId);
       setWorldIdInput(targetWorldId);
+      if (!retrievalHint) {
+        setLastProviderTrace(null);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Context konnte nicht geladen werden.");
     } finally {
@@ -595,7 +614,8 @@ export function App() {
         character_description: bootstrapForm.characterDescription.trim(),
       });
       await loadContext(created.world_id);
-      setAnalysisNotes([]);
+    setAnalysisNotes([]);
+    setLastProviderTrace(null);
       setLastActionMessage(`Neue Welt erstellt: ${created.world_id}`);
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : "Bootstrap fehlgeschlagen.");
@@ -762,6 +782,7 @@ export function App() {
 
   async function applyTurnResult(runResult: TurnRunResponse, fallbackWorldId: string, retrievalHint: string): Promise<void> {
     setAnalysisNotes(runResult.analysis_context_notes || []);
+    setLastProviderTrace(runResult.provider_trace || null);
     if (runResult.context_after_turn) {
       setContext(runResult.context_after_turn);
       setWorldId(runResult.context_after_turn.world.world_id);
@@ -1024,6 +1045,9 @@ export function App() {
                   <p className="list-subtle analysis-notes">
                     Analyse-Kontext: {analysisNotes.join(" | ")}
                   </p>
+                ) : null}
+                {providerTraceSummary ? (
+                  <p className="list-subtle analysis-notes">Provider-Trace: {providerTraceSummary}</p>
                 ) : null}
                 {(context.discovery_counts?.hidden_npc_count || 0) > 0 ||
                 (context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (

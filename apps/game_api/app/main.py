@@ -17,11 +17,13 @@ from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCProfile
 from ls_shared_schemas.turns import (
+    LlmCapabilityTrace,
     NarrativeEnvelope,
     PersistedTurnRecord,
     TurnIntent,
     TurnIntentAction,
     TurnResolution,
+    TurnProviderTrace,
     TurnRunRequest,
     TurnRunResponse,
 )
@@ -380,7 +382,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             analysis_notes=["UI structured action override verwendet."],
         )
     else:
-        intent = llm_runtime.analyze_intent(
+        intent, intent_trace = llm_runtime.analyze_intent_with_trace(
             world_id=world_id,
             world_character_id=session.character_state.world_character_id,
             player_input=request.player_input,
@@ -393,12 +395,21 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             known_scene_point_refs=known_scene_point_refs,
             context=context_before,
         )
+    if request.actions_override:
+        intent_trace = LlmCapabilityTrace(
+            capability="intent",
+            mode=settings.llm_mode,
+            provider_policy="ui_structured_override",
+            provider_used="ui_structured_override",
+            model=None,
+            fallback_used=False,
+        )
     resolution = engine.resolve(
         intent=intent,
         character_state=session.character_state,
         inventory=session.inventory,
     )
-    narrative = llm_runtime.narrate(
+    narrative, narration_trace = llm_runtime.narrate_with_trace(
         resolution=resolution,
         context_before=context_before,
     )
@@ -423,6 +434,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         resulting_inventory=resolution.resulting_inventory,
         journal_entry_ids=[entry.journal_entry_id for entry in journal_entries],
         analysis_context_notes=context_before.retrieval_notes,
+        provider_trace=TurnProviderTrace(intent=intent_trace, narration=narration_trace),
         context_before_turn=context_before.model_dump(mode="json") if request.include_context_before_turn else None,
         context_after_turn=context_after.model_dump(mode="json") if context_after is not None else None,
     )

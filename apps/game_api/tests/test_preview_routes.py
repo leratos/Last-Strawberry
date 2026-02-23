@@ -144,6 +144,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("turn", run_payload)
         self.assertTrue(run_payload["turn"]["turn_id"].startswith("turn-"))
         self.assertGreaterEqual(len(run_payload["journal_entry_ids"]), 2)
+        self.assertIn("provider_trace", run_payload)
+        self.assertEqual(run_payload["provider_trace"]["intent"]["provider_used"], "preview")
+        self.assertEqual(run_payload["provider_trace"]["narration"]["provider_used"], "preview")
         self.assertIn("context_after_turn", run_payload)
         self.assertIsNotNone(run_payload["context_after_turn"])
         self.assertEqual(run_payload["context_after_turn"]["world"]["world_id"], world_id)
@@ -1034,6 +1037,35 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("inspect_focus_success", event_codes)
         self.assertNotIn("clarify_required", event_codes)
         self.assertIn("Mehrteilige Eingabe erkannt", " ".join(payload["turn"]["intent"]["analysis_notes"]))
+
+    def test_g110_run_turn_multiclause_safe_und_executes_talk_and_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g110-1",
+                "world_description": "Ein Markt mit Kisten und einem Binder am Brunnen.",
+                "character_description": "Eine Ermittlerin, die erst spricht und dann Dinge untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Kael und untersuche die Vorratskiste."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
 
     def test_g11_run_turn_accepts_multi_action_override_queue(self):
         create_response = self.client.post(

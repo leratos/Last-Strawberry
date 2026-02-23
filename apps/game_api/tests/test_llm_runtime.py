@@ -50,7 +50,7 @@ class TestLlmRuntime(unittest.TestCase):
 
     def test_openrouter_mode_without_key_falls_back_to_preview(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key=""))
-        intent = runtime.analyze_intent(
+        intent, trace = runtime.analyze_intent_with_trace(
             world_id="w1",
             world_character_id="wc1",
             player_input="Ich spreche mit Zorak.",
@@ -61,6 +61,10 @@ class TestLlmRuntime(unittest.TestCase):
         )
         self.assertEqual(intent.actions[0].action_type, ActionType.talk)
         self.assertEqual(intent.actions[0].target_ref, "Zorak")
+        self.assertEqual(trace.provider_policy, "openrouter")
+        self.assertEqual(trace.provider_used, "preview")
+        self.assertTrue(trace.fallback_used)
+        self.assertEqual(trace.capability, "intent")
 
     def test_status_hybrid_mode_uses_openrouter_only_for_bootstrap_and_narration(self):
         runtime = build_llm_runtime(
@@ -70,6 +74,48 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertEqual(status.bootstrap_provider, "openrouter")
         self.assertEqual(status.intent_provider, "preview")
         self.assertEqual(status.narration_provider, "openrouter")
+
+    def test_hybrid_mode_traces_preview_intent_and_openrouter_narration(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=True, openrouter_api_key="test-key")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {"narrative": "Kurze Narration.", "actionable_options": ["Weiterreden"]}
+        )
+        runtime._openrouter_client = fake_client
+
+        intent, intent_trace = runtime.analyze_intent_with_trace(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Zorak.",
+            inventory=[],
+            known_npc_names=["Zorak"],
+            known_locations=["Marktplatz"],
+            context=None,
+        )
+        self.assertEqual(intent.actions[0].action_type, ActionType.talk)
+        self.assertEqual(intent_trace.provider_policy, "preview")
+        self.assertEqual(intent_trace.provider_used, "preview")
+        self.assertFalse(intent_trace.fallback_used)
+
+        resolution = TurnResolution(
+            world_id="w1",
+            world_character_id="wc1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc1",
+                name="Ari",
+                location_name="Marktplatz",
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=9, max_stamina=10, focus=3, max_focus=3),
+            ),
+            resulting_inventory=[],
+            system_events=[TurnSystemEvent(code="talk_success", message="Gespraech mit Zorak.")],
+        )
+        _narrative, narration_trace = runtime.narrate_with_trace(resolution=resolution, context_before=None)
+        self.assertEqual(narration_trace.provider_policy, "openrouter")
+        self.assertEqual(narration_trace.provider_used, "openrouter")
+        self.assertEqual(narration_trace.model, "model-narr")
 
     def test_bootstrap_enrichment_falls_back_to_preview_when_openrouter_unconfigured(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="hybrid", llm_fallback_to_preview=True, openrouter_api_key=""))

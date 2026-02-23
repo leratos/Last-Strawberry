@@ -178,3 +178,20 @@ Original prompt: Weiter mit G4 (Context Assembly + NPC Memory Retrieval + Web-An
 - G107-G109: Abschluss-Regression erfolgreich; bestehende Deterministik/Rules bleiben unveraendert, nur Intent-Vorverarbeitung verbessert.
 - G100-G109 Tests: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (38 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g100_run_turn_multiclause_dann_executes_talk_and_inspect -q` (1 passed), `pytest apps/game_api/tests -q` (91 passed), finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 310 passed.
 - Hinweis: Splitter ist aktuell bewusst konservativ (explizite Sequenzmarker); `und`-Ketten ohne Marker bleiben ein separater Ausbau-Schritt (um Fehlsplits bei z.B. `rede ... und frage ...` zu vermeiden).
+
+- G110-G149 Draft (gestartet): Groesserer Ausbau fuer spielbare Sessions: (1) Mehrfachsatz-Intent weiter verbessern (selektives und-Splitting + weniger Teilverlust) und (2) KI-Transparenz per Provider/Fallback-Trace in API/UI, damit Hybrid/OpenRouter-Laufzeit nachvollziehbar bleibt.
+
+
+- G110-G149 abgeschlossen: Fokusblock auf (A) selektives Mehrfachsatz-Parsing mit sicherem und-Splitting und (B) Provider-/Fallback-Transparenz pro Turn im API-Response + UI.
+- G110-G119: TurnRunResponse um provider_trace erweitert (intent/
+arration mit provider_policy, provider_used, model, allback_used, allback_reason).
+- G120-G129: LlmRuntime um nalyze_intent_with_trace() und 
+arrate_with_trace() erweitert; bestehende Methoden bleiben kompatible Wrapper. un_turn nutzt jetzt Traces und markiert UI-Overrides explizit als ui_structured_override.
+- G130-G139: Web-UI zeigt Provider-Trace im Story-Panel (intent: preview, 
+arration: openrouter, inkl. Fallback-Hinweis) und setzt/cleart Trace beim Weltwechsel/Bootstrap konsistent.
+- G140-G149: Preview-Analyzer erweitert um konservatives und-Splitting fuer sichere Aktionswechsel (z.B. ede ... und untersuche ...), ohne Talk-Ketten wie ede ... und frage ... aggressiv zu splitten. Mehrteilige Verluste bleiben weiter via partial_multiclause_parse sichtbar.
+- Neue/angepasste Tests: Runtime-Trace-Unit-Tests (	est_llm_runtime.py), Route-Trace-Response-Assertion (	est_preview_routes.py G2-Flow), Route-Test fuer ede ... und untersuche ..., Parser-Tests fuer safe-und-Split + No-Split-Talk-Chain.
+- G110-G149 Tests/Builds: pytest apps/game_api/tests/test_intent_analysis_preview.py -q (40 passed), pytest apps/game_api/tests/test_llm_runtime.py -q (11 passed), gezielte Route-Tests fuer G2/G110 (2 passed), 
+pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 314 passed.
+- Technische Schuld (weiter offen): Clarify-Kandidaten werden weiterhin doppelt transportiert (event.clarify.candidates + metadata.candidates_json); nach kompletter UI-Migration Legacy-String entfernen. Provider-Trace existiert derzeit pro Turn, Bootstrap-Provider-Trace nur indirekt ueber /health sichtbar.
+
