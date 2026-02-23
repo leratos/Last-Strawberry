@@ -373,17 +373,35 @@ def analyze_player_input_preview(
                         "target_location_name": str(inspect_meta.get("location_name") or "") or None,
                         "target_zone_id": str(inspect_meta.get("scene_zone_id") or "") or None,
                         "target_zone_name": str(inspect_meta.get("scene_zone_name") or "") or None,
+                        "inspect_mode": "focused",
                     },
                     confidence=0.82,
                 )
             )
             notes.append(f"Fokussierte Untersuchung erkannt: {inspect_meta.get('name') or inspect_target}")
+        elif inspect_target:
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.clarify,
+                    target_kind="environment",
+                    parameters={
+                        "intent": "clarify",
+                        "reason": "unknown_inspect_target",
+                        "message": (
+                            "Dieses Ziel ist nicht sichtbar oder unbekannt. "
+                            "Schau dich zuerst um oder waehle ein sichtbares Ziel."
+                        ),
+                    },
+                    confidence=0.35,
+                )
+            )
+            notes.append("Gezielte Untersuchung erkannt, aber kein sichtbares Ziel zugeordnet.")
         else:
             actions.append(
                 TurnIntentAction(
                     action_type=ActionType.inspect,
                     target_kind="environment",
-                    parameters={"intent": "inspect"},
+                    parameters={"intent": "inspect", "inspect_mode": "broad"},
                     confidence=0.7,
                 )
             )
@@ -431,7 +449,10 @@ def analyze_player_input_preview(
                     parameters={
                         "intent": "clarify",
                         "reason": "unknown_open_target",
-                        "message": "Unklar, was geoeffnet werden soll. Bitte waehle ein sichtbares Objekt/Behaeltnis.",
+                        "message": (
+                            "Unklar oder nicht sichtbar, was geoeffnet werden soll. "
+                            "Schau dich zuerst um oder waehle ein sichtbares Objekt/Behaeltnis."
+                        ),
                     },
                     confidence=0.35,
                 )
@@ -439,6 +460,23 @@ def analyze_player_input_preview(
             notes.append("Oeffnen erkannt, aber kein sichtbares Objekt/Behaeltnis zugeordnet.")
 
     if not actions and _contains_any_verb(lowered, _SEARCH_VERBS):
+        if _looks_like_broad_environment_search(lowered):
+            actions.append(
+                TurnIntentAction(
+                    action_type=ActionType.inspect,
+                    target_kind="environment",
+                    parameters={"intent": "inspect", "inspect_mode": "broad", "source_verb": "search_environment"},
+                    confidence=0.72,
+                )
+            )
+            notes.append("Breite Umgebungsdurchsuchung erkannt.")
+            return TurnIntent(
+                world_id=world_id,
+                world_character_id=world_character_id,
+                raw_player_input=text,
+                actions=actions,
+                analysis_notes=notes,
+            )
         search_target = _extract_open_search_target(text)
         search_meta, search_candidates = _resolve_scene_target_reference_with_candidates(search_target or "", scene_point_ref_index)
         search_target_id = str(search_meta.get("ref_id") or "").strip() or None
@@ -480,7 +518,10 @@ def analyze_player_input_preview(
                     parameters={
                         "intent": "clarify",
                         "reason": "unknown_search_target",
-                        "message": "Unklar, was durchsucht werden soll. Bitte waehle ein sichtbares Objekt/Behaeltnis.",
+                        "message": (
+                            "Unklar oder nicht sichtbar, was durchsucht werden soll. "
+                            "Schau dich zuerst um oder waehle ein sichtbares Objekt/Behaeltnis."
+                        ),
                     },
                     confidence=0.35,
                 )
@@ -529,7 +570,10 @@ def analyze_player_input_preview(
                     parameters={
                         "intent": "clarify",
                         "reason": "unknown_take_target",
-                        "message": "Unklar, was aufgenommen werden soll. Bitte waehle ein sichtbares Objekt.",
+                        "message": (
+                            "Unklar oder nicht sichtbar, was aufgenommen werden soll. "
+                            "Schau dich zuerst um oder waehle ein sichtbares Objekt."
+                        ),
                     },
                     confidence=0.35,
                 )
@@ -629,7 +673,7 @@ def _extract_talk_target(text: str) -> str | None:
 def _extract_inspect_target(text: str) -> str | None:
     patterns = [
         r"\b(?:untersuche|inspiziere|betrachte)\s+(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)",
-        r"\b(?:schau(?:e)?|sieh)\s+(?:mir\s+)?(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)\s+an\b",
+        r"\b(?:schau(?:e)?|sieh)\s+(?:mir\s+)?(?:den|die|das|dem|der|einen|eine|einem)?\s*([\w _-]+)\s+(?:genauer\s+)?an\b",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
@@ -671,6 +715,13 @@ def _extract_take_target(text: str) -> str | None:
         if target:
             return target
     return None
+
+
+def _looks_like_broad_environment_search(text_lower: str) -> bool:
+    broad_tokens = ("umgebung", "umfeld", "gegend", "bereich", "hier", "platz")
+    return any(token in text_lower for token in broad_tokens) and not any(
+        token in text_lower for token in ("kiste", "truhe", "tasche", "koffer", "beutel")
+    )
 
 
 def _trim_entity_phrase(value: str) -> str:
