@@ -119,6 +119,7 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         location_name=session.character_state.location_name,
     )
+    context.discovery_counts["hidden_npc_count"] = int(hidden_npc_count)
     if hidden_npc_count > 0:
         context.retrieval_notes.append(
             f"Es gibt {hidden_npc_count} unbekannte Praesenz(en) an diesem Ort. Umsehen/Untersuchen kann neue Ziele aufdecken."
@@ -128,6 +129,7 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         location_name=session.character_state.location_name,
     )
+    context.discovery_counts["hidden_scene_point_count"] = int(hidden_scene_points)
     if hidden_scene_points > 0:
         context.retrieval_notes.append(
             f"Es gibt {hidden_scene_points} unerkundete Interaktions-/Objektpunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
@@ -274,6 +276,7 @@ def analyze_turn_preview(world_id: str, request: TurnAnalyzePreviewRequest, fast
             "ref_id": entry.ref_id,
             "name": entry.name,
             "kind": entry.kind,
+            "aliases_csv": ",".join(entry.aliases or []),
             "location_name": entry.location_name,
             "scene_zone_id": entry.scene_zone_id,
             "scene_zone_name": entry.scene_zone_name,
@@ -348,6 +351,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             "ref_id": entry.ref_id,
             "name": entry.name,
             "kind": entry.kind,
+            "aliases_csv": ",".join(entry.aliases or []),
             "location_name": entry.location_name,
             "scene_zone_id": entry.scene_zone_id,
             "scene_zone_name": entry.scene_zone_name,

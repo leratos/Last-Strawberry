@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import re
 import unicodedata
 
@@ -161,7 +162,14 @@ def analyze_player_input_preview(
             npc_ref_index,
         )
         if clarify_message:
-            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            actions.append(
+                _clarify_action_for_npc_target(
+                    message=clarify_message,
+                    reason="ambiguous_npc_target",
+                    candidate_entries=_npc_clarify_candidates_from_role_title(target, known_npc_refs or []),
+                    suggested_action="select_visible_npc",
+                )
+            )
             notes.append(clarify_message)
             target_meta = {}
             target = ""
@@ -210,7 +218,17 @@ def analyze_player_input_preview(
                 "Bitte waehle einen sichtbaren NPC aus der Liste oder nenne einen bekannten Namen."
             )
         if clarify_message:
-            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            role_title_candidates = _npc_clarify_candidates_from_role_title(target or "", known_npc_refs or [])
+            clarify_reason = "ambiguous_npc_role_title" if role_title_candidates else "unknown_or_ambiguous_npc_talk_target"
+            clarify_suggested_action = "select_visible_npc" if role_title_candidates else "inspect_broad"
+            actions.append(
+                _clarify_action_for_npc_target(
+                    message=clarify_message,
+                    reason=clarify_reason,
+                    candidate_entries=role_title_candidates or _npc_visible_candidates(known_npc_refs or []),
+                    suggested_action=clarify_suggested_action,
+                )
+            )
             notes.append(clarify_message)
             target_meta = {}
             target = ""
@@ -245,7 +263,14 @@ def analyze_player_input_preview(
             npc_ref_index,
         )
         if clarify_message:
-            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            actions.append(
+                _clarify_action_for_npc_target(
+                    message=clarify_message,
+                    reason="ambiguous_npc_target",
+                    candidate_entries=_npc_clarify_candidates_from_role_title(approach_target or "", known_npc_refs or []),
+                    suggested_action="select_visible_npc",
+                )
+            )
             notes.append(clarify_message)
             approach_meta = {}
             canonical_approach_target = ""
@@ -283,7 +308,14 @@ def analyze_player_input_preview(
             npc_ref_index,
         )
         if clarify_message:
-            actions.append(_clarify_action_for_ambiguous_npc_target(clarify_message))
+            actions.append(
+                _clarify_action_for_npc_target(
+                    message=clarify_message,
+                    reason="ambiguous_npc_target",
+                    candidate_entries=_npc_clarify_candidates_from_role_title(retreat_target or "", known_npc_refs or []),
+                    suggested_action="select_visible_npc",
+                )
+            )
             notes.append(clarify_message)
             retreat_meta = {}
             canonical_retreat_target = ""
@@ -314,10 +346,20 @@ def analyze_player_input_preview(
 
     if not actions and _contains_any_verb(lowered, _INSPECT_VERBS):
         inspect_target = _extract_inspect_target(text)
-        inspect_meta = _resolve_scene_target_reference(inspect_target or "", scene_point_ref_index)
+        inspect_meta, inspect_candidates = _resolve_scene_target_reference_with_candidates(inspect_target or "", scene_point_ref_index)
         inspect_target_id = str(inspect_meta.get("ref_id") or "").strip() or None
         inspect_target_kind = str(inspect_meta.get("kind") or "").strip() or None
-        if inspect_target and inspect_target_id:
+        if inspect_target and not inspect_target_id and inspect_candidates:
+            actions.append(
+                _clarify_action_for_scene_target(
+                    message="Mehrere passende Interaktionspunkte gefunden. Bitte waehle ein sichtbares Ziel.",
+                    reason="ambiguous_scene_target",
+                    action_type="INSPECT",
+                    candidate_entries=inspect_candidates,
+                )
+            )
+            notes.append("Fokussierte Untersuchung erkannt, aber mehrere sichtbare Interaktionspunkte passen.")
+        elif inspect_target and inspect_target_id:
             actions.append(
                 TurnIntentAction(
                     action_type=ActionType.inspect,
@@ -349,10 +391,20 @@ def analyze_player_input_preview(
 
     if not actions and _contains_any_verb(lowered, _OPEN_VERBS):
         open_target = _extract_open_search_target(text)
-        open_meta = _resolve_scene_target_reference(open_target or "", scene_point_ref_index)
+        open_meta, open_candidates = _resolve_scene_target_reference_with_candidates(open_target or "", scene_point_ref_index)
         open_target_id = str(open_meta.get("ref_id") or "").strip() or None
         open_target_kind = str(open_meta.get("kind") or "").strip() or None
-        if open_target and open_target_id:
+        if open_target and not open_target_id and open_candidates:
+            actions.append(
+                _clarify_action_for_scene_target(
+                    message="Mehrere passende Objekte/Behaeltnisse gefunden. Bitte waehle ein sichtbares Ziel.",
+                    reason="ambiguous_open_target",
+                    action_type="OPEN",
+                    candidate_entries=open_candidates,
+                )
+            )
+            notes.append("Oeffnen erkannt, aber mehrere sichtbare Ziele passen.")
+        elif open_target and open_target_id:
             actions.append(
                 TurnIntentAction(
                     action_type=ActionType.open,
@@ -388,10 +440,20 @@ def analyze_player_input_preview(
 
     if not actions and _contains_any_verb(lowered, _SEARCH_VERBS):
         search_target = _extract_open_search_target(text)
-        search_meta = _resolve_scene_target_reference(search_target or "", scene_point_ref_index)
+        search_meta, search_candidates = _resolve_scene_target_reference_with_candidates(search_target or "", scene_point_ref_index)
         search_target_id = str(search_meta.get("ref_id") or "").strip() or None
         search_target_kind = str(search_meta.get("kind") or "").strip() or None
-        if search_target and search_target_id:
+        if search_target and not search_target_id and search_candidates:
+            actions.append(
+                _clarify_action_for_scene_target(
+                    message="Mehrere passende Ziele zum Durchsuchen gefunden. Bitte waehle ein sichtbares Objekt/Behaeltnis.",
+                    reason="ambiguous_search_target",
+                    action_type="SEARCH",
+                    candidate_entries=search_candidates,
+                )
+            )
+            notes.append("Durchsuchen erkannt, aber mehrere sichtbare Ziele passen.")
+        elif search_target and search_target_id:
             actions.append(
                 TurnIntentAction(
                     action_type=ActionType.search,
@@ -427,10 +489,20 @@ def analyze_player_input_preview(
 
     if not actions and _contains_any_verb(lowered, _TAKE_VERBS):
         take_target = _extract_take_target(text)
-        take_meta = _resolve_scene_target_reference(take_target or "", scene_point_ref_index)
+        take_meta, take_candidates = _resolve_scene_target_reference_with_candidates(take_target or "", scene_point_ref_index)
         take_target_id = str(take_meta.get("ref_id") or "").strip() or None
         take_target_kind = str(take_meta.get("kind") or "").strip() or None
-        if take_target and take_target_id:
+        if take_target and not take_target_id and take_candidates:
+            actions.append(
+                _clarify_action_for_scene_target(
+                    message="Mehrere passende Objekte gefunden. Bitte waehle ein sichtbares Objekt zum Mitnehmen.",
+                    reason="ambiguous_take_target",
+                    action_type="TAKE",
+                    candidate_entries=take_candidates,
+                )
+            )
+            notes.append("Aufnehmen erkannt, aber mehrere sichtbare Objekte passen.")
+        elif take_target and take_target_id:
             actions.append(
                 TurnIntentAction(
                     action_type=ActionType.take,
@@ -649,10 +721,18 @@ def _lookup_ref_entry(name: str, ref_index: RefMetaIndex) -> dict[str, str] | No
     return None
 
 
-def _resolve_scene_target_reference(candidate: str, scene_ref_index: RefMetaIndex) -> dict[str, str]:
+def _resolve_scene_target_reference_with_candidates(
+    candidate: str,
+    scene_ref_index: RefMetaIndex,
+) -> tuple[dict[str, str], list[dict[str, str]]]:
     if not candidate.strip():
-        return {}
-    return _lookup_ref_entry(candidate, scene_ref_index) or {}
+        return {}, []
+    matches = _find_scene_ref_matches(candidate, scene_ref_index)
+    if not matches:
+        return {}, []
+    if len(matches) == 1:
+        return matches[0], []
+    return {}, matches[:8]
 
 
 def _resolve_npc_target_reference(
@@ -685,17 +765,172 @@ def _resolve_npc_target_reference(
     return matched_name, matched_entry, None
 
 
-def _clarify_action_for_ambiguous_npc_target(message: str) -> TurnIntentAction:
+def _clarify_action_for_npc_target(
+    *,
+    message: str,
+    reason: str,
+    candidate_entries: list[dict[str, str]] | None = None,
+    suggested_action: str | None = None,
+) -> TurnIntentAction:
+    clarify_parameters: dict[str, str | int | float | bool | None] = {
+        "intent": "clarify",
+        "reason": reason,
+        "message": message,
+    }
+    if suggested_action:
+        clarify_parameters["suggested_action"] = suggested_action
+    encoded_candidates = _encode_clarify_candidates(candidate_entries or [])
+    if encoded_candidates:
+        clarify_parameters["candidates_json"] = encoded_candidates
     return TurnIntentAction(
         action_type=ActionType.clarify,
         target_kind="npc",
-        parameters={
-            "intent": "clarify",
-            "reason": "ambiguous_npc_role_title",
-            "message": message,
-        },
+        parameters=clarify_parameters,
         confidence=0.35,
     )
+
+
+def _clarify_action_for_scene_target(
+    *,
+    message: str,
+    reason: str,
+    action_type: str,
+    candidate_entries: list[dict[str, str]] | None = None,
+) -> TurnIntentAction:
+    clarify_parameters: dict[str, str | int | float | bool | None] = {
+        "intent": "clarify",
+        "reason": reason,
+        "message": message,
+        "suggested_action": "select_visible_scene_target",
+    }
+    encoded_candidates = _encode_clarify_candidates(
+        _scene_clarify_candidates(candidate_entries or [], action_type=action_type)
+    )
+    if encoded_candidates:
+        clarify_parameters["candidates_json"] = encoded_candidates
+    return TurnIntentAction(
+        action_type=ActionType.clarify,
+        target_kind="environment",
+        parameters=clarify_parameters,
+        confidence=0.35,
+    )
+
+
+def _npc_visible_candidates(known_npc_refs: list[dict[str, str]]) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    for entry in known_npc_refs:
+        ref_id = str(entry.get("ref_id") or "").strip()
+        name = str(entry.get("name") or "").strip()
+        if not ref_id or not name:
+            continue
+        candidates.append(
+            {
+                "action_type": "TALK",
+                "target_ref": ref_id,
+                "target_kind": "npc",
+                "label": name,
+                "name": name,
+                "role": str(entry.get("role") or "").strip(),
+            }
+        )
+    return candidates[:8]
+
+
+def _npc_clarify_candidates_from_role_title(candidate_text: str, known_npc_refs: list[dict[str, str]]) -> list[dict[str, str]]:
+    role_resolution = resolve_unique_role_title_npc_reference(candidate_text, known_npc_refs)
+    if not role_resolution or str(role_resolution.get("status")) != "ambiguous":
+        return []
+    raw_entries = role_resolution.get("candidate_entries") or []
+    if not isinstance(raw_entries, list):
+        return []
+    candidates: list[dict[str, str]] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        ref_id = str(raw_entry.get("ref_id") or "").strip()
+        name = str(raw_entry.get("name") or "").strip()
+        if not ref_id or not name:
+            continue
+        candidates.append(
+            {
+                "action_type": "TALK",
+                "target_ref": ref_id,
+                "target_kind": "npc",
+                "label": name,
+                "name": name,
+                "role": str(raw_entry.get("role") or "").strip(),
+            }
+        )
+    return candidates[:8]
+
+
+def _encode_clarify_candidates(entries: list[dict[str, str]]) -> str | None:
+    if not entries:
+        return None
+    safe_entries: list[dict[str, str]] = []
+    for entry in entries:
+        action_type = str(entry.get("action_type") or "").strip().upper()
+        target_ref = str(entry.get("target_ref") or "").strip()
+        if not action_type or not target_ref:
+            continue
+        safe_entries.append(
+            {
+                "action_type": action_type,
+                "target_ref": target_ref,
+                "target_kind": str(entry.get("target_kind") or "").strip(),
+                "label": str(entry.get("label") or entry.get("name") or target_ref).strip(),
+                "name": str(entry.get("name") or "").strip(),
+                "role": str(entry.get("role") or "").strip(),
+                "kind": str(entry.get("kind") or "").strip(),
+            }
+        )
+    if not safe_entries:
+        return None
+    return json.dumps(safe_entries, ensure_ascii=False)
+
+
+def _find_scene_ref_matches(candidate: str, scene_ref_index: RefMetaIndex) -> list[dict[str, str]]:
+    normalized = candidate.strip().lower()
+    if not normalized:
+        return []
+    exact = ref_index_entry = scene_ref_index.get(normalized)
+    if exact:
+        return [ref_index_entry]
+
+    matches: list[dict[str, str]] = []
+    for known_name, ref_entry in scene_ref_index.items():
+        alias_tokens = [token.strip().lower() for token in str(ref_entry.get("aliases_csv") or "").split(",") if token.strip()]
+        haystacks = [known_name, *alias_tokens]
+        if any(normalized in hay or hay in normalized for hay in haystacks if hay):
+            matches.append(ref_entry)
+
+    unique_by_ref: dict[str, dict[str, str]] = {}
+    for entry in matches:
+        ref_id = str(entry.get("ref_id") or "").strip()
+        if ref_id and ref_id not in unique_by_ref:
+            unique_by_ref[ref_id] = entry
+    return list(unique_by_ref.values())
+
+
+def _scene_clarify_candidates(entries: list[dict[str, str]], *, action_type: str) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    for entry in entries:
+        ref_id = str(entry.get("ref_id") or "").strip()
+        name = str(entry.get("name") or "").strip()
+        kind = str(entry.get("kind") or "scene_point").strip()
+        if not ref_id or not name:
+            continue
+        candidates.append(
+            {
+                "action_type": action_type.upper(),
+                "target_ref": ref_id,
+                "target_kind": kind,
+                "label": f"{name} ({kind})",
+                "name": name,
+                "kind": kind,
+            }
+        )
+    return candidates[:8]
 
 
 def _requires_existing_npc_resolution(*, target: str, target_meta: dict[str, str]) -> bool:

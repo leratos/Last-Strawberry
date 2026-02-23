@@ -270,6 +270,10 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
 
         event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
         self.assertIn("clarify_required", event_codes)
+        clarify_event = next(event for event in payload["turn"]["resolution"]["system_events"] if event["code"] == "clarify_required")
+        self.assertTrue(clarify_event.get("metadata"))
+        self.assertIn("reason", clarify_event["metadata"])
+        self.assertGreaterEqual(int(clarify_event["metadata"].get("candidate_count") or 0), 1)
 
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
         self.assertEqual(memory_response.status_code, 200)
@@ -809,6 +813,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertGreaterEqual(len(payload["target_catalog"]["locations"]), 1)
         self.assertEqual(payload["retrieval_player_input"], "Ich will mehr ueber Mira und Schmuggler wissen.")
         self.assertTrue(payload["retrieval_notes"])
+        self.assertIn("discovery_counts", payload)
+        self.assertIn("hidden_npc_count", payload["discovery_counts"])
+        self.assertIn("hidden_scene_point_count", payload["discovery_counts"])
 
         top_bundle = payload["npc_memory"][0]
         self.assertIn("bundle", top_bundle)

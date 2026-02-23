@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode
 from ls_shared_schemas.turns import ActionType, StateDelta, TurnIntent, TurnIntentAction, TurnResolution, TurnSystemEvent
@@ -79,11 +81,14 @@ class RulesEngine:
         if action.action_type == ActionType.skill_check:
             return self._apply_skill_check(action, state, events)
         if action.action_type == ActionType.clarify:
+            message = str(action.parameters.get("message") or "").strip() or "Die Eingabe war nicht eindeutig genug. Bitte praezisieren."
+            metadata = self._clarify_event_metadata(action)
             events.append(
                 TurnSystemEvent(
                     code="clarify_required",
-                    message="Die Eingabe war nicht eindeutig genug. Bitte praezisieren.",
+                    message=message,
                     severity="warning",
+                    metadata=metadata,
                 )
             )
             return False
@@ -92,6 +97,26 @@ class RulesEngine:
             TurnSystemEvent(code="unsupported_action", message=f"Aktion nicht unterstuetzt: {action.action_type}", severity="warning")
         )
         return False
+
+    @staticmethod
+    def _clarify_event_metadata(action: TurnIntentAction) -> dict[str, str | int | float | bool | None]:
+        metadata: dict[str, str | int | float | bool | None] = {}
+        reason = str(action.parameters.get("reason") or "").strip()
+        if reason:
+            metadata["reason"] = reason
+        suggested_action = str(action.parameters.get("suggested_action") or "").strip()
+        if suggested_action:
+            metadata["suggested_action"] = suggested_action
+        candidates_json = str(action.parameters.get("candidates_json") or "").strip()
+        if candidates_json:
+            metadata["candidates_json"] = candidates_json
+            try:
+                parsed = json.loads(candidates_json)
+                if isinstance(parsed, list):
+                    metadata["candidate_count"] = len(parsed)
+            except json.JSONDecodeError:
+                pass
+        return metadata
 
     @staticmethod
     def _append_distance_reaction_event(

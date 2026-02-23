@@ -47,7 +47,12 @@ export type GameContextResponse = {
     raw_player_input: string;
     narrative: { narrative: string };
     resolution: {
-      system_events: Array<{ code: string; message: string; severity: string }>;
+      system_events: Array<{
+        code: string;
+        message: string;
+        severity: string;
+        metadata?: Record<string, string | number | boolean | null>;
+      }>;
     };
   }>;
   recent_journal: Array<{
@@ -137,6 +142,10 @@ export type GameContextResponse = {
   };
   retrieval_player_input: string | null;
   retrieval_notes: string[];
+  discovery_counts?: {
+    hidden_npc_count?: number;
+    hidden_scene_point_count?: number;
+  };
 };
 
 export type TurnRunResponse = {

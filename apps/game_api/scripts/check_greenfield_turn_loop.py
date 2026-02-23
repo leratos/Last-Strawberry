@@ -152,6 +152,12 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         timeout=timeout,
         payload=None,
     )
+    discovery_counts = context.get("discovery_counts") or {}
+    hidden_scene_points_before = int(discovery_counts.get("hidden_scene_point_count") or 0)
+    if hidden_scene_points_before <= 0:
+        raise RuntimeError(
+            f"Quickcheck erwartet hidden_scene_point_count > 0 vor Discovery, bekam: {hidden_scene_points_before}"
+        )
     npc_refs = list(context.get("target_catalog", {}).get("npcs", []))
     if not npc_refs:
         raise RuntimeError("Quickcheck konnte keinen NPC im target_catalog finden.")
@@ -174,6 +180,16 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     scene_object_ref = next((entry for entry in discovered_scene_points if entry.get("kind") == "scene_object"), None)
     if container_ref is None or scene_object_ref is None:
         raise RuntimeError("Quickcheck erwartet mindestens einen container und ein scene_object nach INSPECT.")
+
+    discover_turn_run_2 = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={"player_input": "Ich schau mich um."},
+    )
+    discover_codes_2 = _extract_event_codes(discover_turn_run_2)
+    if "discovery_nothing_new" not in discover_codes_2:
+        raise RuntimeError(f"Quickcheck erwartet discovery_nothing_new beim zweiten INSPECT, bekam: {discover_codes_2}")
 
     open_container_run = _request_json(
         method="POST",
@@ -367,6 +383,8 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "npc_id": npc_ref.get("ref_id"),
         "npc_name": npc_ref.get("name"),
         "discover_event_codes": discover_codes,
+        "discover_event_codes_second": discover_codes_2,
+        "hidden_scene_points_before_discovery": hidden_scene_points_before,
         "discovered_scene_points_count": len(discovered_scene_points),
         "open_container_event_codes": open_container_codes,
         "search_container_event_codes": search_container_codes,

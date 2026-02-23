@@ -170,6 +170,7 @@ def resolve_unique_role_title_npc_reference(
             "status": "ambiguous",
             "role": inferred_role,
             "candidates": candidate_names,
+            "candidate_entries": role_matches,
         }
 
     return None
