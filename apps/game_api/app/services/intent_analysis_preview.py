@@ -793,6 +793,8 @@ def _resolve_scene_target_reference_with_candidates(
         if 0 <= ordinal_index < len(matches):
             return matches[ordinal_index], []
         return {}, matches[:8]
+    if _contains_last_reference(candidate):
+        return matches[-1], []
     if len(matches) == 1:
         return matches[0], []
     return {}, matches[:8]
@@ -818,6 +820,12 @@ def _resolve_npc_target_reference(
         if isinstance(raw_entries, list):
             if ordinal_index is not None and 0 <= ordinal_index < len(raw_entries):
                 selected = raw_entries[ordinal_index]
+                if isinstance(selected, dict):
+                    selected_entry = {str(k): str(v) for k, v in selected.items() if v is not None}
+                    selected_name = str(selected_entry.get("name") or canonical_name).strip() or canonical_name
+                    return selected_name, selected_entry, None
+            if _contains_last_reference(candidate) and raw_entries:
+                selected = raw_entries[-1]
                 if isinstance(selected, dict):
                     selected_entry = {str(k): str(v) for k, v in selected.items() if v is not None}
                     selected_name = str(selected_entry.get("name") or canonical_name).strip() or canonical_name
@@ -911,6 +919,10 @@ def _npc_visible_candidates(known_npc_refs: list[dict[str, str]]) -> list[dict[s
                 "label": name,
                 "name": name,
                 "role": str(entry.get("role") or "").strip(),
+                "faction": str(entry.get("faction") or "").strip(),
+                "location_name": str(entry.get("location_name") or "").strip(),
+                "scene_zone_name": str(entry.get("scene_zone_name") or "").strip(),
+                "distance_band_to_player": str(entry.get("distance_band_to_player") or "").strip(),
             }
         )
     return candidates[:8]
@@ -939,6 +951,10 @@ def _npc_clarify_candidates_from_role_title(candidate_text: str, known_npc_refs:
                 "label": name,
                 "name": name,
                 "role": str(raw_entry.get("role") or "").strip(),
+                "faction": str(raw_entry.get("faction") or "").strip(),
+                "location_name": str(raw_entry.get("location_name") or "").strip(),
+                "scene_zone_name": str(raw_entry.get("scene_zone_name") or "").strip(),
+                "distance_band_to_player": str(raw_entry.get("distance_band_to_player") or "").strip(),
             }
         )
     return candidates[:8]
@@ -962,6 +978,10 @@ def _encode_clarify_candidates(entries: list[dict[str, str]]) -> str | None:
                 "name": str(entry.get("name") or "").strip(),
                 "role": str(entry.get("role") or "").strip(),
                 "kind": str(entry.get("kind") or "").strip(),
+                "faction": str(entry.get("faction") or "").strip(),
+                "location_name": str(entry.get("location_name") or "").strip(),
+                "scene_zone_name": str(entry.get("scene_zone_name") or "").strip(),
+                "distance_band_to_player": str(entry.get("distance_band_to_player") or "").strip(),
             }
         )
     if not safe_entries:
@@ -998,7 +1018,7 @@ def _normalize_scene_target_candidate(candidate: str) -> str:
         return ""
     normalized = re.sub(r"^(?:der|die|das|dem|den|des|ein|eine|einer|einem|einen)\s+", "", normalized, flags=re.I)
     normalized = re.sub(
-        r"^(?:erste|erster|erstem|ersten|erstes|zweite|zweiter|zweitem|zweiten|zweites|dritte|dritter|drittem|dritten|drittes|vierte|vierter|viertem|vierten|viertes)\s+",
+        r"^(?:erste|erster|erstem|ersten|erstes|zweite|zweiter|zweitem|zweiten|zweites|dritte|dritter|drittem|dritten|drittes|vierte|vierter|viertem|vierten|viertes|letzte|letzter|letztem|letzten|letztes)\s+",
         "",
         normalized,
         flags=re.I,
@@ -1046,9 +1066,15 @@ def _scene_clarify_candidates(entries: list[dict[str, str]], *, action_type: str
                 "label": f"{name} ({kind})",
                 "name": name,
                 "kind": kind,
+                "location_name": str(entry.get("location_name") or "").strip(),
+                "scene_zone_name": str(entry.get("scene_zone_name") or "").strip(),
             }
         )
     return candidates[:8]
+
+
+def _contains_last_reference(text: str) -> bool:
+    return bool(re.search(r"\b(letzte|letzter|letztem|letzten|letztes)\b", (text or ""), re.I))
 
 
 def _requires_existing_npc_resolution(*, target: str, target_meta: dict[str, str]) -> bool:

@@ -215,6 +215,16 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     if "discovery_nothing_new" not in discover_codes_2:
         raise RuntimeError(f"Quickcheck erwartet discovery_nothing_new beim zweiten INSPECT, bekam: {discover_codes_2}")
 
+    discover_turn_run_2 = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={"player_input": "Ich schau mich um."},
+    )
+    discover_codes_2 = _extract_event_codes(discover_turn_run_2)
+    if "discovery_nothing_new" not in discover_codes_2:
+        raise RuntimeError(f"Quickcheck erwartet discovery_nothing_new beim zweiten INSPECT, bekam: {discover_codes_2}")
+
     open_container_run = _request_json(
         method="POST",
         url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",

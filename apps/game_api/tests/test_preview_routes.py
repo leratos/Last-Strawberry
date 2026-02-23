@@ -274,6 +274,15 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertTrue(clarify_event.get("metadata"))
         self.assertIn("reason", clarify_event["metadata"])
         self.assertGreaterEqual(int(clarify_event["metadata"].get("candidate_count") or 0), 1)
+        self.assertTrue(clarify_event.get("clarify"))
+        self.assertIn(
+            clarify_event["clarify"].get("reason"),
+            {"ambiguous_npc_role_title", "unknown_or_ambiguous_npc_talk_target"},
+        )
+        self.assertGreaterEqual(len(clarify_event["clarify"].get("candidates") or []), 1)
+        first_candidate = clarify_event["clarify"]["candidates"][0]
+        self.assertEqual(first_candidate.get("target_kind"), "npc")
+        self.assertIn("role", first_candidate)
 
         memory_response = self.client.get(f"/v1/worlds/{world_id}/npc-memory")
         self.assertEqual(memory_response.status_code, 200)
