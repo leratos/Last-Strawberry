@@ -57,6 +57,7 @@ class TurnSystemEvent(LSBaseModel):
     code: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=1000)
     severity: str = Field(default="info", pattern="^(info|warning|error)$")
+    metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class StateDelta(LSBaseModel):

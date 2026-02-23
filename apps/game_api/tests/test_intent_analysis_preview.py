@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 import unittest
 
@@ -465,6 +466,27 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertEqual(clarify_action.parameters.get("reason"), "ambiguous_npc_role_title")
         self.assertIn("Kael", str(clarify_action.parameters.get("message") or ""))
         self.assertIn("Liora", str(clarify_action.parameters.get("message") or ""))
+        self.assertEqual(clarify_action.parameters.get("suggested_action"), "select_visible_npc")
+        candidates = json.loads(str(clarify_action.parameters.get("candidates_json") or "[]"))
+        self.assertGreaterEqual(len(candidates), 2)
+        self.assertTrue(any(candidate.get("target_ref") == "npc-kael" for candidate in candidates))
+
+    def test_returns_clarify_for_ambiguous_scene_container_reference_with_candidates(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich oeffne die Kiste.",
+            inventory=[],
+            known_scene_point_refs=[
+                {"ref_id": "ctr-a", "name": "Ritualkiste", "kind": "container"},
+                {"ref_id": "ctr-b", "name": "Vorratskiste", "kind": "container"},
+            ],
+        )
+        clarify_action = next(action for action in intent.actions if action.action_type.value == "CLARIFY")
+        self.assertEqual(clarify_action.parameters.get("reason"), "ambiguous_open_target")
+        candidates = json.loads(str(clarify_action.parameters.get("candidates_json") or "[]"))
+        self.assertGreaterEqual(len(candidates), 2)
+        self.assertTrue(all(candidate.get("action_type") == "OPEN" for candidate in candidates))
 
     def test_returns_clarify_for_descriptive_unresolved_npc_reference(self):
         intent = analyze_player_input_preview(

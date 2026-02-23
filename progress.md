@@ -108,3 +108,14 @@
 - G37: UI-Quick-Action `Nehmen` bei detailverifizierten Szene-Objekten, mit Statusanzeige `verfuegbar/mitgenommen`.
 - G38: Greenfield-Quickcheck erweitert um Discovery (`schau mich um`), Container `OPEN/SEARCH` und `TAKE` auf Szene-Objekte.
 - G39: Dokumentation/Progress auf G30-G39 aktualisiert; Abschluss-Regressionslauf (Repo-Tests + Frontend-Build) als Batch-Check.
+
+- G50-G59 Draft (gestartet): Fokus auf Clarify-UX/Kandidatenaufloesung, Discovery-Finetuning und Interaktionsfluss fuer Umweltziele; Umsetzung in kleinen Schritten mit Teiltests + Build + Regressionstest.
+- G50-G59 abgeschlossen: Clarify-UX und Discovery-Hinweise strukturiert erweitert (Parser -> Rules -> API -> UI).
+- G50: `TurnSystemEvent` hat jetzt `metadata`; G54: `GameContextResponse` liefert `discovery_counts` (hidden NPCs/Scene-Points).
+- G51/G52: CLARIFY-Events uebernehmen strukturierte Hinweise aus Action-Parametern (`reason`, `suggested_action`, `candidates_json`); Parser erzeugt Kandidaten fuer mehrdeutige Rollen-Anreden und unbekannte/verborgene Talk-Ziele.
+- G53/G55: Web-UI rendert `clarify_required` mit klickbaren Kandidaten-Buttons und `Umsehen`-Shortcut; Story-Panel zeigt strukturierte Discovery-Zaehler + Quick-Umsehen.
+- G56/G57: Szenenpunkt-Referenzaufloesung ist jetzt mehrdeutigkeitsbewusst (mehrere Kisten/Objekte -> `clarify_required` mit Kandidaten statt erster Zufallstreffer). Analyzer bekommt Scene-Point-Aliasse aus dem Context.
+- G58: Tests erweitert fuer Clarify-Metadaten und mehrdeutige Scene-Targets (Parser/Rules/Routes).
+- G59: Greenfield-Quickcheck prueft jetzt `discovery_counts.hidden_scene_point_count` vor Discovery und `discovery_nothing_new` beim zweiten broad inspect.
+- G50-G59 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q`, `pytest packages/rules_engine/tests/test_rules_engine.py -q`, `pytest apps/game_api/tests/test_preview_routes.py -q`, `pytest apps/game_api/tests/test_greenfield_turn_loop_check.py -q`, `pytest apps/game_api/tests -q`, `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 289 passed.
+- Offener Punkt (technische Schuld): `candidates_json` wird aktuell als JSON-String in CLARIFY-Parametern/Events transportiert; spaeter auf echtes strukturiertes `metadata.candidates[]` im Schema anheben.

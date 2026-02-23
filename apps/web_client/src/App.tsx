@@ -36,6 +36,15 @@ type QueueMacro = {
   name: string;
   entries: QueuedStructuredAction[];
 };
+type ClarifyCandidate = {
+  action_type: "TALK" | "INSPECT" | "OPEN" | "SEARCH" | "TAKE";
+  target_ref: string;
+  target_kind?: string;
+  label?: string;
+  name?: string;
+  role?: string;
+  kind?: string;
+};
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -225,6 +234,38 @@ function eventGroupClass(eventCode: string): string {
     return "event-group-dialog";
   }
   return "event-group-system";
+}
+
+function parseClarifyCandidates(
+  metadata: Record<string, string | number | boolean | null> | undefined,
+): ClarifyCandidate[] {
+  const raw = metadata?.candidates_json;
+  if (typeof raw !== "string" || !raw.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => {
+        const candidate = entry as Record<string, unknown>;
+        return {
+          action_type: String(candidate.action_type || "").toUpperCase() as ClarifyCandidate["action_type"],
+          target_ref: String(candidate.target_ref || ""),
+          target_kind: candidate.target_kind ? String(candidate.target_kind) : undefined,
+          label: candidate.label ? String(candidate.label) : undefined,
+          name: candidate.name ? String(candidate.name) : undefined,
+          role: candidate.role ? String(candidate.role) : undefined,
+          kind: candidate.kind ? String(candidate.kind) : undefined,
+        };
+      })
+      .filter((entry) => entry.action_type && entry.target_ref);
+  } catch {
+    return [];
+  }
 }
 
 function getStructuredTargets(
@@ -672,6 +713,43 @@ export function App() {
     return `UI: Spreche mit ${target.name}`;
   }
 
+  function buildClarifyCandidateAction(candidate: ClarifyCandidate): StructuredTurnAction {
+    const actionType = candidate.action_type;
+    const targetName = candidate.name || candidate.label || candidate.target_ref;
+    return {
+      action_type: actionType,
+      target_ref: candidate.target_ref,
+      target_kind: candidate.target_kind || (actionType === "TALK" ? "npc" : "scene_point"),
+      parameters: {
+        intent: actionType.toLowerCase(),
+        target_id: candidate.target_ref,
+        target_name: targetName,
+        target_kind: candidate.target_kind || candidate.kind || null,
+      },
+      confidence: 0.99,
+    };
+  }
+
+  async function runBroadInspectQuickAction(): Promise<void> {
+    if (!worldId.trim()) {
+      return;
+    }
+    await executeStructuredActions(
+      [
+        {
+          label: "UI: Schau dich um",
+          action: {
+            action_type: "INSPECT",
+            target_kind: "environment",
+            parameters: { intent: "inspect" },
+            confidence: 0.99,
+          },
+        },
+      ],
+      "Quick Action",
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="top-bar">
@@ -761,6 +839,29 @@ export function App() {
                   <p className="list-subtle analysis-notes">
                     Analyse-Kontext: {analysisNotes.join(" | ")}
                   </p>
+                ) : null}
+                {(context.discovery_counts?.hidden_npc_count || 0) > 0 ||
+                (context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (
+                  <div className="npc-badge-row">
+                    {(context.discovery_counts?.hidden_npc_count || 0) > 0 ? (
+                      <span className="npc-badge npc-badge-vorsichtig">
+                        Verborgene NPCs: {context.discovery_counts?.hidden_npc_count || 0}
+                      </span>
+                    ) : null}
+                    {(context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (
+                      <span className="npc-badge npc-badge-distance">
+                        Unentdeckte Punkte/Objekte: {context.discovery_counts?.hidden_scene_point_count || 0}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      disabled={isRunningTurn}
+                      onClick={() => void runBroadInspectQuickAction()}
+                    >
+                      Umsehen
+                    </button>
+                  </div>
                 ) : null}
               </section>
 
@@ -1012,6 +1113,49 @@ export function App() {
                                   </span>
                                   <span className={`event-badge event-${event.severity}`}>{event.code}</span>
                                   <span className="event-message">{event.message}</span>
+                                  {event.code === "clarify_required" ? (
+                                    (() => {
+                                      const candidates = parseClarifyCandidates(event.metadata);
+                                      const suggestedAction = typeof event.metadata?.suggested_action === "string"
+                                        ? event.metadata.suggested_action
+                                        : "";
+                                      return (
+                                        <div className="turn-actions">
+                                          {suggestedAction === "inspect_broad" ? (
+                                            <button
+                                              type="button"
+                                              className="secondary-btn"
+                                              disabled={isRunningTurn}
+                                              onClick={() => void runBroadInspectQuickAction()}
+                                            >
+                                              Umsehen
+                                            </button>
+                                          ) : null}
+                                          {candidates.slice(0, 4).map((candidate, candidateIndex) => (
+                                            <button
+                                              key={`${turn.turn_id}-${event.code}-${index}-cand-${candidateIndex}`}
+                                              type="button"
+                                              className="secondary-btn"
+                                              disabled={isRunningTurn}
+                                              onClick={() =>
+                                                void executeStructuredActions(
+                                                  [
+                                                    {
+                                                      label: `Clarify: ${candidate.label || candidate.name || candidate.target_ref}`,
+                                                      action: buildClarifyCandidateAction(candidate),
+                                                    },
+                                                  ],
+                                                  "Quick Action",
+                                                )
+                                              }
+                                            >
+                                              {candidate.label || candidate.name || candidate.target_ref}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : null}
                                 </div>
                               ))}
                             </div>

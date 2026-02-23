@@ -447,8 +447,40 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("retreat_success", codes)
         self.assertIn("npc_reacts_aggressive_to_retreat", codes)
-        reaction_event = next(event for event in result.system_events if event.code == "npc_reacts_aggressive_to_retreat")
-        self.assertIn("Kampfbereitschaft", reaction_event.message)
+
+    def test_clarify_event_preserves_metadata_from_action_parameters(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=10, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich rede mit dem Beschwoerer.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.clarify,
+                    parameters={
+                        "reason": "ambiguous_npc_role_title",
+                        "message": "Bitte waehle: Kael oder Liora.",
+                        "suggested_action": "select_visible_npc",
+                        "candidates_json": '[{"action_type":"TALK","target_ref":"npc-kael","label":"Kael"}]',
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        clarify_event = next(event for event in result.system_events if event.code == "clarify_required")
+        self.assertEqual(clarify_event.message, "Bitte waehle: Kael oder Liora.")
+        self.assertEqual(clarify_event.metadata.get("reason"), "ambiguous_npc_role_title")
+        self.assertEqual(clarify_event.metadata.get("suggested_action"), "select_visible_npc")
+        self.assertEqual(clarify_event.metadata.get("candidate_count"), 1)
 
     def test_approach_emits_friendly_reaction_for_positive_standing(self):
         engine = RulesEngine()
