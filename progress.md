@@ -144,3 +144,15 @@
 - G79: Route-/Parsertests fuer `letzte ...`-Referenzen und strukturierte Clarify-Payloads erweitert; Frontend-CSS fuer Clarify-Gruppenlayout hinzugefuegt.
 - G70-G79 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (28 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (30 passed), `pytest packages/rules_engine/tests/test_rules_engine.py -q` (19 passed), `pytest apps/game_api/tests -q` (76 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 294 passed.
 - Annahme (dokumentiert): In G24-Mehrdeutigkeits-Route-Tests kann der Clarify-Reason je nach G35-Rollenmaskierung `ambiguous_npc_role_title` oder `unknown_or_ambiguous_npc_talk_target` sein; beide sind fachlich korrekt, solange kein Fake-NPC entsteht.
+
+- G80-G89 Draft (gestartet): Fokus auf dediziertes Clarify-Panel im UI, bessere Kandidatenwiederverwendung/Suggested-Actions und kleine Discovery-/Resolver-Verfeinerungen mit Teiltests + Build + Regressionstest.
+- G80-G89 abgeschlossen: Dediziertes Clarify-Panel im UI eingefuehrt (Rueckfrage aktiv), inklusive Kandidaten-Gruppierung, Kontextinfos und Quick-Resolution (`Ausfuehren` / `In Struktur-Aktion`) fuer relevante Ziele.
+- G80/G81: Clarify-Kandidaten-Schema und Event-Mapping erweitert (Fraktion, Ort, Zone, Distanz) von Parser -> Rules -> `event.clarify.candidates`; UI/API-Typen lesen diese Felder strukturiert.
+- G82/G83: Frontend rendert ein separates Clarify-Panel mit Reason/Suggested-Action-Badges, `Umsehen`-Shortcut bei `inspect_broad` und gruppierten Kandidatenlisten (NPCs/Container/Objekte/Interaktionspunkte).
+- G84: Clarify-Kandidaten koennen in den Struktur-Composer uebernommen werden (derzeit TALK) inkl. Ziel-Metadaten (`target_role`, Ort/Zone/Distanz).
+- G85/G86: Resolver erweitert um `der/die andere ...` fuer Rollen- und Szenenziele; Szenenziel-Normalisierung entfernt jetzt auch `andere*`-Woerter vor dem Matching.
+- G87: Baseline-Regression in Context-Build/Main behoben (`hidden_*` nicht mehr als Top-Level-Felder auf `GameContextResponse`, nur noch ueber `discovery_counts`).
+- G88: Route-Tests auf neue `discovery_counts`-Payloadform migriert (G26-Assertions fuer Hidden-NPC/Scene-Point-Counts).
+- G89: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
+- G80-G89 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (36 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `pytest apps/game_api/tests -q` (85 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 304 passed.
+- Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration String-Feld entfernen.

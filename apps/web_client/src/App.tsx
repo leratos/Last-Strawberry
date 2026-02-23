@@ -49,6 +49,12 @@ type ClarifyCandidate = {
   scene_zone_name?: string;
   distance_band_to_player?: string;
 };
+type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
+type ActiveClarifyState = {
+  turnId: string;
+  rawPlayerInput: string;
+  event: TurnSystemEventView;
+};
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -303,6 +309,63 @@ function normalizeClarifyCandidates(
   return parseClarifyCandidates(event.metadata);
 }
 
+function clarifyReasonValue(
+  event: {
+    metadata?: Record<string, string | number | boolean | null>;
+    clarify?: { reason?: string | null } | null;
+  },
+): string {
+  if (typeof event.clarify?.reason === "string" && event.clarify.reason.trim()) {
+    return event.clarify.reason;
+  }
+  if (typeof event.metadata?.reason === "string" && event.metadata.reason.trim()) {
+    return event.metadata.reason;
+  }
+  return "";
+}
+
+function clarifySuggestedActionValue(
+  event: {
+    metadata?: Record<string, string | number | boolean | null>;
+    clarify?: { suggested_action?: string | null } | null;
+  },
+): string {
+  if (typeof event.clarify?.suggested_action === "string" && event.clarify.suggested_action.trim()) {
+    return event.clarify.suggested_action;
+  }
+  if (typeof event.metadata?.suggested_action === "string" && event.metadata.suggested_action.trim()) {
+    return event.metadata.suggested_action;
+  }
+  return "";
+}
+
+function findLatestClarifyState(context: GameContextResponse | null): ActiveClarifyState | null {
+  if (!context) {
+    return null;
+  }
+  const latestTurn = context.recent_turns[context.recent_turns.length - 1];
+  if (!latestTurn) {
+    return null;
+  }
+  const clarifyEvent = latestTurn.resolution.system_events.find((event) => event.code === "clarify_required");
+  if (!clarifyEvent) {
+    return null;
+  }
+  return {
+    turnId: latestTurn.turn_id,
+    rawPlayerInput: latestTurn.raw_player_input,
+    event: clarifyEvent,
+  };
+}
+
+function structuredActionKindFromClarifyCandidate(candidate: ClarifyCandidate): StructuredActionKind | null {
+  const actionType = (candidate.action_type || "").toUpperCase();
+  if (actionType === "TALK") {
+    return "TALK";
+  }
+  return null;
+}
+
 function clarifyReasonLabel(reason?: string | null): string {
   const normalized = (reason || "").trim().toLowerCase();
   if (!normalized) {
@@ -467,6 +530,8 @@ export function App() {
     }
     return "";
   }, [composerActionKind, selectedComposerTarget]);
+
+  const activeClarify = useMemo(() => findLatestClarifyState(context), [context]);
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -676,6 +741,23 @@ export function App() {
     } finally {
       setIsRunningTurn(false);
     }
+  }
+
+  function adoptClarifyCandidateIntoComposer(candidate: ClarifyCandidate): void {
+    if (!context) {
+      return;
+    }
+    const composerKind = structuredActionKindFromClarifyCandidate(candidate);
+    if (!composerKind) {
+      setLastActionMessage("Dieser Rueckfrage-Kandidat kann nur direkt ausgefuehrt werden.");
+      return;
+    }
+    const targets = getStructuredTargets(context, composerKind);
+    const match = targets.find((entry) => entry.refId === candidate.target_ref);
+    setComposerActionKind(composerKind);
+    setComposerTargetRef(match?.refId || "");
+    setLastActionMessage(`Rueckfrage-Ziel in Struktur-Aktion uebernommen: ${candidate.label || candidate.name || candidate.target_ref}`);
+    setError("");
   }
 
   async function applyTurnResult(runResult: TurnRunResponse, fallbackWorldId: string, retrievalHint: string): Promise<void> {
@@ -967,6 +1049,98 @@ export function App() {
                   </div>
                 ) : null}
               </section>
+
+              {activeClarify ? (
+                <section className="subpanel clarify-panel">
+                  <div className="panel-header">
+                    <h3>Rueckfrage aktiv</h3>
+                    <span className="chip">Turn: {activeClarify.turnId}</span>
+                  </div>
+                  <p className="list-subtle">
+                    Eingabe: {activeClarify.rawPlayerInput}
+                  </p>
+                  <div className="npc-badge-row">
+                    <span className="npc-badge npc-badge-vorsichtig">
+                      {clarifyReasonLabel(clarifyReasonValue(activeClarify.event))}
+                    </span>
+                    {clarifySuggestedActionValue(activeClarify.event) ? (
+                      <span className="npc-badge npc-badge-distance">
+                        Vorschlag: {clarifySuggestedActionValue(activeClarify.event)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="list-subtle">{activeClarify.event.message}</p>
+
+                  {clarifySuggestedActionValue(activeClarify.event) === "inspect_broad" ? (
+                    <div className="turn-actions">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        disabled={isRunningTurn}
+                        onClick={() => void runBroadInspectQuickAction()}
+                      >
+                        Umsehen (Rueckfrage loesen)
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {groupClarifyCandidates(normalizeClarifyCandidates(activeClarify.event)).length > 0 ? (
+                    <div className="clarify-groups">
+                      {groupClarifyCandidates(normalizeClarifyCandidates(activeClarify.event)).map((group) => (
+                        <div key={`active-clarify-${group.label}`} className="clarify-group-card">
+                          <p className="list-title">{group.label} ({group.items.length})</p>
+                          <div className="clarify-candidate-list">
+                            {group.items.map((candidate, candidateIndex) => {
+                              const subtitle = clarifyCandidateSubtitle(candidate);
+                              const canAdoptToComposer = Boolean(structuredActionKindFromClarifyCandidate(candidate));
+                              return (
+                                <div
+                                  key={`active-clarify-${group.label}-${candidate.target_ref}-${candidateIndex}`}
+                                  className="clarify-candidate-row"
+                                >
+                                  <div>
+                                    <p className="list-title">{candidate.label || candidate.name || candidate.target_ref}</p>
+                                    {subtitle ? <p className="list-subtle">{subtitle}</p> : null}
+                                  </div>
+                                  <div className="turn-actions">
+                                    <button
+                                      type="button"
+                                      className="secondary-btn"
+                                      disabled={isRunningTurn}
+                                      onClick={() =>
+                                        void executeStructuredActions(
+                                          [
+                                            {
+                                              label: `Clarify: ${candidate.label || candidate.name || candidate.target_ref}`,
+                                              action: buildClarifyCandidateAction(candidate),
+                                            },
+                                          ],
+                                          "Quick Action",
+                                        )
+                                      }
+                                    >
+                                      Ausfuehren
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="secondary-btn"
+                                      disabled={isRunningTurn || !canAdoptToComposer}
+                                      title={!canAdoptToComposer ? "Nur direkte Ausfuehrung verfuegbar" : undefined}
+                                      onClick={() => adoptClarifyCandidateIntoComposer(candidate)}
+                                    >
+                                      In Struktur-Aktion
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
 
               <form className="turn-form" onSubmit={handleTurnSubmit}>
                 <label>
@@ -1611,7 +1785,8 @@ export function App() {
               <p className="list-subtle">
                 Sichtbar: {context.target_catalog.scene_points.length} | Detail verifiziert:{" "}
                 {context.target_catalog.scene_points.filter((point) => (point.detail_level || 1) >= 2).length}
-                {" | "}Verborgene Punkte: {context.hidden_scene_point_count} | Verborgene NPCs: {context.hidden_npc_count}
+                {" | "}Verborgene Punkte: {context.discovery_counts?.hidden_scene_point_count || 0} | Verborgene NPCs:{" "}
+                {context.discovery_counts?.hidden_npc_count || 0}
               </p>
               {context.target_catalog.scene_points.length > 0 ? (
                 <div className="turn-actions">

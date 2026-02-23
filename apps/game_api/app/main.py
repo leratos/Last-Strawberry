@@ -121,7 +121,6 @@ def _assemble_context_for_world(
     )
     context.discovery_counts["hidden_npc_count"] = int(hidden_npc_count)
     if hidden_npc_count > 0:
-        context.hidden_npc_count = hidden_npc_count
         context.retrieval_notes.append(
             f"Es gibt {hidden_npc_count} unbekannte Praesenz(en) an diesem Ort. Umsehen/Untersuchen kann neue Ziele aufdecken."
         )
@@ -136,7 +135,6 @@ def _assemble_context_for_world(
     )
     context.discovery_counts["hidden_scene_point_count"] = int(hidden_scene_points)
     if hidden_scene_points > 0:
-        context.hidden_scene_point_count = hidden_scene_points
         context.retrieval_notes.append(
             f"Es gibt {hidden_scene_points} unerkundete Interaktions-/Objektpunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
         )
