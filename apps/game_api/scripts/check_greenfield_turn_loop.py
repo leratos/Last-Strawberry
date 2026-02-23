@@ -152,6 +152,8 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         timeout=timeout,
         payload=None,
     )
+    hidden_npc_count_before = int(context.get("hidden_npc_count") or 0)
+    hidden_scene_points_before = int(context.get("hidden_scene_point_count") or 0)
     npc_refs = list(context.get("target_catalog", {}).get("npcs", []))
     if not npc_refs:
         raise RuntimeError("Quickcheck konnte keinen NPC im target_catalog finden.")
@@ -174,6 +176,20 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
     scene_object_ref = next((entry for entry in discovered_scene_points if entry.get("kind") == "scene_object"), None)
     if container_ref is None or scene_object_ref is None:
         raise RuntimeError("Quickcheck erwartet mindestens einen container und ein scene_object nach INSPECT.")
+    if int(discovered_context.get("hidden_scene_point_count") or 0) != 0:
+        raise RuntimeError("Quickcheck erwartet hidden_scene_point_count=0 nach erstem broad INSPECT.")
+
+    discover_turn_run_repeat = _request_json(
+        method="POST",
+        url=f"{base}/v1/worlds/{urllib.parse.quote(world_id)}/turns/run",
+        timeout=timeout,
+        payload={"player_input": "Ich schau mich um."},
+    )
+    discover_repeat_codes = _extract_event_codes(discover_turn_run_repeat)
+    if "inspect_broad_success" not in discover_repeat_codes:
+        raise RuntimeError(f"Quickcheck erwartet inspect_broad_success beim Wiederholen, bekam: {discover_repeat_codes}")
+    if "discovery_nothing_new" not in discover_repeat_codes:
+        raise RuntimeError(f"Quickcheck erwartet discovery_nothing_new beim Wiederholen, bekam: {discover_repeat_codes}")
 
     open_container_run = _request_json(
         method="POST",
@@ -367,7 +383,10 @@ def run_quickcheck(base_url: str, timeout: float = 15.0) -> dict[str, Any]:  # p
         "npc_id": npc_ref.get("ref_id"),
         "npc_name": npc_ref.get("name"),
         "discover_event_codes": discover_codes,
+        "discover_repeat_event_codes": discover_repeat_codes,
         "discovered_scene_points_count": len(discovered_scene_points),
+        "hidden_npc_count_before_discovery": hidden_npc_count_before,
+        "hidden_scene_point_count_before_discovery": hidden_scene_points_before,
         "open_container_event_codes": open_container_codes,
         "search_container_event_codes": search_container_codes,
         "take_scene_object_event_codes": take_scene_object_codes,

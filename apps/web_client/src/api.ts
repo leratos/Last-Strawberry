@@ -137,6 +137,8 @@ export type GameContextResponse = {
   };
   retrieval_player_input: string | null;
   retrieval_notes: string[];
+  hidden_npc_count: number;
+  hidden_scene_point_count: number;
 };
 
 export type TurnRunResponse = {

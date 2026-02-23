@@ -78,6 +78,17 @@
 - G26: Parser erkennt Kurzform `schau` als `INSPECT`; unerkannte NPC-Namen liefern vor Reveal `clarify_required`.
 - G27: Discovery auf sichtbare Interaktionspunkte (Scene Points / POIs) erweitert (`scene_point_discoveries`) mit Reveal durch `INSPECT` im aktuellen Ort.
 - G27: Context/Target-Catalog liefert jetzt `scene_points`; UI zeigt sichtbare Interaktionspunkte + `Inspect`-Quick-Action.
+- G30-G39: Discovery-/Umweltinteraktionen ausgebaut (`OPEN`, `SEARCH`, `TAKE`), UI-Quick-Actions/Badges verbessert, Quickcheck erweitert, Rollen/Fraktionen bis Interaktion verborgen.
+- G40: Parser markiert `INSPECT` jetzt als `broad`/`focused` (`inspect_mode`) und erkennt Formulierungen wie `schaue mir X genauer an`.
+- G41: Rules Engine unterscheidet `inspect_broad_success` von fokussierter Untersuchung (`inspect_focus_success`).
+- G42: Wiederholtes breites Umsehen ohne neue Funde erzeugt `discovery_nothing_new`.
+- G43: Gezielte, aber unsichtbare/unbekannte Untersuchung (`ich untersuche ...`) liefert `CLARIFY` statt faelschlich breitem Inspect.
+- G44: `durchsuche die Umgebung` wird als breiter `INSPECT` interpretiert (nicht als Container-SEARCH ohne Ziel).
+- G45: `/context` liefert strukturierte Hidden-Counts (`hidden_npc_count`, `hidden_scene_point_count`) fuer UI/Tools.
+- G46: UI fuer Interaktionspunkte hat Filter/Sortierung (Alle/Unklar/Container/Objekte/Punkte; Name/Detail/Zone).
+- G47: Container-/Objekt-Aktionen werden im UI vor Detail-Inspect sichtbar, aber deaktiviert mit klaren Hinweisen (`... erst Inspect`).
+- G48: `OPEN`/`SEARCH`/`TAKE` geben discovery-aware Clarify-Messages (`schau dich zuerst um`) bei unsichtbaren Zielen.
+- G49: Quickcheck prueft Hidden-Counts vor Discovery und `discovery_nothing_new` bei wiederholtem broad Inspect.
 - G27: Rules Engine akzeptiert `INSPECT` auf `scene_point`-Targets (`inspect_focus_success`) statt Item-Fehler.
 - G27: Retrieval-Notes unterscheiden jetzt unbekannte Praesenzen (NPCs) und unerkundete Interaktionspunkte am Ort.
 - TODO (naechster Schritt): G28 Discovery fuer Objekte/Container/NPC-Rollenwissen verfeinern (z.B. Name sichtbar, Rolle erst nach genauerem Untersuchen/Gespraech).
