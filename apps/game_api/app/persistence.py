@@ -250,6 +250,19 @@ class WorldRepository:
                             severity="info",
                         )
                     )
+                if (
+                    self._has_broad_inspect_action(resolution=resolution)
+                    and newly_revealed_npcs == 0
+                    and newly_revealed_scene_points == 0
+                    and newly_revealed_scene_details == 0
+                ):
+                    resolution.system_events.append(
+                        TurnSystemEvent(
+                            code="discovery_nothing_new",
+                            message="Du nimmst die Umgebung erneut in den Blick, entdeckst aber nichts Neues.",
+                            severity="info",
+                        )
+                    )
 
                 conn.execute(
                     """
@@ -628,6 +641,17 @@ class WorldRepository:
                     timestamp=timestamp,
                 )
         return revealed_npcs, revealed_scene_points
+
+    @staticmethod
+    def _has_broad_inspect_action(*, resolution: TurnResolution) -> bool:
+        for action in resolution.applied_actions:
+            if action.action_type != ActionType.inspect:
+                continue
+            inspect_mode = str(action.parameters.get("inspect_mode") or "").strip().lower()
+            target_kind = str(action.target_kind or action.parameters.get("target_kind") or "").strip().lower()
+            if inspect_mode in {"", "broad"} and not action.target_ref and target_kind in {"", "environment"}:
+                return True
+        return False
 
     def _apply_scene_point_interaction_updates(
         self,

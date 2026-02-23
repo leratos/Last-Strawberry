@@ -124,3 +124,22 @@ Zeitraum: nach G4
 - Discovery und Sichtbarkeit sind jetzt deutlich naeher an der gewuenschten Spielregel: Spieler kann nicht allein durch Freitext neue NPCs/Objekte "erschaffen" oder alles sofort wissen.
 - Umweltinteraktionen sind als eigene, testbare Aktionen modelliert (`INSPECT`, `OPEN`, `SEARCH`, `TAKE`) statt nur freier Narrativ-Text.
 - Quickcheck deckt neben Kampf/Distanz jetzt auch Exploration-/Loot-Pfade ab.
+
+## Fortschritt (Micro-Stages G40-G49, Discovery-Qualitaet & UX)
+
+### Abgeschlossen
+- G40: `INSPECT` unterscheidet `broad` vs. `focused` (Parser-Parameter `inspect_mode`), inkl. natuerlicher Formulierungen (`schaue mir X genauer an`).
+- G41: Rules Engine emittiert `inspect_broad_success` fuer breites Umsehen.
+- G42: Wiederholtes breites Umsehen ohne neue Funde liefert `discovery_nothing_new`.
+- G43: Gezieltes, aber unsichtbares/unbekanntes `INSPECT` liefert `CLARIFY` statt Fehlklassifikation als breites Umsehen.
+- G44: Phrasen wie `durchsuche die Umgebung` werden korrekt als breites `INSPECT` interpretiert.
+- G45: `GameContextResponse` fuehrt strukturierte Hidden-Counts (`hidden_npc_count`, `hidden_scene_point_count`) ein.
+- G46: Web-UI fuer Interaktionspunkte bietet Filter und Sortierung.
+- G47: Vor Detail-Inspect werden Container-/Objekt-Aktionen sichtbar, aber deaktiviert mit klarer UX-Hinweisbeschriftung.
+- G48: Discovery-aware Clarify-Messages fuer `OPEN`/`SEARCH`/`TAKE` bei unsichtbaren Zielen.
+- G49: Quickcheck erweitert um Hidden-Counts vor Discovery und Wiederholungs-INSPECT mit `discovery_nothing_new`.
+
+### Ergebnis nach G49
+- Exploration fuehlt sich konsistenter an: Spieler unterscheiden klar zwischen "umsehen" (breit) und "gezielt untersuchen" (fokussiert).
+- Discovery-Status ist im UI und im API-Context besser sichtbar/auswertbar.
+- Fehlbedienungen bei Umweltaktionen (unsichtbare Ziele) fuehren zu klaren Hinweisen statt irrefuehrenden Ergebnissen.

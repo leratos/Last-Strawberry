@@ -41,6 +41,8 @@ def assemble_game_context(
         target_catalog=target_catalog,
         retrieval_player_input=retrieval_player_input,
         retrieval_notes=retrieval_notes,
+        hidden_npc_count=0,
+        hidden_scene_point_count=0,
     )
 
 
