@@ -50,6 +50,13 @@ type ClarifyCandidate = {
   scene_zone_name?: string;
   distance_band_to_player?: string;
 };
+type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
+type ActiveClarifyState = {
+  turnId: string;
+  rawPlayerInput: string;
+  event: TurnSystemEventView;
+};
+type TurnProviderTraceView = NonNullable<TurnRunResponse["provider_trace"]>;
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -535,6 +542,26 @@ export function App() {
     }
     return "";
   }, [composerActionKind, selectedComposerTarget]);
+
+  const activeClarify = useMemo(() => findLatestClarifyState(context), [context]);
+  const providerTraceSummary = useMemo(() => {
+    if (!lastProviderTrace) {
+      return "";
+    }
+    return [lastProviderTrace.intent, lastProviderTrace.narration].map(formatCapabilityTraceSummary).join(" | ");
+  }, [lastProviderTrace]);
+  const bootstrapTraceSummary = useMemo(
+    () => (lastBootstrapTrace ? formatCapabilityTraceSummary(lastBootstrapTrace) : ""),
+    [lastBootstrapTrace],
+  );
+  const activeQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() !== "completed"),
+    [context],
+  );
+  const completedQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() === "completed"),
+    [context],
+  );
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -1025,6 +1052,7 @@ export function App() {
               <section className="story-panel">
                 <div className="story-meta">
                   <span>{context.world.world_seed.name}</span>
+                  {context.world_pack?.display_name ? <span>Pack: {context.world_pack.display_name}</span> : null}
                   <span>Ort: {context.world.character_state.location_name}</span>
                   <span>Zone: {context.world.character_state.scene_zone_name}</span>
                   <span>Turns: {context.recent_turns.length}</span>
@@ -1580,6 +1608,20 @@ export function App() {
                   </ul>
                 </>
               ) : null}
+              {context.story_flags && Object.keys(context.story_flags).length > 0 ? (
+                <>
+                  <h3>Story-Flags (MVP)</h3>
+                  <ul className="list list-tight">
+                    {Object.entries(context.story_flags)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([flagKey, flagValue]) => (
+                        <li key={flagKey}>
+                          {flagKey}: {String(flagValue)}
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              ) : null}
             </>
           )}
         </article>
@@ -1692,6 +1734,18 @@ export function App() {
                         {typeof npcRef?.discovery_state?.dialog_hint === "string" &&
                         npcRef.discovery_state.dialog_hint.trim() ? (
                           <p className="list-subtle">Hinweis: {String(npcRef.discovery_state.dialog_hint)}</p>
+                        ) : null}
+                        {typeof npcRef?.discovery_state?.dialog_state === "string" &&
+                        npcRef.discovery_state.dialog_state.trim() ? (
+                          <p className="list-subtle">
+                            Dialogzustand: {String(npcRef.discovery_state.dialog_state)}
+                          </p>
+                        ) : null}
+                        {typeof npcRef?.discovery_state?.dialog_topics_hint === "string" &&
+                        npcRef.discovery_state.dialog_topics_hint.trim() ? (
+                          <p className="list-subtle">
+                            Themen: {String(npcRef.discovery_state.dialog_topics_hint)}
+                          </p>
                         ) : null}
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>

@@ -40,6 +40,8 @@ class RetrievedNpcMemoryBundle(LSBaseModel):
 
 class GameContextResponse(LSBaseModel):
     world: WorldSessionResponse
+    world_pack: dict[str, str] = Field(default_factory=dict)
+    story_flags: dict[str, str | int | bool] = Field(default_factory=dict)
     quests: list[WorldQuestState] = Field(default_factory=list)
     recent_turns: list[PersistedTurnRecord] = Field(default_factory=list)
     recent_journal: list[JournalEntryRecord] = Field(default_factory=list)

@@ -249,6 +249,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(context_response.status_code, 200)
         context_payload = context_response.json()
         self.assertGreaterEqual(len(context_payload["quests"]), 1)
+        self.assertEqual(context_payload["world_pack"]["genre"], "urban_occult_investigation")
+        self.assertIn("kael_interviewed", context_payload["story_flags"])
+        self.assertFalse(context_payload["story_flags"]["kael_interviewed"])
         quest = context_payload["quests"][0]
         self.assertEqual(quest["current_stage"], "investigate_scene")
         kael_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Kael")
@@ -284,6 +287,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         objective_states_after_kael = {obj["objective_id"]: obj["status"] for obj in quest_after_kael["objectives"]}
         self.assertEqual(objective_states_after_kael["speak_with_kael"], "completed")
         self.assertEqual(objective_states_after_kael["inspect_supply_crate"], "pending")
+        self.assertTrue(ctx_after_kael["story_flags"]["kael_interviewed"])
+        self.assertFalse(ctx_after_kael["story_flags"]["supply_crate_inspected"])
 
         broad_inspect = self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
@@ -321,6 +326,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(objective_states_after_crate["speak_with_kael"], "completed")
         self.assertEqual(objective_states_after_crate["inspect_supply_crate"], "completed")
         self.assertEqual(quest_after_crate["current_stage"], "report_to_mira")
+        self.assertTrue(ctx_after_crate["story_flags"]["supply_crate_inspected"])
+        self.assertFalse(ctx_after_crate["story_flags"]["mira_report_completed"])
 
         mira_ref_after = next(entry for entry in ctx_after_crate["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
         self.assertEqual(mira_ref_after.get("discovery_state", {}).get("dialog_state"), "quest_report")
@@ -355,6 +362,132 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         final_quest = talk_mira_payload["context_after_turn"]["quests"][0]
         self.assertEqual(final_quest["status"], "completed")
         self.assertTrue(all(obj["status"] == "completed" for obj in final_quest["objectives"]))
+        final_flags = talk_mira_payload["context_after_turn"]["story_flags"]
+        self.assertTrue(final_flags["mira_report_completed"])
+        self.assertTrue(final_flags["ritual_leads_quest_completed"])
+
+    def test_g350_followup_quest_unlocks_and_kael_crosscheck_stage_updates_dialog_hints(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g350-followup",
+                "world_description": "Eine moderne Stadt mit geheimer Magie, Binder-Ritual und Fraktionsdruck am Marktplatz.",
+                "character_description": "Ein Ermittler mit Fokus auf Relikte und Ritualspuren.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        # Starterquest lösen: Kael -> Vorratskiste -> Mira
+        ctx0 = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        kael_ref = next(entry for entry in ctx0["target_catalog"]["npcs"] if entry["name"] == "Kael")
+        mira_ref = next(entry for entry in ctx0["target_catalog"]["npcs"] if entry["name"] == "Mira")
+
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Kael",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {"target_id": kael_ref["ref_id"], "target_name": "Kael"},
+                    }
+                ],
+            },
+        )
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "ich schau mich um"})
+        ctx1 = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        supply_crate_ref = next(entry for entry in ctx1["target_catalog"]["scene_points"] if "supply-crate" in entry["ref_id"])
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Vorratskiste",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": supply_crate_ref["ref_id"],
+                        "target_kind": supply_crate_ref["kind"],
+                        "parameters": {
+                            "target_id": supply_crate_ref["ref_id"],
+                            "target_name": supply_crate_ref["name"],
+                            "target_kind": supply_crate_ref["kind"],
+                        },
+                    }
+                ],
+            },
+        )
+        talk_mira = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {"target_id": mira_ref["ref_id"], "target_name": "Mira"},
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_mira.status_code, 200)
+        talk_mira_payload = talk_mira.json()
+        event_codes = [event["code"] for event in talk_mira_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("quest_unlocked", event_codes)
+
+        ctx_after_unlock = talk_mira_payload["context_after_turn"]
+        quests_by_id = {quest["quest_id"]: quest for quest in ctx_after_unlock["quests"]}
+        self.assertIn("quest-urban-occult-resonance-followup", quests_by_id)
+        followup_quest = quests_by_id["quest-urban-occult-resonance-followup"]
+        self.assertEqual(followup_quest["status"], "active")
+        self.assertEqual(followup_quest["current_stage"], "trace_residue")
+        kael_hint_1 = next(entry for entry in ctx_after_unlock["target_catalog"]["npcs"] if entry["ref_id"] == kael_ref["ref_id"])
+        self.assertEqual(kael_hint_1.get("discovery_state", {}).get("dialog_state"), "followup_suspicious")
+        self.assertIn("Ritualkreis", str(kael_hint_1.get("discovery_state", {}).get("dialog_topics_hint", "")))
+
+        # Folgequest: breite Suche -> Runenspuren inspizieren + Koffer öffnen
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "ich schau mich um"})
+        ctx_followup = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        rune_ref = next(entry for entry in ctx_followup["target_catalog"]["scene_points"] if entry["ref_id"] == "poi-marktplatz-runenspuren")
+        case_ref = next(entry for entry in ctx_followup["target_catalog"]["scene_points"] if entry["ref_id"] == "obj-marktplatz-siegelkoffer")
+
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Runenspuren",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": rune_ref["ref_id"],
+                        "target_kind": rune_ref["kind"],
+                        "parameters": {"target_id": rune_ref["ref_id"], "target_name": rune_ref["name"], "target_kind": rune_ref["kind"]},
+                    }
+                ],
+            },
+        )
+        open_case = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Oeffne Instrumentenkoffer",
+                "actions_override": [
+                    {
+                        "action_type": "OPEN",
+                        "target_ref": case_ref["ref_id"],
+                        "target_kind": case_ref["kind"],
+                        "parameters": {"target_id": case_ref["ref_id"], "target_name": case_ref["name"], "target_kind": case_ref["kind"]},
+                    }
+                ],
+            },
+        )
+        self.assertEqual(open_case.status_code, 200)
+        ctx_crosscheck = open_case.json()["context_after_turn"]
+        followup_after_clues = next(q for q in ctx_crosscheck["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup")
+        self.assertEqual(followup_after_clues["current_stage"], "crosscheck_with_kael")
+        kael_hint_2 = next(entry for entry in ctx_crosscheck["target_catalog"]["npcs"] if entry["ref_id"] == kael_ref["ref_id"])
+        self.assertEqual(kael_hint_2.get("discovery_state", {}).get("dialog_state"), "followup_crosscheck")
+        self.assertIn("Koffer", str(kael_hint_2.get("discovery_state", {}).get("dialog_hint", "")))
 
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
