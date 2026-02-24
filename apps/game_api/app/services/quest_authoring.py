@@ -191,6 +191,30 @@ def build_npc_dialog_hints_for_context(
     return {}
 
 
+def derive_story_flags_from_quests(
+    *,
+    quests: list[WorldQuestState],
+    existing_flags: dict[str, str | int | bool] | None = None,
+) -> dict[str, str | int | bool]:
+    flags: dict[str, str | int | bool] = dict(existing_flags or {})
+    if not quests:
+        return flags
+    for quest in quests:
+        if quest.quest_id != URBAN_OCCULT_QUEST_ID:
+            continue
+        objective_map = {obj.objective_id: obj.status for obj in quest.objectives}
+        flags["kael_interviewed"] = objective_map.get("speak_with_kael") == "completed"
+        flags["supply_crate_inspected"] = objective_map.get("inspect_supply_crate") == "completed"
+        flags["mira_report_completed"] = objective_map.get("report_to_mira") == "completed"
+        flags["ritual_scene_known"] = bool(
+            flags.get("ritual_scene_known")
+            or flags["kael_interviewed"]
+            or flags["supply_crate_inspected"]
+        )
+        flags["ritual_leads_quest_completed"] = quest.status == "completed"
+    return flags
+
+
 def _looks_urban_occult_world_seed(world_seed: WorldSeed) -> bool:
     haystack = " ".join(
         [

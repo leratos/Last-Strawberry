@@ -249,6 +249,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(context_response.status_code, 200)
         context_payload = context_response.json()
         self.assertGreaterEqual(len(context_payload["quests"]), 1)
+        self.assertEqual(context_payload["world_pack"]["genre"], "urban_occult_investigation")
+        self.assertIn("kael_interviewed", context_payload["story_flags"])
+        self.assertFalse(context_payload["story_flags"]["kael_interviewed"])
         quest = context_payload["quests"][0]
         self.assertEqual(quest["current_stage"], "investigate_scene")
         kael_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Kael")
@@ -284,6 +287,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         objective_states_after_kael = {obj["objective_id"]: obj["status"] for obj in quest_after_kael["objectives"]}
         self.assertEqual(objective_states_after_kael["speak_with_kael"], "completed")
         self.assertEqual(objective_states_after_kael["inspect_supply_crate"], "pending")
+        self.assertTrue(ctx_after_kael["story_flags"]["kael_interviewed"])
+        self.assertFalse(ctx_after_kael["story_flags"]["supply_crate_inspected"])
 
         broad_inspect = self.client.post(
             f"/v1/worlds/{world_id}/turns/run",
@@ -321,6 +326,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(objective_states_after_crate["speak_with_kael"], "completed")
         self.assertEqual(objective_states_after_crate["inspect_supply_crate"], "completed")
         self.assertEqual(quest_after_crate["current_stage"], "report_to_mira")
+        self.assertTrue(ctx_after_crate["story_flags"]["supply_crate_inspected"])
+        self.assertFalse(ctx_after_crate["story_flags"]["mira_report_completed"])
 
         mira_ref_after = next(entry for entry in ctx_after_crate["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
         self.assertEqual(mira_ref_after.get("discovery_state", {}).get("dialog_state"), "quest_report")
@@ -355,6 +362,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         final_quest = talk_mira_payload["context_after_turn"]["quests"][0]
         self.assertEqual(final_quest["status"], "completed")
         self.assertTrue(all(obj["status"] == "completed" for obj in final_quest["objectives"]))
+        final_flags = talk_mira_payload["context_after_turn"]["story_flags"]
+        self.assertTrue(final_flags["mira_report_completed"])
+        self.assertTrue(final_flags["ritual_leads_quest_completed"])
 
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(

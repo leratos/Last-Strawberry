@@ -42,6 +42,13 @@ export type GameContextResponse = {
       created_at: string;
     }>;
   };
+  world_pack?: {
+    pack_id: string;
+    version: string;
+    display_name: string;
+    genre: string;
+  };
+  story_flags?: Record<string, string | number | boolean>;
   quests: Array<{
     quest_id: string;
     title: string;

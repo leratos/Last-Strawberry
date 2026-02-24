@@ -1052,6 +1052,7 @@ export function App() {
               <section className="story-panel">
                 <div className="story-meta">
                   <span>{context.world.world_seed.name}</span>
+                  {context.world_pack?.display_name ? <span>Pack: {context.world_pack.display_name}</span> : null}
                   <span>Ort: {context.world.character_state.location_name}</span>
                   <span>Zone: {context.world.character_state.scene_zone_name}</span>
                   <span>Turns: {context.recent_turns.length}</span>
@@ -1604,6 +1605,20 @@ export function App() {
                         </ul>
                       </li>
                     ))}
+                  </ul>
+                </>
+              ) : null}
+              {context.story_flags && Object.keys(context.story_flags).length > 0 ? (
+                <>
+                  <h3>Story-Flags (MVP)</h3>
+                  <ul className="list list-tight">
+                    {Object.entries(context.story_flags)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([flagKey, flagValue]) => (
+                        <li key={flagKey}>
+                          {flagKey}: {String(flagValue)}
+                        </li>
+                      ))}
                   </ul>
                 </>
               ) : null}
