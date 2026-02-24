@@ -168,7 +168,7 @@ def build_npc_dialog_topics_for_context(
 
     # Deduplicate by topic_id while preserving order.
     seen: set[str] = set()
-    unique_topics: list[dict[str, str]] = []
+    unique_topics: list[dict[str, str | int | bool]] = []
     for topic in topics:
         topic_id = str(topic.get("topic_id") or "").strip()
         if not topic_id or topic_id in seen:

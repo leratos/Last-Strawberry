@@ -642,7 +642,6 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         followup = next(q for q in payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup")
         crosscheck_obj = next(obj for obj in followup["objectives"] if obj["objective_id"] == "crosscheck_with_kael")
         self.assertIn("Sabotageverdacht", crosscheck_obj["hint"])
-
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

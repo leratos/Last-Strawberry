@@ -277,7 +277,9 @@ pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/t
 - G450-G499 Draft (gestartet): Authored Dialog-Topics erweitern um standing-/flag-abhaengige Antwortvarianten und staerkere Quest-/Story-Flag-Transitions. Struktur fuer spaetere Faehigkeitspruefungen (Attribute/Wuerfel) in Topic-Metadaten vorbereiten, ohne Dice-Engine jetzt zu aktivieren.
 
 - G450-G499 abgeschlossen: Authored Dialog-Topics um standing-/flag-abhaengige Varianten erweitert und Quest-/Story-Flag-Transitions vertieft. Topics liefern jetzt vorbereitende Skill-Check-Metadaten (z. B. uture_check_attribute, uture_check_dc) fuer spaetere Wuerfel-/Attributpruefungen, ohne Dice-Engine bereits zu aktivieren.
-- Backend: quest_authoring.py erweitert (Topic-Metadaten, equires_flag-Filter, variantenspezifische dialog_topic_response je nach 	arget_standing, staerkere Story-Flags wie itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter-/Followup-Quest).
+- Backend: quest_authoring.py erweitert (Topic-Metadaten, 
+equires_flag-Filter, variantenspezifische dialog_topic_response je nach 	arget_standing, staerkere Story-Flags wie 
+itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter-/Followup-Quest).
 - UI: Topic-Metadaten aus dialog_topics_json geparsed und im NPC-Panel sichtbar gemacht (Probe-spaeter-Hinweis mit Attribut/DC), Topic-Buttons unveraendert direkt klickbar.
 - Tests/Builds: pytest G450-Route-Test (1 passed), pytest apps/game_api/tests/test_preview_routes.py -q (38 passed), pytest apps/game_api/tests -q (104 passed), npm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 323 passed.
 - Technische Schuld: Topic-Effekte laufen weiter im Persistenz-/Quest-Pfad nach Rules-Resolution; fuer spaetere narrative Qualitaet und echte Dialogsysteme (inkl. Skill-Checks) in einen dedizierten Dialog/Story-Composer vor Narration ziehen. Skill-Check-Metadaten sind aktuell nur Hinweise, noch keine mechanische Pruefung.
