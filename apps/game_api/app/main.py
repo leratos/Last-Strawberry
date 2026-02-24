@@ -11,7 +11,12 @@ from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.llm_runtime import build_llm_runtime
-from apps.game_api.app.services.quest_authoring import build_npc_dialog_hints_for_context
+import json
+
+from apps.game_api.app.services.quest_authoring import (
+    build_npc_dialog_hints_for_context,
+    build_npc_dialog_topics_for_context,
+)
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.game_context import GameContextResponse
@@ -160,6 +165,15 @@ def _assemble_context_for_world(
         )
         if hints:
             npc_ref.discovery_state.update(hints)
+        dialog_topics = build_npc_dialog_topics_for_context(
+            quests=context.quests,
+            story_flags=context.story_flags,
+            npc_id=npc_ref.ref_id,
+            npc_name=npc_ref.name,
+            npc_role=npc_ref.role,
+        )
+        if dialog_topics:
+            npc_ref.discovery_state["dialog_topics_json"] = json.dumps(dialog_topics, ensure_ascii=True)
     return context
 
 

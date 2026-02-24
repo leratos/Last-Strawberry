@@ -18,6 +18,13 @@ class QuestAdvanceResult:
     system_events: list[TurnSystemEvent]
 
 
+@dataclass(frozen=True)
+class DialogTopicApplyResult:
+    quests: list[WorldQuestState]
+    story_flags: dict[str, str | int | bool]
+    system_events: list[TurnSystemEvent]
+
+
 def derive_story_flags_from_quests(
     *,
     quests: list[WorldQuestState],
@@ -71,6 +78,211 @@ def derive_story_flags_from_quests(
             next_flags["ritual_scene_known"] = True
 
     return next_flags
+
+
+def build_npc_dialog_topics_for_context(
+    *,
+    quests: list[WorldQuestState],
+    story_flags: dict[str, str | int | bool] | None,
+    npc_id: str,
+    npc_name: str,
+    npc_role: str | None,
+) -> list[dict[str, str]]:
+    if not quests:
+        return []
+    lowered_name = (npc_name or "").strip().lower()
+    lowered_role = (npc_role or "").strip().lower()
+    is_kael = npc_id == "npc-circle-binder" or lowered_name == "kael" or lowered_role == "beschwoerer"
+    is_mira = lowered_name == "mira"
+    flags = dict(story_flags or {})
+
+    topics: list[dict[str, str]] = []
+    for quest in quests:
+        if quest.status == "completed":
+            continue
+        stage = (quest.current_stage or "").strip().lower()
+        if quest.quest_id == URBAN_OCCULT_QUEST_ID:
+            if is_kael and stage == "investigate_scene":
+                topics.extend(
+                    [
+                        {
+                            "topic_id": "kael_ritual_overview",
+                            "label": "Ritualablauf",
+                            "summary": "Kael nach dem Ablauf des fehlgeschlagenen Binder-Rituals fragen.",
+                        },
+                        {
+                            "topic_id": "kael_witness_pattern",
+                            "label": "Augenzeugenmuster",
+                            "summary": "Kael nach auffaelligen Bewegungen oder Personen fragen.",
+                        },
+                    ]
+                )
+            if is_mira and stage == "report_to_mira":
+                topics.extend(
+                    [
+                        {
+                            "topic_id": "mira_crosscheck_findings",
+                            "label": "Funde abgleichen",
+                            "summary": "Mira um Einordnung von Kistenfund und Kaels Aussage bitten.",
+                        },
+                        {
+                            "topic_id": "mira_next_lead",
+                            "label": "Naechste Spur",
+                            "summary": "Mira nach einer priorisierten Anschlussspur fragen.",
+                        },
+                    ]
+                )
+        if quest.quest_id == URBAN_OCCULT_FOLLOWUP_QUEST_ID:
+            if is_mira and stage == "trace_residue":
+                topics.append(
+                    {
+                        "topic_id": "mira_scene_control",
+                        "label": "Spuren sichern",
+                        "summary": "Mit Mira abstimmen, wie Spuren/Koffer abgesichert werden sollten.",
+                    }
+                )
+            if is_kael and stage in {"trace_residue", "crosscheck_with_kael"}:
+                topics.append(
+                    {
+                        "topic_id": "kael_sabotage_hypothesis",
+                        "label": "Sabotageverdacht",
+                        "summary": "Kael mit dem Verdacht einer Sabotage konfrontieren.",
+                    }
+                )
+
+    # Deduplicate by topic_id while preserving order.
+    seen: set[str] = set()
+    unique_topics: list[dict[str, str]] = []
+    for topic in topics:
+        topic_id = str(topic.get("topic_id") or "").strip()
+        if not topic_id or topic_id in seen:
+            continue
+        if bool(flags.get(f"dialog_topic_used_{topic_id}", False)):
+            continue
+        seen.add(topic_id)
+        unique_topics.append(topic)
+    return unique_topics
+
+
+def apply_authored_dialog_topics_for_turn(
+    *,
+    quests: list[WorldQuestState],
+    story_flags: dict[str, str | int | bool] | None,
+    resolution: TurnResolution,
+) -> DialogTopicApplyResult:
+    if not quests:
+        return DialogTopicApplyResult(quests=list(quests), story_flags=dict(story_flags or {}), system_events=[])
+
+    updated_quests = [quest.model_copy(deep=True) for quest in quests]
+    updated_flags: dict[str, str | int | bool] = dict(story_flags or {})
+    events: list[TurnSystemEvent] = []
+
+    quest_map = {quest.quest_id: quest for quest in updated_quests}
+    starter_quest = quest_map.get(URBAN_OCCULT_QUEST_ID)
+    followup_quest = quest_map.get(URBAN_OCCULT_FOLLOWUP_QUEST_ID)
+
+    for action in resolution.applied_actions:
+        if action.action_type != ActionType.talk:
+            continue
+        topic_id = str(action.parameters.get("topic_id") or "").strip()
+        if not topic_id:
+            continue
+
+        flag_key = f"dialog_topic_used_{topic_id}"
+        already_used = bool(updated_flags.get(flag_key, False))
+        target_name = str(action.parameters.get("target_name") or action.target_ref or "NPC").strip()
+
+        response_text = ""
+        if topic_id == "kael_ritual_overview":
+            updated_flags[flag_key] = True
+            updated_flags["kael_ritual_background_heard"] = True
+            if starter_quest is not None:
+                _update_objective_hint(
+                    starter_quest,
+                    "speak_with_kael",
+                    "Kael schilderte den Ritualablauf; seine Details sollten mit Spuren/Kistenfund abgeglichen werden.",
+                )
+            response_text = (
+                "Kael skizziert den Ablauf des Binder-Rituals und betont, dass der Bruch genau im Umschaltmoment der Energiezufuhr einsetzte."
+            )
+        elif topic_id == "kael_witness_pattern":
+            updated_flags[flag_key] = True
+            updated_flags["kael_witness_pattern_heard"] = True
+            response_text = (
+                "Kael erinnert sich an zwei Personen, die kurz vor dem Ausfall auffaellig gegen den Strom am Brunnenplatz vorbeigingen."
+            )
+        elif topic_id == "mira_crosscheck_findings":
+            updated_flags[flag_key] = True
+            updated_flags["mira_findings_crosschecked"] = True
+            if starter_quest is not None:
+                _update_objective_hint(
+                    starter_quest,
+                    "report_to_mira",
+                    "Mira hat Kistenfund und Kaels Aussage miteinander abgeglichen und eine zweite Spur priorisiert.",
+                )
+            response_text = (
+                "Mira gleicht deine Funde mit Kaels Aussagen ab und markiert die Runenspuren sowie einen versiegelten Koffer als naechste Prioritaet."
+            )
+        elif topic_id == "mira_next_lead":
+            updated_flags[flag_key] = True
+            updated_flags["mira_next_lead_requested"] = True
+            response_text = "Mira empfiehlt, zuerst die sichtbaren Ritualspuren zu sichern und danach den versiegelten Koffer zu untersuchen."
+        elif topic_id == "mira_scene_control":
+            updated_flags[flag_key] = True
+            updated_flags["mira_scene_control_plan"] = True
+            response_text = "Mira weist dich an, die Spuren zuerst zu sichern und den Koffer erst danach in Deckung zu oeffnen."
+        elif topic_id == "kael_sabotage_hypothesis":
+            updated_flags[flag_key] = True
+            updated_flags["kael_sabotage_hypothesis_shared"] = True
+            updated_flags["ritual_sabotage_suspected"] = True
+            if not already_used:
+                try:
+                    heat = int(updated_flags.get("occult_heat_level", 1))
+                except (TypeError, ValueError):
+                    heat = 1
+                updated_flags["occult_heat_level"] = min(5, heat + 1)
+            if followup_quest is not None:
+                _update_objective_hint(
+                    followup_quest,
+                    "crosscheck_with_kael",
+                    "Kael hat den Sabotageverdacht eingeraeumt; die Spur weist auf gezielte Stoerung statt Unfall hin.",
+                )
+            response_text = (
+                "Kael reagiert angespannt auf den Sabotageverdacht und raeumt ein, dass die Stoerung eher gesetzt als zufaellig gewesen sein koennte."
+            )
+        else:
+            continue
+
+        events.append(
+            TurnSystemEvent(
+                code="dialog_topic_applied",
+                message=f"Dialog-Thema angewendet: {topic_id}.",
+                severity="info",
+                metadata={
+                    "topic_id": topic_id,
+                    "target_name": target_name,
+                    "topic_reused": already_used,
+                },
+            )
+        )
+        events.append(
+            TurnSystemEvent(
+                code="dialog_topic_response",
+                message=response_text,
+                severity="info",
+                metadata={"topic_id": topic_id, "target_name": target_name},
+            )
+        )
+
+    return DialogTopicApplyResult(quests=updated_quests, story_flags=updated_flags, system_events=events)
+
+
+def _update_objective_hint(quest: WorldQuestState, objective_id: str, hint: str) -> None:
+    for objective in quest.objectives:
+        if objective.objective_id == objective_id:
+            objective.hint = hint
+            quest.updated_at = datetime.now(UTC)
+            return
 
 
 def initial_quest_states_for_world_seed(world_seed: WorldSeed) -> list[WorldQuestState]:
