@@ -106,6 +106,10 @@ def _assemble_context_for_world(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
     )
+    story_flags = repository.get_world_story_flags(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+    )
     visible_scene_points = repository.list_visible_scene_points_in_location(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
@@ -115,6 +119,7 @@ def _assemble_context_for_world(
         world=session,
         turns=turns,
         npc_memory=npc_memory,
+        story_flags=story_flags,
         quests=quests,
         retrieval_player_input=player_input,
         scene_points=visible_scene_points,

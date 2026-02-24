@@ -9,6 +9,7 @@ from apps.game_api.app.services.urban_occult_basis import (
     get_urban_occult_preset,
     should_use_urban_occult_preset,
 )
+from apps.game_api.app.services.world_pack_authoring import GENERIC_STARTER_WORLD_PACK, URBAN_OCCULT_WORLD_PACK
 
 
 def build_world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootstrapResult:
@@ -101,6 +102,11 @@ def build_world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootst
     world_seed = WorldSeed(
         world_id="preview-world-seed",
         name=world_name,
+        world_pack_id=(URBAN_OCCULT_WORLD_PACK.pack_id if preset is not None else GENERIC_STARTER_WORLD_PACK.pack_id),
+        world_pack_version=(URBAN_OCCULT_WORLD_PACK.version if preset is not None else GENERIC_STARTER_WORLD_PACK.version),
+        world_pack_display_name=(
+            URBAN_OCCULT_WORLD_PACK.display_name if preset is not None else GENERIC_STARTER_WORLD_PACK.display_name
+        ),
         summary=request.world_description[:600],
         start_location_name="Marktplatz",
         start_hook=start_hook,
