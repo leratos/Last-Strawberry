@@ -1720,6 +1720,18 @@ export function App() {
                         npcRef.discovery_state.dialog_hint.trim() ? (
                           <p className="list-subtle">Hinweis: {String(npcRef.discovery_state.dialog_hint)}</p>
                         ) : null}
+                        {typeof npcRef?.discovery_state?.dialog_state === "string" &&
+                        npcRef.discovery_state.dialog_state.trim() ? (
+                          <p className="list-subtle">
+                            Dialogzustand: {String(npcRef.discovery_state.dialog_state)}
+                          </p>
+                        ) : null}
+                        {typeof npcRef?.discovery_state?.dialog_topics_hint === "string" &&
+                        npcRef.discovery_state.dialog_topics_hint.trim() ? (
+                          <p className="list-subtle">
+                            Themen: {String(npcRef.discovery_state.dialog_topics_hint)}
+                          </p>
+                        ) : null}
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                         ) : null}
