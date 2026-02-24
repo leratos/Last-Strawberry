@@ -50,13 +50,6 @@ type ClarifyCandidate = {
   scene_zone_name?: string;
   distance_band_to_player?: string;
 };
-type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
-type ActiveClarifyState = {
-  turnId: string;
-  rawPlayerInput: string;
-  event: TurnSystemEventView;
-};
-type TurnProviderTraceView = NonNullable<TurnRunResponse["provider_trace"]>;
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -542,26 +535,6 @@ export function App() {
     }
     return "";
   }, [composerActionKind, selectedComposerTarget]);
-
-  const activeClarify = useMemo(() => findLatestClarifyState(context), [context]);
-  const providerTraceSummary = useMemo(() => {
-    if (!lastProviderTrace) {
-      return "";
-    }
-    return [lastProviderTrace.intent, lastProviderTrace.narration].map(formatCapabilityTraceSummary).join(" | ");
-  }, [lastProviderTrace]);
-  const bootstrapTraceSummary = useMemo(
-    () => (lastBootstrapTrace ? formatCapabilityTraceSummary(lastBootstrapTrace) : ""),
-    [lastBootstrapTrace],
-  );
-  const activeQuests = useMemo(
-    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() !== "completed"),
-    [context],
-  );
-  const completedQuests = useMemo(
-    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() === "completed"),
-    [context],
-  );
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
