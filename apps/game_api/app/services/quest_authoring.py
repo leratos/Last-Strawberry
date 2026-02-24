@@ -18,6 +18,61 @@ class QuestAdvanceResult:
     system_events: list[TurnSystemEvent]
 
 
+def derive_story_flags_from_quests(
+    *,
+    quests: list[WorldQuestState],
+    existing_flags: dict[str, str | int | bool] | None = None,
+) -> dict[str, str | int | bool]:
+    """Derive stable story flags from quest/objective progression (MVP).
+
+    This keeps `world_story_flags` in sync with quest state without requiring
+    a full story-transition engine yet.
+    """
+    next_flags: dict[str, str | int | bool] = dict(existing_flags or {})
+
+    def _objective_completed(quest: WorldQuestState, objective_id: str) -> bool:
+        for objective in quest.objectives:
+            if objective.objective_id == objective_id:
+                return objective.status == "completed"
+        return False
+
+    starter_quest = next((q for q in quests if q.quest_id == URBAN_OCCULT_QUEST_ID), None)
+    followup_quest = next((q for q in quests if q.quest_id == URBAN_OCCULT_FOLLOWUP_QUEST_ID), None)
+
+    if starter_quest is not None:
+        kael_interviewed = _objective_completed(starter_quest, "speak_with_kael")
+        supply_crate_inspected = _objective_completed(starter_quest, "inspect_supply_crate")
+        mira_report_completed = _objective_completed(starter_quest, "report_to_mira")
+        ritual_leads_quest_completed = starter_quest.status == "completed"
+
+        next_flags["kael_interviewed"] = kael_interviewed
+        next_flags["supply_crate_inspected"] = supply_crate_inspected
+        next_flags["mira_report_completed"] = mira_report_completed
+        next_flags["ritual_leads_quest_completed"] = ritual_leads_quest_completed
+
+        # "Scene known" should stay false at initial seed, but become true once
+        # the player meaningfully engages with the starter investigation loop.
+        if any((kael_interviewed, supply_crate_inspected, mira_report_completed, ritual_leads_quest_completed)):
+            next_flags["ritual_scene_known"] = True
+
+    if followup_quest is not None:
+        rune_traces_inspected = _objective_completed(followup_quest, "inspect_rune_traces")
+        sealed_case_opened = _objective_completed(followup_quest, "open_sealed_case")
+        kael_followup_crosschecked = _objective_completed(followup_quest, "crosscheck_with_kael")
+        followup_completed = followup_quest.status == "completed"
+
+        next_flags["ritual_resonance_followup_unlocked"] = True
+        next_flags["rune_traces_inspected"] = rune_traces_inspected
+        next_flags["sealed_case_opened"] = sealed_case_opened
+        next_flags["kael_followup_crosschecked"] = kael_followup_crosschecked
+        next_flags["ritual_resonance_followup_completed"] = followup_completed
+
+        if any((rune_traces_inspected, sealed_case_opened, kael_followup_crosschecked, followup_completed)):
+            next_flags["ritual_scene_known"] = True
+
+    return next_flags
+
+
 def initial_quest_states_for_world_seed(world_seed: WorldSeed) -> list[WorldQuestState]:
     if not _looks_urban_occult_world_seed(world_seed):
         return []

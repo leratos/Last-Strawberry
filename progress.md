@@ -263,3 +263,7 @@ pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/t
 pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 321 passed.
 - Offene Punkte / technische Schuld: Dialogzustaende liefern aktuell nur Hinweise/Themen (kein echtes Topic-Auswahl-/Antwortsystem, keine authored Dialogknoten). Fuer 'erste Welt richtig bespielbar' als naechstes: authored Dialogantworten/Topic-Auswirkungen + Quest-Flag-Transitions statt reiner Objective-Progression.
 
+
+- G350 Hotfix Draft (gestartet): ImportError beim Start von game_api beheben (derive_story_flags_from_quests fehlt in quest_authoring.py, wird fuer main-Kompatibilitaet wiederhergestellt).
+
+- G350 Hotfix abgeschlossen: Fehlende Funktion derive_story_flags_from_quests in quest_authoring.py wiederhergestellt (MVP-Flag-Ableitung fuer Starter-/Followup-Quest), damit persistence.py-Import auf main wieder kompatibel ist. Tests: gezielter Route-Test G260 (1 passed) + Modulimport pps.game_api.app.main OK.
