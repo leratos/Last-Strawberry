@@ -54,6 +54,10 @@ type DialogTopicOption = {
   topic_id: string;
   label: string;
   summary?: string;
+  future_check_attribute?: string;
+  future_check_label?: string;
+  future_check_dc?: number;
+  requires_flag?: string;
 };
 type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
 type ActiveClarifyState = {
@@ -122,11 +126,29 @@ function parseDialogTopicOptions(rawValue: unknown): DialogTopicOption[] {
     return parsed
       .filter((entry) => entry && typeof entry === "object")
       .map((entry) => {
-        const topic = entry as { topic_id?: unknown; label?: unknown; summary?: unknown };
+        const topic = entry as {
+          topic_id?: unknown;
+          label?: unknown;
+          summary?: unknown;
+          future_check_attribute?: unknown;
+          future_check_label?: unknown;
+          future_check_dc?: unknown;
+          requires_flag?: unknown;
+        };
         return {
           topic_id: typeof topic.topic_id === "string" ? topic.topic_id.trim() : "",
           label: typeof topic.label === "string" ? topic.label.trim() : "",
           summary: typeof topic.summary === "string" ? topic.summary.trim() : undefined,
+          future_check_attribute:
+            typeof topic.future_check_attribute === "string" ? topic.future_check_attribute.trim() : undefined,
+          future_check_label: typeof topic.future_check_label === "string" ? topic.future_check_label.trim() : undefined,
+          future_check_dc:
+            typeof topic.future_check_dc === "number"
+              ? topic.future_check_dc
+              : typeof topic.future_check_dc === "string" && topic.future_check_dc.trim()
+                ? Number(topic.future_check_dc)
+                : undefined,
+          requires_flag: typeof topic.requires_flag === "string" ? topic.requires_flag.trim() : undefined,
         };
       })
       .filter((topic) => Boolean(topic.topic_id && topic.label));
@@ -1813,6 +1835,22 @@ export function App() {
                               >
                                 {topic.label}
                               </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        {dialogTopicOptions.length > 0 ? (
+                          <div className="list-subtle">
+                            {dialogTopicOptions.map((topic) => (
+                              <div key={`${entry.bundle.profile.npc_id}:${topic.topic_id}:meta`}>
+                                Topic {topic.label}
+                                {topic.future_check_label || topic.future_check_attribute
+                                  ? ` | Probe spaeter: ${topic.future_check_label || topic.future_check_attribute}${
+                                      typeof topic.future_check_dc === "number" && Number.isFinite(topic.future_check_dc)
+                                        ? ` (DC ${topic.future_check_dc})`
+                                        : ""
+                                    }`
+                                  : ""}
+                              </div>
                             ))}
                           </div>
                         ) : null}

@@ -87,7 +87,7 @@ def build_npc_dialog_topics_for_context(
     npc_id: str,
     npc_name: str,
     npc_role: str | None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, str | int | bool]]:
     if not quests:
         return []
     lowered_name = (npc_name or "").strip().lower()
@@ -96,7 +96,7 @@ def build_npc_dialog_topics_for_context(
     is_mira = lowered_name == "mira"
     flags = dict(story_flags or {})
 
-    topics: list[dict[str, str]] = []
+    topics: list[dict[str, str | int | bool]] = []
     for quest in quests:
         if quest.status == "completed":
             continue
@@ -109,11 +109,17 @@ def build_npc_dialog_topics_for_context(
                             "topic_id": "kael_ritual_overview",
                             "label": "Ritualablauf",
                             "summary": "Kael nach dem Ablauf des fehlgeschlagenen Binder-Rituals fragen.",
+                            "future_check_attribute": "intelligence",
+                            "future_check_label": "Ritualanalyse",
+                            "future_check_dc": 12,
                         },
                         {
                             "topic_id": "kael_witness_pattern",
                             "label": "Augenzeugenmuster",
                             "summary": "Kael nach auffaelligen Bewegungen oder Personen fragen.",
+                            "future_check_attribute": "charisma",
+                            "future_check_label": "Nachbohren",
+                            "future_check_dc": 11,
                         },
                     ]
                 )
@@ -124,11 +130,15 @@ def build_npc_dialog_topics_for_context(
                             "topic_id": "mira_crosscheck_findings",
                             "label": "Funde abgleichen",
                             "summary": "Mira um Einordnung von Kistenfund und Kaels Aussage bitten.",
+                            "requires_flag": "supply_crate_inspected",
                         },
                         {
                             "topic_id": "mira_next_lead",
                             "label": "Naechste Spur",
                             "summary": "Mira nach einer priorisierten Anschlussspur fragen.",
+                            "future_check_attribute": "intelligence",
+                            "future_check_label": "Spurlogik",
+                            "future_check_dc": 10,
                         },
                     ]
                 )
@@ -139,6 +149,9 @@ def build_npc_dialog_topics_for_context(
                         "topic_id": "mira_scene_control",
                         "label": "Spuren sichern",
                         "summary": "Mit Mira abstimmen, wie Spuren/Koffer abgesichert werden sollten.",
+                        "future_check_attribute": "dexterity",
+                        "future_check_label": "Sichern ohne Spuren zu stoeren",
+                        "future_check_dc": 12,
                     }
                 )
             if is_kael and stage in {"trace_residue", "crosscheck_with_kael"}:
@@ -147,6 +160,9 @@ def build_npc_dialog_topics_for_context(
                         "topic_id": "kael_sabotage_hypothesis",
                         "label": "Sabotageverdacht",
                         "summary": "Kael mit dem Verdacht einer Sabotage konfrontieren.",
+                        "future_check_attribute": "charisma",
+                        "future_check_label": "Konfrontation",
+                        "future_check_dc": 13,
                     }
                 )
 
@@ -156,6 +172,9 @@ def build_npc_dialog_topics_for_context(
     for topic in topics:
         topic_id = str(topic.get("topic_id") or "").strip()
         if not topic_id or topic_id in seen:
+            continue
+        requires_flag = str(topic.get("requires_flag") or "").strip()
+        if requires_flag and not bool(flags.get(requires_flag, False)):
             continue
         if bool(flags.get(f"dialog_topic_used_{topic_id}", False)):
             continue
@@ -191,6 +210,10 @@ def apply_authored_dialog_topics_for_turn(
         flag_key = f"dialog_topic_used_{topic_id}"
         already_used = bool(updated_flags.get(flag_key, False))
         target_name = str(action.parameters.get("target_name") or action.target_ref or "NPC").strip()
+        try:
+            target_standing = int(action.parameters.get("target_standing"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            target_standing = 0
 
         response_text = ""
         if topic_id == "kael_ritual_overview":
@@ -205,15 +228,28 @@ def apply_authored_dialog_topics_for_turn(
             response_text = (
                 "Kael skizziert den Ablauf des Binder-Rituals und betont, dass der Bruch genau im Umschaltmoment der Energiezufuhr einsetzte."
             )
+            if target_standing >= 2:
+                updated_flags["kael_shared_circuit_detail"] = True
+                response_text = (
+                    "Kael schildert den Ablauf des Binder-Rituals ungewoehnlich praezise und nennt sogar den Moment, in dem die Kreise aus dem Takt gerieten."
+                )
         elif topic_id == "kael_witness_pattern":
             updated_flags[flag_key] = True
             updated_flags["kael_witness_pattern_heard"] = True
-            response_text = (
-                "Kael erinnert sich an zwei Personen, die kurz vor dem Ausfall auffaellig gegen den Strom am Brunnenplatz vorbeigingen."
-            )
+            if target_standing <= 0:
+                updated_flags["kael_witness_pattern_partial"] = True
+                response_text = (
+                    "Kael bleibt vage, bestaetigt aber, dass kurz vor dem Ausfall ungewohnte Bewegungen am Brunnenplatz auffielen."
+                )
+            else:
+                updated_flags["kael_witness_pattern_named"] = True
+                response_text = (
+                    "Kael erinnert sich an zwei Personen, die kurz vor dem Ausfall auffaellig gegen den Strom am Brunnenplatz vorbeigingen."
+                )
         elif topic_id == "mira_crosscheck_findings":
             updated_flags[flag_key] = True
             updated_flags["mira_findings_crosschecked"] = True
+            updated_flags["mira_confirms_followup_route"] = True
             if starter_quest is not None:
                 _update_objective_hint(
                     starter_quest,
@@ -226,11 +262,19 @@ def apply_authored_dialog_topics_for_turn(
         elif topic_id == "mira_next_lead":
             updated_flags[flag_key] = True
             updated_flags["mira_next_lead_requested"] = True
+            updated_flags["followup_route_briefed"] = True
             response_text = "Mira empfiehlt, zuerst die sichtbaren Ritualspuren zu sichern und danach den versiegelten Koffer zu untersuchen."
         elif topic_id == "mira_scene_control":
             updated_flags[flag_key] = True
             updated_flags["mira_scene_control_plan"] = True
+            updated_flags["scene_control_protocol_active"] = True
             response_text = "Mira weist dich an, die Spuren zuerst zu sichern und den Koffer erst danach in Deckung zu oeffnen."
+            if followup_quest is not None:
+                _update_objective_hint(
+                    followup_quest,
+                    "inspect_rune_traces",
+                    "Mira will, dass du die Runenspuren zuerst sicherst, bevor der Koffer geoeffnet wird.",
+                )
         elif topic_id == "kael_sabotage_hypothesis":
             updated_flags[flag_key] = True
             updated_flags["kael_sabotage_hypothesis_shared"] = True
@@ -247,9 +291,15 @@ def apply_authored_dialog_topics_for_turn(
                     "crosscheck_with_kael",
                     "Kael hat den Sabotageverdacht eingeraeumt; die Spur weist auf gezielte Stoerung statt Unfall hin.",
                 )
-            response_text = (
-                "Kael reagiert angespannt auf den Sabotageverdacht und raeumt ein, dass die Stoerung eher gesetzt als zufaellig gewesen sein koennte."
-            )
+            if target_standing <= -1:
+                updated_flags["kael_defensive_under_pressure"] = True
+                response_text = (
+                    "Kael reagiert gereizt auf den Sabotageverdacht und versucht auszuweichen, bestaetigt aber zwischen den Zeilen eine gezielte Stoerung."
+                )
+            else:
+                response_text = (
+                    "Kael reagiert angespannt auf den Sabotageverdacht und raeumt ein, dass die Stoerung eher gesetzt als zufaellig gewesen sein koennte."
+                )
         else:
             continue
 
@@ -262,6 +312,7 @@ def apply_authored_dialog_topics_for_turn(
                     "topic_id": topic_id,
                     "target_name": target_name,
                     "topic_reused": already_used,
+                    "target_standing": target_standing,
                 },
             )
         )
