@@ -489,6 +489,64 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(kael_hint_2.get("discovery_state", {}).get("dialog_state"), "followup_crosscheck")
         self.assertIn("Koffer", str(kael_hint_2.get("discovery_state", {}).get("dialog_hint", "")))
 
+    def test_g400_authored_dialog_topic_sets_flag_and_updates_hint(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g400-dialog-topic",
+                "world_description": "Eine moderne Stadt mit geheimer Magie, Binder-Ritual und Fraktionsdruck am Marktplatz.",
+                "character_description": "Ein Ermittler mit Fokus auf Aussagen und Widersprueche.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_before = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_before.status_code, 200)
+        ctx_before = context_before.json()
+        kael_ref = next(entry for entry in ctx_before["target_catalog"]["npcs"] if entry["name"] == "Kael")
+        topics_json = str(kael_ref.get("discovery_state", {}).get("dialog_topics_json") or "")
+        self.assertIn("kael_ritual_overview", topics_json)
+
+        talk_topic = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Frage Kael zum Ritualablauf",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": kael_ref["ref_id"],
+                            "target_name": kael_ref["name"],
+                            "target_role": kael_ref.get("role"),
+                            "target_location_name": kael_ref.get("location_name"),
+                            "target_zone_id": kael_ref.get("scene_zone_id"),
+                            "target_zone_name": kael_ref.get("scene_zone_name"),
+                            "target_distance_band": kael_ref.get("distance_band_to_player"),
+                            "topic_id": "kael_ritual_overview",
+                            "topic_label": "Ritualablauf",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_topic.status_code, 200)
+        payload = talk_topic.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("dialog_topic_applied", event_codes)
+        self.assertIn("dialog_topic_response", event_codes)
+
+        story_flags = payload["context_after_turn"]["story_flags"]
+        self.assertTrue(story_flags["dialog_topic_used_kael_ritual_overview"])
+        self.assertTrue(story_flags["kael_ritual_background_heard"])
+
+        starter_quest = next(q for q in payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-market-ritual-leads")
+        speak_obj = next(obj for obj in starter_quest["objectives"] if obj["objective_id"] == "speak_with_kael")
+        self.assertIn("Ritualablauf", speak_obj["hint"])
+
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

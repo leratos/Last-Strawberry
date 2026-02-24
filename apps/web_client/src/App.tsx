@@ -50,6 +50,11 @@ type ClarifyCandidate = {
   scene_zone_name?: string;
   distance_band_to_player?: string;
 };
+type DialogTopicOption = {
+  topic_id: string;
+  label: string;
+  summary?: string;
+};
 type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
 type ActiveClarifyState = {
   turnId: string;
@@ -103,6 +108,31 @@ function saveQueueMacrosToStorage(macros: QueueMacro[]): void {
     return;
   }
   window.localStorage.setItem(QUEUE_MACROS_STORAGE_KEY, JSON.stringify(macros));
+}
+
+function parseDialogTopicOptions(rawValue: unknown): DialogTopicOption[] {
+  if (typeof rawValue !== "string" || !rawValue.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => {
+        const topic = entry as { topic_id?: unknown; label?: unknown; summary?: unknown };
+        return {
+          topic_id: typeof topic.topic_id === "string" ? topic.topic_id.trim() : "",
+          label: typeof topic.label === "string" ? topic.label.trim() : "",
+          summary: typeof topic.summary === "string" ? topic.summary.trim() : undefined,
+        };
+      })
+      .filter((topic) => Boolean(topic.topic_id && topic.label));
+  } catch {
+    return [];
+  }
 }
 
 function isApproachNotNeeded(distanceBand: DistanceBand): boolean {
@@ -953,6 +983,18 @@ export function App() {
     };
   }
 
+  function buildTalkTopicAction(target: StructuredTarget, topic: DialogTopicOption): StructuredTurnAction {
+    const base = buildStructuredAction("TALK", target);
+    return {
+      ...base,
+      parameters: {
+        ...(base.parameters || {}),
+        topic_id: topic.topic_id,
+        topic_label: topic.label,
+      },
+    };
+  }
+
   async function runBroadInspectQuickAction(): Promise<void> {
     if (!worldId.trim()) {
       return;
@@ -1701,6 +1743,7 @@ export function App() {
                     };
                     const disableApproach = isRunningTurn || isApproachNotNeeded(npcDistance);
                     const disableRetreat = isRunningTurn || isRetreatNotNeeded(npcDistance);
+                    const dialogTopicOptions = parseDialogTopicOptions(npcRef?.discovery_state?.dialog_topics_json);
                     return (
                       <li key={entry.bundle.profile.npc_id}>
                         <p className="list-title">
@@ -1746,6 +1789,32 @@ export function App() {
                           <p className="list-subtle">
                             Themen: {String(npcRef.discovery_state.dialog_topics_hint)}
                           </p>
+                        ) : null}
+                        {dialogTopicOptions.length > 0 ? (
+                          <div className="turn-actions">
+                            {dialogTopicOptions.map((topic) => (
+                              <button
+                                key={`${entry.bundle.profile.npc_id}:${topic.topic_id}`}
+                                type="button"
+                                className="secondary-btn"
+                                disabled={isRunningTurn}
+                                title={topic.summary || topic.label}
+                                onClick={() =>
+                                  void executeStructuredActions(
+                                    [
+                                      {
+                                        label: `Topic: ${entry.bundle.profile.name} / ${topic.label}`,
+                                        action: buildTalkTopicAction(quickNpcTarget, topic),
+                                      },
+                                    ],
+                                    "Dialog-Topic",
+                                  )
+                                }
+                              >
+                                {topic.label}
+                              </button>
+                            ))}
+                          </div>
                         ) : null}
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>

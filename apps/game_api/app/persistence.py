@@ -11,6 +11,7 @@ from uuid import uuid4
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
 from apps.game_api.app.services.quest_authoring import (
     advance_quests_for_turn,
+    apply_authored_dialog_topics_for_turn,
     derive_story_flags_from_quests,
     initial_quest_states_for_world_seed,
 )
@@ -299,22 +300,28 @@ class WorldRepository:
                         intent=intent,
                         resolution=resolution,
                     )
-                    self._apply_world_quest_updates(
-                        conn=conn,
-                        world_id=world_id,
-                        world_character_id=resolution.world_character_id,
-                        quests=quest_progress.quests,
-                    )
-                    resolution.system_events.extend(quest_progress.system_events)
                     next_story_flags = derive_story_flags_from_quests(
                         quests=quest_progress.quests,
                         existing_flags=current_story_flags,
                     )
+                    dialog_topic_effects = apply_authored_dialog_topics_for_turn(
+                        quests=quest_progress.quests,
+                        story_flags=next_story_flags,
+                        resolution=resolution,
+                    )
+                    self._apply_world_quest_updates(
+                        conn=conn,
+                        world_id=world_id,
+                        world_character_id=resolution.world_character_id,
+                        quests=dialog_topic_effects.quests,
+                    )
+                    resolution.system_events.extend(quest_progress.system_events)
+                    resolution.system_events.extend(dialog_topic_effects.system_events)
                     self._upsert_world_story_flags(
                         conn=conn,
                         world_id=world_id,
                         world_character_id=resolution.world_character_id,
-                        flags=next_story_flags,
+                        flags=dialog_topic_effects.story_flags,
                         allow_insert=True,
                     )
 
