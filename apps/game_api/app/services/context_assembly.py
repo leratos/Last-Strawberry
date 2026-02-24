@@ -4,6 +4,7 @@ import re
 
 from ls_shared_schemas.game_context import GameContextResponse, GameTargetCatalog, GameTargetReference, RetrievedNpcMemoryBundle
 from ls_shared_schemas.npc_memory import NPCMemoryBundle
+from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import PersistedTurnRecord
 from ls_shared_schemas.world import JournalEntryRecord, WorldSessionResponse
 
@@ -13,6 +14,7 @@ def assemble_game_context(
     world: WorldSessionResponse,
     turns: list[PersistedTurnRecord],
     npc_memory: list[NPCMemoryBundle],
+    quests: list[WorldQuestState] | None = None,
     retrieval_player_input: str | None = None,
     scene_points: list[GameTargetReference] | None = None,
     journal_limit: int = 20,
@@ -35,6 +37,7 @@ def assemble_game_context(
 
     return GameContextResponse(
         world=world,
+        quests=list(quests or []),
         recent_turns=recent_turns,
         recent_journal=recent_journal,
         npc_memory=retrieved_memory,

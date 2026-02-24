@@ -27,6 +27,7 @@ _APPROACH_PATTERNS = [
     re.compile(r"\btrete(?:\s+einen)?(?:\s+schritt)?\s+n(?:a|ä)her\s+an\s+([\w _-]+)", re.I),
 ]
 _USE_VERBS = ("benutze", "verwende", "nutze", "trinke", "iss", "aktiviere")
+_MOVE_PATTERNS_VERB_HINTS = ("gehe", "geh", "laufe", "reise", "betrete", "bewege", "begib")
 _OPEN_VERBS = ("oeffne", "öffne", "mache auf", "klappe auf")
 _SEARCH_VERBS = ("durchsuche", "durchforste", "wuehle", "wühle")
 _TAKE_VERBS = ("nimm", "nehme", "hebe", "packe", "pack", "stecke")
@@ -65,9 +66,114 @@ _DESCRIPTIVE_NPC_REFERENCE_HINTS = (
 
 
 RefMetaIndex = dict[str, dict[str, str]]
+ClauseChainContext = dict[str, dict[str, str]]
 
 
 def analyze_player_input_preview(
+    *,
+    world_id: str,
+    world_character_id: str,
+    player_input: str,
+    inventory: list[InventoryItemInstance],
+    known_npc_names: list[str] | None = None,
+    known_locations: list[str] | None = None,
+    known_npc_refs: list[dict[str, str]] | None = None,
+    known_location_refs: list[dict[str, str]] | None = None,
+    known_scene_point_refs: list[dict[str, str]] | None = None,
+) -> TurnIntent:
+    text = unicodedata.normalize("NFC", (player_input or "").strip())
+    clauses = _split_preview_action_clauses(text)
+    if len(clauses) <= 1:
+        return _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=text,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+
+    aggregated_actions: list[TurnIntentAction] = []
+    aggregated_notes: list[str] = [f"Mehrteilige Eingabe erkannt: {len(clauses)} Teilabschnitte."]
+    parsed_clause_count = 0
+    unparsed_clauses: list[str] = []
+    chain_context = _new_clause_chain_context()
+
+    for idx, clause in enumerate(clauses, start=1):
+        clause_input, carryover_note = _apply_clause_chain_carryover(clause, chain_context)
+        if carryover_note:
+            aggregated_notes.append(f"Teil {idx}: {carryover_note}")
+        clause_result = _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=clause_input,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+        for note in clause_result.analysis_notes:
+            aggregated_notes.append(f"Teil {idx}: {note}")
+
+        non_clarify_actions = [action for action in clause_result.actions if action.action_type != ActionType.clarify]
+        if non_clarify_actions:
+            parsed_clause_count += 1
+            aggregated_actions.extend(clause_result.actions)
+            _update_clause_chain_context(chain_context, non_clarify_actions)
+        else:
+            unparsed_clauses.append(clause)
+
+    if parsed_clause_count == 0:
+        return _analyze_player_input_preview_single_clause(
+            world_id=world_id,
+            world_character_id=world_character_id,
+            player_input=text,
+            inventory=inventory,
+            known_npc_names=known_npc_names,
+            known_locations=known_locations,
+            known_npc_refs=known_npc_refs,
+            known_location_refs=known_location_refs,
+            known_scene_point_refs=known_scene_point_refs,
+        )
+
+    if unparsed_clauses:
+        preview_unparsed = "; ".join(unparsed_clauses[:2])
+        aggregated_actions.append(
+            TurnIntentAction(
+                action_type=ActionType.clarify,
+                target_kind="system",
+                parameters={
+                    "intent": "clarify",
+                    "reason": "partial_multiclause_parse",
+                    "message": (
+                        "Mehrteilige Eingabe wurde nur teilweise verarbeitet. "
+                        "Bitte den restlichen Teil einzeln senden oder die Struktur-Queue nutzen."
+                    ),
+                    "suggested_action": "use_structured_queue",
+                    "unparsed_preview": preview_unparsed[:240],
+                },
+                confidence=0.4,
+            )
+        )
+        aggregated_notes.append(
+            f"Teilweise verarbeitet: {parsed_clause_count}/{len(clauses)} Teilabschnitte. Unklar: {preview_unparsed}"
+        )
+
+    return TurnIntent(
+        world_id=world_id,
+        world_character_id=world_character_id,
+        raw_player_input=text,
+        actions=aggregated_actions,
+        analysis_notes=aggregated_notes,
+    )
+
+
+def _analyze_player_input_preview_single_clause(
     *,
     world_id: str,
     world_character_id: str,
@@ -597,6 +703,246 @@ def analyze_player_input_preview(
         actions=actions,
         analysis_notes=notes,
     )
+
+
+def _split_preview_action_clauses(text: str) -> list[str]:
+    normalized = (text or "").strip()
+    if not normalized:
+        return []
+    # Conservative splitting: explicit sequence markers and sentence separators.
+    split_pattern = re.compile(
+        r"(?:\s*,\s*|\s+)(?:dann|danach|anschlie(?:ss|ß)end)(?:\s+|$)|[;]+",
+        re.I,
+    )
+    explicit_parts = [part.strip(" \t\r\n,.;") for part in split_pattern.split(normalized) if part and part.strip(" \t\r\n,.;")]
+    final_parts: list[str] = []
+    for part in explicit_parts or [normalized]:
+        final_parts.extend(_split_clause_on_safe_und(part))
+    return final_parts or [normalized]
+
+
+def _new_clause_chain_context() -> ClauseChainContext:
+    return {"npc": {}, "scene": {}}
+
+
+def _apply_clause_chain_carryover(clause: str, chain_context: ClauseChainContext) -> tuple[str, str | None]:
+    original = (clause or "").strip()
+    if not original:
+        return original, None
+    lowered = original.lower()
+    if not re.search(r"\b(?:ihn|ihm|sie|ihr|es)\b", lowered, re.I):
+        return original, None
+
+    rewritten = original
+    notes: list[str] = []
+    categories = _clause_action_categories(original)
+
+    npc_context = chain_context.get("npc") or {}
+    npc_name = str(npc_context.get("target_name") or "").strip()
+    if npc_name and categories & {"talk", "attack", "approach", "retreat"}:
+        candidate = rewritten
+        candidate = re.sub(r"\b(mit|zu|von)\s+(?:ihm|ihr)\b", rf"\1 {npc_name}", candidate, flags=re.I)
+        candidate = re.sub(
+            r"\b(spreche|rede|frage|unterhalte)\s+(?:ihn|sie|ihm|ihr)\b",
+            rf"\1 {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(greife|attackiere|schlage|haue|steche|schiesse|schieße|feuere|werfe)\s+auf\s+(?:ihn|sie)\b",
+            rf"\1 auf {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(greife|attackiere|schlage|haue|steche)\s+(?:ihn|sie)\b",
+            rf"\1 {npc_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\b(?:an|auf)\s+(?:ihn|sie)\s+zu\b",
+            lambda m: m.group(0).split()[0] + f" {npc_name} zu",
+            candidate,
+            flags=re.I,
+        )
+        if candidate != rewritten:
+            rewritten = candidate
+            notes.append(f"Pronomenziel (NPC) auf {npc_name} aufgeloest")
+
+    scene_context = chain_context.get("scene") or {}
+    scene_name = str(scene_context.get("target_name") or "").strip()
+    if scene_name and categories & {"inspect", "open", "search", "take"}:
+        candidate = rewritten
+        candidate = re.sub(
+            r"\b(untersuche|inspiziere|betrachte|oeffne|öffne|durchsuche|durchforste|wuehle|wühle|nimm|nehme|hebe)\s+(?:sie|ihn|es)\b",
+            rf"\1 {scene_name}",
+            candidate,
+            flags=re.I,
+        )
+        candidate = re.sub(
+            r"\bmache\s+(?:sie|ihn|es)\s+auf\b",
+            f"mache {scene_name} auf",
+            candidate,
+            flags=re.I,
+        )
+        if candidate != rewritten:
+            rewritten = candidate
+            notes.append(f"Pronomenziel (Umwelt) auf {scene_name} aufgeloest")
+
+    if rewritten == original:
+        return original, None
+    return rewritten, "; ".join(notes)
+
+
+def _update_clause_chain_context(chain_context: ClauseChainContext, actions: list[TurnIntentAction]) -> None:
+    for action in actions:
+        action_type = action.action_type
+        params = action.parameters or {}
+        if action_type in {ActionType.talk, ActionType.attack, ActionType.approach, ActionType.retreat}:
+            target_name = str(params.get("target_name") or "").strip()
+            if target_name and target_name.lower() not in _GENERIC_NPC_TARGET_WORDS:
+                chain_context["npc"] = {
+                    "target_name": target_name,
+                    "target_id": str(params.get("target_id") or action.target_ref or "") or "",
+                    "target_role": str(params.get("target_role") or "") or "",
+                    "target_kind": str(action.target_kind or "npc"),
+                }
+        elif action_type in {ActionType.inspect, ActionType.open, ActionType.search, ActionType.take}:
+            target_name = str(params.get("target_name") or "").strip()
+            target_kind = str(params.get("target_kind") or action.target_kind or "").strip()
+            if target_name and target_kind in {"scene_point", "scene_object", "container"}:
+                chain_context["scene"] = {
+                    "target_name": target_name,
+                    "target_id": str(params.get("target_id") or action.target_ref or "") or "",
+                    "target_kind": target_kind,
+                }
+
+
+def _split_clause_on_safe_und(text: str) -> list[str]:
+    clause = (text or "").strip(" \t\r\n,.;")
+    if not clause:
+        return []
+    parts = [clause]
+    changed = True
+    while changed:
+        changed = False
+        next_parts: list[str] = []
+        for part in parts:
+            split_index = _find_safe_und_split_index(part)
+            if split_index is None:
+                next_parts.append(part)
+                continue
+            left = part[:split_index].strip(" \t\r\n,.;")
+            right = part[split_index:].strip(" \t\r\n,.;")
+            if not left or not right:
+                next_parts.append(part)
+                continue
+            next_parts.extend([left, right])
+            changed = True
+        parts = next_parts
+    return parts
+
+
+def _find_safe_und_split_index(text: str) -> int | None:
+    for match in re.finditer(r"\bund\b", text, re.I):
+        left = text[: match.start()].strip()
+        right = text[match.end() :].strip()
+        if _should_split_on_und(left=left, right=right):
+            return match.start()
+    return None
+
+
+def _should_split_on_und(*, left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if not _starts_with_action_verb(right):
+        return False
+    right_categories = _clause_action_categories(right)
+    left_categories = _clause_action_categories(left)
+    if not right_categories or not left_categories:
+        return False
+    # Keep talk chains together: "rede ... und frage ..." often refers to one dialogue action.
+    if right_categories <= {"talk"}:
+        return False
+    # Avoid splitting into an incomplete prefix (e.g. "oeffne und durchsuche die Kiste").
+    if not _looks_like_complete_clause(left):
+        return False
+    return True
+
+
+def _starts_with_action_verb(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    return bool(
+        re.match(
+            (
+                r"^(?:ich\s+)?(?:gehe|geh|laufe|reise|betrete|bewege|begib|"
+                r"benutze|verwende|nutze|trinke|iss|aktiviere|"
+                r"oeffne|öffne|mache\s+auf|klappe\s+auf|"
+                r"durchsuche|durchforste|wuehle|wühle|"
+                r"nimm|nehme|hebe|packe|pack|"
+                r"greife|attackiere|schlage|haue|steche|schiesse|schieße|feuere|werfe|"
+                r"spreche|rede|frage|unterhalte|"
+                r"untersuche|umschauen|umsehen|betrachte|inspiziere|schaue|schau|suche|"
+                r"entferne|weiche|halte|"
+                r"naehere|nähere|annaehern|annähern|naeher|näher|trete|komme)\b"
+            ),
+            lowered,
+            re.I,
+        )
+    )
+
+
+def _clause_action_categories(text: str) -> set[str]:
+    lowered = (text or "").lower()
+    categories: set[str] = set()
+    if _contains_any_verb(lowered, _MOVE_PATTERNS_VERB_HINTS):
+        categories.add("move")
+    if _contains_any_verb(lowered, _TALK_VERBS):
+        categories.add("talk")
+    if _contains_any_verb(lowered, _INSPECT_VERBS):
+        categories.add("inspect")
+    if _contains_any_verb(lowered, _OPEN_VERBS):
+        categories.add("open")
+    if _contains_any_verb(lowered, _SEARCH_VERBS):
+        categories.add("search")
+    if _contains_any_verb(lowered, _TAKE_VERBS):
+        categories.add("take")
+    if _contains_any_verb(lowered, _USE_VERBS):
+        categories.add("use_item")
+    if _contains_any_verb(lowered, _ATTACK_VERBS + _RANGED_ATTACK_VERBS):
+        categories.add("attack")
+    if _contains_any_verb(lowered, _APPROACH_VERBS):
+        categories.add("approach")
+    if _contains_any_verb(lowered, _RETREAT_VERBS):
+        categories.add("retreat")
+    return categories
+
+
+def _looks_like_complete_clause(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if _extract_destination(stripped):
+        return True
+    if _extract_talk_target(stripped):
+        return True
+    if _extract_target_after_verb(stripped, _ATTACK_VERBS + _RANGED_ATTACK_VERBS):
+        return True
+    if _extract_approach_target(stripped):
+        return True
+    if _extract_retreat_target(stripped):
+        return True
+    if _extract_inspect_target(stripped):
+        return True
+    if _extract_open_search_target(stripped):
+        return True
+    if _contains_any_verb(lowered, _INSPECT_VERBS):
+        return True  # broad inspect / umsehen
+    return False
 
 
 def _extract_destination(text: str) -> str | None:

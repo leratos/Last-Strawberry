@@ -4,6 +4,7 @@ import {
   GAME_API_BASE_URL,
   GameContextResponse,
   getWorldContext,
+  LlmCapabilityTraceView,
   runTurn,
   StructuredTurnAction,
   TurnRunResponse,
@@ -55,6 +56,7 @@ type ActiveClarifyState = {
   rawPlayerInput: string;
   event: TurnSystemEventView;
 };
+type TurnProviderTraceView = NonNullable<TurnRunResponse["provider_trace"]>;
 type DistanceBand = "adjacent" | "near" | "far" | "unreachable" | string | undefined | null;
 type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "unknown";
 type ScenePointSort = "name" | "detail" | "zone";
@@ -201,6 +203,14 @@ function reactionStyleBadgeClass(role: string | undefined, standing: number | un
     return "npc-badge-freundlich";
   }
   return "npc-badge-vorsichtig";
+}
+
+function formatCapabilityTraceSummary(trace: LlmCapabilityTraceView): string {
+  const modelSuffix = trace.model ? ` (${trace.model})` : "";
+  const fallbackSuffix = trace.fallback_used
+    ? ` -> fallback${trace.fallback_reason ? `:${trace.fallback_reason}` : ""}`
+    : "";
+  return `${trace.capability}: ${trace.provider_used}${modelSuffix}${fallbackSuffix}`;
 }
 
 function eventGroupLabel(eventCode: string): string {
@@ -489,6 +499,8 @@ export function App() {
   const [lastActionMessage, setLastActionMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
+  const [lastProviderTrace, setLastProviderTrace] = useState<TurnProviderTraceView | null>(null);
+  const [lastBootstrapTrace, setLastBootstrapTrace] = useState<LlmCapabilityTraceView | null>(null);
   const [composerActionKind, setComposerActionKind] = useState<StructuredActionKind>("TALK");
   const [composerAttackMode, setComposerAttackMode] = useState<"melee" | "ranged">("melee");
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
@@ -532,6 +544,24 @@ export function App() {
   }, [composerActionKind, selectedComposerTarget]);
 
   const activeClarify = useMemo(() => findLatestClarifyState(context), [context]);
+  const providerTraceSummary = useMemo(() => {
+    if (!lastProviderTrace) {
+      return "";
+    }
+    return [lastProviderTrace.intent, lastProviderTrace.narration].map(formatCapabilityTraceSummary).join(" | ");
+  }, [lastProviderTrace]);
+  const bootstrapTraceSummary = useMemo(
+    () => (lastBootstrapTrace ? formatCapabilityTraceSummary(lastBootstrapTrace) : ""),
+    [lastBootstrapTrace],
+  );
+  const activeQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() !== "completed"),
+    [context],
+  );
+  const completedQuests = useMemo(
+    () => (context?.quests || []).filter((quest) => (quest.status || "").toLowerCase() === "completed"),
+    [context],
+  );
 
   const scenePointsForDisplay = useMemo(() => {
     if (!context) {
@@ -567,6 +597,9 @@ export function App() {
       setContext(nextContext);
       setWorldId(targetWorldId);
       setWorldIdInput(targetWorldId);
+      if (!retrievalHint) {
+        setLastProviderTrace(null);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Context konnte nicht geladen werden.");
     } finally {
@@ -579,6 +612,7 @@ export function App() {
       return;
     }
     setLastActionMessage("");
+    setLastBootstrapTrace(null);
     await loadContext(worldIdInput.trim());
     setLastActionMessage(`Welt geladen: ${worldIdInput.trim()}`);
   }
@@ -588,6 +622,7 @@ export function App() {
     setIsBootstrapping(true);
     setError("");
     setLastActionMessage("");
+    setLastBootstrapTrace(null);
     try {
       const created = await createWorldBootstrap({
         user_id: bootstrapForm.userId.trim(),
@@ -595,7 +630,9 @@ export function App() {
         character_description: bootstrapForm.characterDescription.trim(),
       });
       await loadContext(created.world_id);
-      setAnalysisNotes([]);
+    setAnalysisNotes([]);
+    setLastProviderTrace(null);
+      setLastBootstrapTrace(created.bootstrap_trace || null);
       setLastActionMessage(`Neue Welt erstellt: ${created.world_id}`);
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : "Bootstrap fehlgeschlagen.");
@@ -762,6 +799,7 @@ export function App() {
 
   async function applyTurnResult(runResult: TurnRunResponse, fallbackWorldId: string, retrievalHint: string): Promise<void> {
     setAnalysisNotes(runResult.analysis_context_notes || []);
+    setLastProviderTrace(runResult.provider_trace || null);
     if (runResult.context_after_turn) {
       setContext(runResult.context_after_turn);
       setWorldId(runResult.context_after_turn.world.world_id);
@@ -1024,6 +1062,18 @@ export function App() {
                   <p className="list-subtle analysis-notes">
                     Analyse-Kontext: {analysisNotes.join(" | ")}
                   </p>
+                ) : null}
+                {providerTraceSummary ? (
+                  <p className="list-subtle analysis-notes">Provider-Trace: {providerTraceSummary}</p>
+                ) : null}
+                {bootstrapTraceSummary ? (
+                  <p className="list-subtle analysis-notes">Bootstrap-Trace: {bootstrapTraceSummary}</p>
+                ) : null}
+                {context.quests.length > 0 ? (
+                  <div className="npc-badge-row">
+                    <span className="npc-badge npc-badge-distance">Quests aktiv: {activeQuests.length}</span>
+                    <span className="npc-badge npc-badge-vorsichtig">Quests erledigt: {completedQuests.length}</span>
+                  </div>
                 ) : null}
                 {(context.discovery_counts?.hidden_npc_count || 0) > 0 ||
                 (context.discovery_counts?.hidden_scene_point_count || 0) > 0 ? (
@@ -1532,6 +1582,31 @@ export function App() {
                   </li>
                 ))}
               </ul>
+              {context.quests.length > 0 ? (
+                <>
+                  <h3>Questlog (MVP)</h3>
+                  <ul className="list">
+                    {context.quests.map((quest) => (
+                      <li key={quest.quest_id}>
+                        <p className="list-title">
+                          {quest.title} ({quest.status})
+                        </p>
+                        <p className="list-subtle">Stage: {quest.current_stage}</p>
+                        <ul className="list list-tight">
+                          {quest.objectives.map((objective) => (
+                            <li key={objective.objective_id}>
+                              <span>
+                                [{objective.status}] {objective.title}
+                              </span>
+                              {objective.hint ? <p className="list-subtle">{objective.hint}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
             </>
           )}
         </article>
@@ -1641,6 +1716,10 @@ export function App() {
                           </span>
                         </div>
                         <p className="list-subtle">{distanceActionHint(npcDistance)}</p>
+                        {typeof npcRef?.discovery_state?.dialog_hint === "string" &&
+                        npcRef.discovery_state.dialog_hint.trim() ? (
+                          <p className="list-subtle">Hinweis: {String(npcRef.discovery_state.dialog_hint)}</p>
+                        ) : null}
                         {entry.bundle.recent_memories[0] ? (
                           <p className="list-subtle">{entry.bundle.recent_memories[0].summary}</p>
                         ) : null}

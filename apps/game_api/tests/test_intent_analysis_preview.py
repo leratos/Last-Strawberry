@@ -239,6 +239,119 @@ class TestIntentAnalysisPreview(unittest.TestCase):
         self.assertIn("MOVE", action_types)
         self.assertIn("CLARIFY", action_types)
 
+    def test_multiclause_with_dann_aggregates_talk_and_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich gehe zu Kael und rede mit ihm, dann untersuche die Kiste.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[
+                {
+                    "ref_id": "npc-kael",
+                    "name": "Kael",
+                    "role": "beschwoerer",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-fountain-ring",
+                    "scene_zone_name": "Brunnenplatz",
+                    "distance_band_to_player": "near",
+                }
+            ],
+            known_scene_point_refs=[
+                {
+                    "ref_id": "ctr-market-supplies",
+                    "name": "Kiste",
+                    "kind": "container",
+                    "location_name": "Marktplatz",
+                    "scene_zone_id": "zone-market-stalls",
+                    "scene_zone_name": "Marktstaende",
+                }
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("TALK", action_types)
+        self.assertIn("INSPECT", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        self.assertIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
+
+    def test_multiclause_partial_parse_adds_clarify_warning(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael, dann flurgel die Kiste.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("TALK", action_types)
+        self.assertIn("CLARIFY", action_types)
+        clarify_action = next(action for action in intent.actions if action.action_type.value == "CLARIFY")
+        self.assertEqual(clarify_action.parameters.get("reason"), "partial_multiclause_parse")
+        self.assertEqual(clarify_action.parameters.get("suggested_action"), "use_structured_queue")
+
+    def test_multiclause_with_safe_und_splits_talk_and_inspect(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael und untersuche die Vorratskiste.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+            known_scene_point_refs=[{"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("TALK", action_types)
+        self.assertIn("INSPECT", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        self.assertIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
+
+    def test_multiclause_resolves_scene_pronoun_from_previous_clause(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich untersuche die Vorratskiste, dann oeffne sie.",
+            inventory=[],
+            known_scene_point_refs=[
+                {"ref_id": "ctr-market-supplies", "name": "Vorratskiste", "kind": "container"}
+            ],
+        )
+        action_types = [action.action_type.value for action in intent.actions]
+        self.assertIn("INSPECT", action_types)
+        self.assertIn("OPEN", action_types)
+        self.assertNotIn("CLARIFY", action_types)
+        open_action = next(action for action in intent.actions if action.action_type.value == "OPEN")
+        self.assertEqual(open_action.target_ref, "ctr-market-supplies")
+        self.assertIn("Pronomenziel (Umwelt)", " ".join(intent.analysis_notes))
+
+    def test_multiclause_resolves_npc_pronoun_from_previous_clause(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael, dann rede mit ihm.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+        )
+        talk_actions = [action for action in intent.actions if action.action_type.value == "TALK"]
+        self.assertEqual(len(talk_actions), 2)
+        self.assertTrue(all(action.target_ref == "npc-kael" for action in talk_actions))
+        self.assertNotIn("CLARIFY", [action.action_type.value for action in intent.actions])
+        self.assertIn("Pronomenziel (NPC)", " ".join(intent.analysis_notes))
+
+    def test_does_not_split_talk_chain_with_und_frage(self):
+        intent = analyze_player_input_preview(
+            world_id="w1",
+            world_character_id="wc1",
+            player_input="Ich rede mit Kael und frage nach dem Ritual.",
+            inventory=[],
+            known_npc_names=["Kael"],
+            known_npc_refs=[{"ref_id": "npc-kael", "name": "Kael"}],
+        )
+        talk_actions = [action for action in intent.actions if action.action_type.value == "TALK"]
+        self.assertEqual(len(talk_actions), 1)
+        self.assertNotIn("Mehrteilige Eingabe erkannt", " ".join(intent.analysis_notes))
+
     def test_skips_location_move_when_phrase_targets_known_npc_for_talk(self):
         intent = analyze_player_input_preview(
             world_id="w1",

@@ -42,6 +42,22 @@ export type GameContextResponse = {
       created_at: string;
     }>;
   };
+  quests: Array<{
+    quest_id: string;
+    title: string;
+    description: string;
+    status: string;
+    current_stage: string;
+    objectives: Array<{
+      objective_id: string;
+      title: string;
+      status: string;
+      hint: string;
+    }>;
+    tags: string[];
+    updated_at: string;
+    completed_at?: string | null;
+  }>;
   recent_turns: Array<{
     turn_id: string;
     raw_player_input: string;
@@ -167,12 +183,26 @@ export type GameContextResponse = {
   };
 };
 
+export type LlmCapabilityTraceView = {
+  capability: string;
+  mode: string;
+  provider_policy: string;
+  provider_used: string;
+  model?: string | null;
+  fallback_used: boolean;
+  fallback_reason?: string | null;
+};
+
 export type TurnRunResponse = {
   turn: {
     turn_id: string;
   };
   journal_entry_ids: string[];
   analysis_context_notes: string[];
+  provider_trace?: {
+    intent: LlmCapabilityTraceView;
+    narration: LlmCapabilityTraceView;
+  } | null;
   context_before_turn: GameContextResponse | null;
   context_after_turn: GameContextResponse | null;
 };
@@ -195,6 +225,11 @@ export type WorldBootstrapRequest = {
   difficulty?: string;
 };
 
+export type WorldBootstrapCreateResponse = {
+  world_id: string;
+  bootstrap_trace?: LlmCapabilityTraceView | null;
+};
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${GAME_API_BASE_URL}${path}`, {
     ...init,
@@ -212,8 +247,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function createWorldBootstrap(payload: WorldBootstrapRequest): Promise<{ world_id: string }> {
-  return apiFetch<{ world_id: string }>("/v1/worlds/bootstrap", {
+export async function createWorldBootstrap(payload: WorldBootstrapRequest): Promise<WorldBootstrapCreateResponse> {
+  return apiFetch<WorldBootstrapCreateResponse>("/v1/worlds/bootstrap", {
     method: "POST",
     body: JSON.stringify(payload),
   });

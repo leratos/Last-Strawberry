@@ -4,6 +4,7 @@ from pydantic import Field
 
 from .common import LSBaseModel
 from .npc_memory import NPCMemoryBundle
+from .quests import WorldQuestState
 from .turns import PersistedTurnRecord
 from .world import JournalEntryRecord, WorldSessionResponse
 
@@ -39,6 +40,7 @@ class RetrievedNpcMemoryBundle(LSBaseModel):
 
 class GameContextResponse(LSBaseModel):
     world: WorldSessionResponse
+    quests: list[WorldQuestState] = Field(default_factory=list)
     recent_turns: list[PersistedTurnRecord] = Field(default_factory=list)
     recent_journal: list[JournalEntryRecord] = Field(default_factory=list)
     npc_memory: list[RetrievedNpcMemoryBundle] = Field(default_factory=list)

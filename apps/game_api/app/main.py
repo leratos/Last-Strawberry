@@ -11,17 +11,20 @@ from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.llm_runtime import build_llm_runtime
+from apps.game_api.app.services.quest_authoring import build_npc_dialog_hints_for_context
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
 from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCProfile
 from ls_shared_schemas.turns import (
+    LlmCapabilityTrace,
     NarrativeEnvelope,
     PersistedTurnRecord,
     TurnIntent,
     TurnIntentAction,
     TurnResolution,
+    TurnProviderTrace,
     TurnRunRequest,
     TurnRunResponse,
 )
@@ -99,6 +102,10 @@ def _assemble_context_for_world(
         world_character_id=session.character_state.world_character_id,
         limit_memories_per_npc=max(1, memory_per_npc),
     )
+    quests = repository.list_world_quest_states(
+        world_id=world_id,
+        world_character_id=session.character_state.world_character_id,
+    )
     visible_scene_points = repository.list_visible_scene_points_in_location(
         world_id=world_id,
         world_character_id=session.character_state.world_character_id,
@@ -108,6 +115,7 @@ def _assemble_context_for_world(
         world=session,
         turns=turns,
         npc_memory=npc_memory,
+        quests=quests,
         retrieval_player_input=player_input,
         scene_points=visible_scene_points,
         journal_limit=journal_limit,
@@ -138,7 +146,23 @@ def _assemble_context_for_world(
         context.retrieval_notes.append(
             f"Es gibt {hidden_scene_points} unerkundete Interaktions-/Objektpunkt(e) an diesem Ort. 'schau mich um' kann sie sichtbar machen."
         )
+    for npc_ref in context.target_catalog.npcs:
+        hints = build_npc_dialog_hints_for_context(
+            quests=context.quests,
+            npc_id=npc_ref.ref_id,
+            npc_name=npc_ref.name,
+            npc_role=npc_ref.role,
+        )
+        if hints:
+            npc_ref.discovery_state.update(hints)
     return context
+
+
+def _build_bootstrap_result_with_llm(
+    request: WorldBootstrapRequest,
+) -> tuple[WorldBootstrapResult, LlmCapabilityTrace]:
+    preview = build_world_bootstrap_preview(request)
+    return llm_runtime.enrich_world_bootstrap_preview_with_trace(request=request, preview=preview)
 
 
 @app.get("/health")
@@ -151,9 +175,12 @@ def health() -> dict[str, str]:
         "public_game_domain": settings.public_game_domain,
         "llm_mode": llm_status.mode,
         "llm_fallback_to_preview": str(llm_status.fallback_to_preview).lower(),
+        "hybrid_intent_llm_for_complex_inputs": str(llm_status.hybrid_intent_llm_for_complex_inputs).lower(),
+        "bootstrap_provider": llm_status.bootstrap_provider,
         "intent_provider": llm_status.intent_provider,
         "narration_provider": llm_status.narration_provider,
         "openrouter_configured": str(llm_status.openrouter_configured).lower(),
+        "openrouter_bootstrap_model": llm_status.bootstrap_model,
         "openrouter_intent_model": llm_status.intent_model,
         "openrouter_narrator_model": llm_status.narrator_model,
         "openrouter_json_repair_attempts": str(settings.openrouter_json_repair_attempts),
@@ -182,14 +209,16 @@ def get_world_context(
 
 @app.post("/v1/worlds/bootstrap/preview", response_model=WorldBootstrapResult)
 def world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootstrapResult:
-    return build_world_bootstrap_preview(request)
+    result, trace = _build_bootstrap_result_with_llm(request)
+    return result.model_copy(update={"bootstrap_trace": trace})
 
 
 @app.post("/v1/worlds/bootstrap", response_model=WorldSessionResponse)
 def world_bootstrap_create(request: WorldBootstrapRequest, fastapi_request: Request) -> WorldSessionResponse:
-    bootstrap_result = build_world_bootstrap_preview(request)
+    bootstrap_result, bootstrap_trace = _build_bootstrap_result_with_llm(request)
     repository = _get_world_repository(fastapi_request)
-    return repository.create_world_session(request=request, bootstrap=bootstrap_result)
+    session = repository.create_world_session(request=request, bootstrap=bootstrap_result)
+    return session.model_copy(update={"bootstrap_trace": bootstrap_trace})
 
 
 @app.get("/v1/worlds/{world_id}", response_model=WorldSessionResponse)
@@ -373,7 +402,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             analysis_notes=["UI structured action override verwendet."],
         )
     else:
-        intent = llm_runtime.analyze_intent(
+        intent, intent_trace = llm_runtime.analyze_intent_with_trace(
             world_id=world_id,
             world_character_id=session.character_state.world_character_id,
             player_input=request.player_input,
@@ -386,12 +415,21 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
             known_scene_point_refs=known_scene_point_refs,
             context=context_before,
         )
+    if request.actions_override:
+        intent_trace = LlmCapabilityTrace(
+            capability="intent",
+            mode=settings.llm_mode,
+            provider_policy="ui_structured_override",
+            provider_used="ui_structured_override",
+            model=None,
+            fallback_used=False,
+        )
     resolution = engine.resolve(
         intent=intent,
         character_state=session.character_state,
         inventory=session.inventory,
     )
-    narrative = llm_runtime.narrate(
+    narrative, narration_trace = llm_runtime.narrate_with_trace(
         resolution=resolution,
         context_before=context_before,
     )
@@ -416,6 +454,7 @@ def run_turn(world_id: str, request: TurnRunRequest, fastapi_request: Request) -
         resulting_inventory=resolution.resulting_inventory,
         journal_entry_ids=[entry.journal_entry_id for entry in journal_entries],
         analysis_context_notes=context_before.retrieval_notes,
+        provider_trace=TurnProviderTrace(intent=intent_trace, narration=narration_trace),
         context_before_turn=context_before.model_dump(mode="json") if request.include_context_before_turn else None,
         context_after_turn=context_after.model_dump(mode="json") if context_after is not None else None,
     )

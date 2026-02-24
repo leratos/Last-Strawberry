@@ -1,4 +1,4 @@
-﻿Original prompt: Weiter mit G4 (Context Assembly + NPC Memory Retrieval + Web-Anbindung Start)
+Original prompt: Weiter mit G4 (Context Assembly + NPC Memory Retrieval + Web-Anbindung Start)
 - G4 gestartet: Backend Context Assembly + NPC Memory Retrieval zuerst, danach Web-Anbindung.
 - Hinweis: develop-web-game Skill nur teilweise angewandt; Playwright-Loop wird verschoben bis echte interaktive Game-Loop/Deterministic Hooks vorhanden sind.
 - G4 Backend: /v1/worlds/{world_id}/context mit Retrieval-Sortierung fuer NPC-Memory implementiert.
@@ -54,9 +54,9 @@
 - G17: `APPROACH` ist gestuft: `far -> near -> adjacent`, `adjacent` liefert `approach_not_needed`.
 - G17: Web-UI hat Quick Action `Annaehern` bei NPCs; Distanzaktionen sind kontextsensitiv (z. B. `Annaehern` aus bei `adjacent`).
 - G17: Quickcheck-Script erweitert auf zwei APPROACHs nach `far` und prueft `distance_after_approach_second == adjacent`.
-- G17.1: Parser-Hotfix fuer umgangssprachliche Annaeherungs-Phrasen (`naeher/näher mich ...`) inkl. Unicode-NFC-Normalisierung und Regressionstests.
+- G17.1: Parser-Hotfix fuer umgangssprachliche Annaeherungs-Phrasen (`naeher/n�her mich ...`) inkl. Unicode-NFC-Normalisierung und Regressionstests.
 - G18: Web-UI zeigt klarere Distanzhinweise im NPC-Panel und im Struktur-Composer (adjacent/near/far/unreachable mit Handlungs-Hinweis).
-- G18: `APPROACH`/`RETREAT` werden im UI kontextsensitiv deaktiviert (z. B. `Annaehern` bei `adjacent`, `Abstand` bei `far/unreachable`) statt unnötige `*_not_needed` Turns zu erzeugen.
+- G18: `APPROACH`/`RETREAT` werden im UI kontextsensitiv deaktiviert (z. B. `Annaehern` bei `adjacent`, `Abstand` bei `far/unreachable`) statt unn�tige `*_not_needed` Turns zu erzeugen.
 - G19: Parser erweitert fuer weitere Distanzphrasen (`halte Abstand zu ...`, `halte mich von ... fern`, `trete einen Schritt naeher an ...`).
 - G19: Erste optionale NPC-Reaktions-Events auf Distanzaktionen (standing-basiert via `target_standing` in `APPROACH`/`RETREAT`-Actions).
 - G19: Distanz-Quick-Buttons zeigen sichtbare Statuslabels (`Annaehern (direkt dran)`, `Abstand (max)`) statt nur disabled.
@@ -102,7 +102,7 @@
 - G32: UI-Quick-Actions fuer Container erweitert (`Oeffnen`, `Durchsuchen`) mit Status-Disable bei bereits geoeffnetem Container.
 - G33: Preview-Narration hebt Container-/Loot-Ergebnisse expliziter hervor (`Fund:` / `Behaeltnis:`), statt sie nur implizit im Eventtext zu mischen.
 - G34: Discovery-UI fuer Interaktionspunkte verbessert (Counter `sichtbar/detail verifiziert`, Discovery-Badges pro Punkt).
-- G35: NPC-Rollenwissen wird im Context maskiert (`unknown`) bis echte Interaktion/Memory vorliegt; bloßes Entdecken reicht nicht mehr fuer Rollenerkennung.
+- G35: NPC-Rollenwissen wird im Context maskiert (`unknown`) bis echte Interaktion/Memory vorliegt; blo�es Entdecken reicht nicht mehr fuer Rollenerkennung.
 - G36: Fraktionswissen folgt demselben Prinzip wie Rollenwissen (erst nach Interaktion sichtbar); UI zeigt Fraktion nur wenn bekannt.
 - G37: Neuer Action-Typ `TAKE` fuer `scene_object`-Ziele (Freitext + strukturierte Aktion), inklusive persistenter Objektzustand `taken` und einmaligem Loot-MVP.
 - G37: UI-Quick-Action `Nehmen` bei detailverifizierten Szene-Objekten, mit Statusanzeige `verfuegbar/mitgenommen`.
@@ -132,7 +132,7 @@
 - G60-G69 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (26 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (30 passed), `pytest packages/rules_engine/tests/test_rules_engine.py -q` (19 passed), `pytest apps/game_api/tests -q` (74 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 292 passed.
 - Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration kann das String-Feld entfernt werden.
 
-- G70-G79 Draft (gestartet): Fokus auf Clarify-Kandidaten-UX (Gruppierung/Status), bessere Rückfrageauflösung im UI und Discovery-/Zielauflösung-Finetuning mit Teiltests + Build + Regressionstest.
+- G70-G79 Draft (gestartet): Fokus auf Clarify-Kandidaten-UX (Gruppierung/Status), bessere R�ckfrageaufl�sung im UI und Discovery-/Zielaufl�sung-Finetuning mit Teiltests + Build + Regressionstest.
 - G70-G79 abgeschlossen: Clarify-Kandidaten tragen jetzt mehr Kontextdaten (Rolle/Fraktion/Ort-Zone/Distanz) von Parser -> Rules -> Event-Schema -> UI; die Rueckfrage-Buttons koennen dadurch sinnvollere Tooltips/Infos zeigen.
 - G70/G71: `ClarifyCandidate` im Shared Schema erweitert (`faction`, `location_name`, `scene_zone_name`, `distance_band_to_player`); Rules Engine uebernimmt diese Felder in `event.clarify.candidates`.
 - G72/G73: Parser encodiert erweiterte Kandidateninfos fuer NPC- und Scene-Target-CLARIFYs (`_npc_visible_candidates`, Rollen-Anreden, Scene-Targets).
@@ -156,3 +156,97 @@
 - G89: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
 - G80-G89 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (36 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `pytest apps/game_api/tests -q` (85 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 304 passed.
 - Offener Punkt (technische Schuld): CLARIFY-Kandidaten werden weiterhin doppelt transportiert (`event.clarify.candidates` + `metadata.candidates_json`); nach UI-Migration String-Feld entfernen.
+- G90-G99 Draft (gestartet): Groesserer KI-Aktivierungsschritt (OpenRouter dort nutzen, wo es stabil Mehrwert bringt) mit deterministischem Regelkern als Autoritaet. Fokus: LLM-gestuetzter World-Bootstrap/Narration, Intent optional/hybrid mit robustem Fallback, plus Tests fuer Fallback-/Konfigurationspfade.
+- G90-G99 abgeschlossen: Kontrollierte KI-Aktivierung (OpenRouter dort, wo sinnvoll) eingefuehrt, ohne den deterministischen Regelkern zu lockern.
+- G90: Neuer `hybrid`-LLM-Modus in `LlmRuntime`/Settings. Policy: `bootstrap` + `narration` via OpenRouter, `intent` weiter Preview (robust) mit bestehendem Fallback-Konzept.
+- G91: `LlmRuntimeStatus`/`/health` erweitert um `bootstrap_provider` und `openrouter_bootstrap_model` (sichtbar fuer Ops/Debugging).
+- G92/G93: LLM-gestuetztes World-Bootstrap-Enrichment eingefuehrt (`enrich_world_bootstrap_preview`) mit OpenRouter-JSON-Schema und sicherem Merge nur auf Text-/Listenfelder (World-Name, Hook, Fraktionen, Threads, Initial-Narrativ, Orientierung).
+- G94: `main.py` verdrahtet Bootstrap-Preview und World-Create auf `_build_bootstrap_result_with_llm()` (Preview-Basis + optionales LLM-Enrichment).
+- G95: Fallback-Verhalten fuer Bootstrap analog zu Narration/Intent (bei Fehlern oder fehlendem Key -> Preview, sofern Fallback aktiv).
+- G96/G97: Runtime-Tests fuer Hybrid-Status, Bootstrap-Fallback und Bootstrap-OpenRouter-Merge hinzugefuegt (`apps/game_api/tests/test_llm_runtime.py`).
+- G98: Route-Health-Test erweitert (Bootstrap-/Intent-/Narration-Provider-Felder vorhanden).
+- G99: Abschluss-Regressionslauf und Frontend-Build erfolgreich.
+- G90-G99 Tests/Builds: `pytest apps/game_api/tests/test_llm_runtime.py -q` (10 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (31 passed), `npm.cmd --prefix apps/web_client run build`, final Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 307 passed.
+- Empfehlung (Betrieb): Fuer erste echte KI-Nutzung `LS_GREENFIELD_LLM_MODE=hybrid` + `LS_GREENFIELD_LLM_FALLBACK_TO_PREVIEW=true`, damit Intent stabil bleibt und Bootstrap/Narration bereits KI-Mehrwert liefern.
+
+- G100-G109 abgeschlossen: Preview-Analyzer verarbeitet Mehrfachsatz-Eingaben mit Sequenzmarkern (`dann`/`danach`/`anschliessend`) jetzt als Teilabschnitte und aggregiert mehrere Aktionen pro TurnIntent.
+- G100/G101: Clause-Splitting eingefuehrt (`_split_preview_action_clauses`) und Single-Clause-Analyse in internen Helper ausgelagert (`_analyze_player_input_preview_single_clause`).
+- G102: Mehrteilige Eingaben mit teilweise unverstandenen Teilabschnitten fuehren jetzt zu zusaetzlichem `CLARIFY`-Warnhinweis (`reason=partial_multiclause_parse`) statt stillem Teilverlust.
+- G103: Warnhinweis enthaelt `suggested_action=use_structured_queue` als klaren UX-Hinweis fuer komplexe Eingaben.
+- G104/G105: Parser-Tests fuer Mehrfachsatz (`... dann untersuche ...`) und Partial-Parse-Warnung hinzugefuegt.
+- G106: Route-Integrationstest hinzugefuegt: `run_turn` fuehrt bei `... rede ..., dann untersuche ...` sowohl `talk_success` als auch `inspect_focus_success` im selben Turn aus.
+- G107-G109: Abschluss-Regression erfolgreich; bestehende Deterministik/Rules bleiben unveraendert, nur Intent-Vorverarbeitung verbessert.
+- G100-G109 Tests: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (38 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g100_run_turn_multiclause_dann_executes_talk_and_inspect -q` (1 passed), `pytest apps/game_api/tests -q` (91 passed), finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 310 passed.
+- Hinweis: Splitter ist aktuell bewusst konservativ (explizite Sequenzmarker); `und`-Ketten ohne Marker bleiben ein separater Ausbau-Schritt (um Fehlsplits bei z.B. `rede ... und frage ...` zu vermeiden).
+
+- G110-G149 Draft (gestartet): Groesserer Ausbau fuer spielbare Sessions: (1) Mehrfachsatz-Intent weiter verbessern (selektives und-Splitting + weniger Teilverlust) und (2) KI-Transparenz per Provider/Fallback-Trace in API/UI, damit Hybrid/OpenRouter-Laufzeit nachvollziehbar bleibt.
+
+
+- G110-G149 abgeschlossen: Fokusblock auf (A) selektives Mehrfachsatz-Parsing mit sicherem und-Splitting und (B) Provider-/Fallback-Transparenz pro Turn im API-Response + UI.
+- G110-G119: TurnRunResponse um provider_trace erweitert (intent/
+arration mit provider_policy, provider_used, model, allback_used, allback_reason).
+- G120-G129: LlmRuntime um nalyze_intent_with_trace() und 
+arrate_with_trace() erweitert; bestehende Methoden bleiben kompatible Wrapper. 
+un_turn nutzt jetzt Traces und markiert UI-Overrides explizit als ui_structured_override.
+- G130-G139: Web-UI zeigt Provider-Trace im Story-Panel (intent: preview, 
+arration: openrouter, inkl. Fallback-Hinweis) und setzt/cleart Trace beim Weltwechsel/Bootstrap konsistent.
+- G140-G149: Preview-Analyzer erweitert um konservatives und-Splitting fuer sichere Aktionswechsel (z.B. 
+ede ... und untersuche ...), ohne Talk-Ketten wie 
+ede ... und frage ... aggressiv zu splitten. Mehrteilige Verluste bleiben weiter via partial_multiclause_parse sichtbar.
+- Neue/angepasste Tests: Runtime-Trace-Unit-Tests (	est_llm_runtime.py), Route-Trace-Response-Assertion (	est_preview_routes.py G2-Flow), Route-Test fuer 
+ede ... und untersuche ..., Parser-Tests fuer safe-und-Split + No-Split-Talk-Chain.
+- G110-G149 Tests/Builds: pytest apps/game_api/tests/test_intent_analysis_preview.py -q (40 passed), pytest apps/game_api/tests/test_llm_runtime.py -q (11 passed), gezielte Route-Tests fuer G2/G110 (2 passed), 
+pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 314 passed.
+- Technische Schuld (weiter offen): Clarify-Kandidaten werden weiterhin doppelt transportiert (event.clarify.candidates + metadata.candidates_json); nach kompletter UI-Migration Legacy-String entfernen. Provider-Trace existiert derzeit pro Turn, Bootstrap-Provider-Trace nur indirekt ueber /health sichtbar.
+
+
+- G150-G199 Draft (gestartet): (1) Selektiver Intent-LLM-Einsatz nur bei komplexen Mehrfachsaetzen im Hybrid-Modus (Feature-Flag + Tracing), (2) Bootstrap-Provider-Trace pro /v1/worlds/bootstrap/preview und /v1/worlds/bootstrap sichtbar machen (API + UI/Debug).
+
+- G150-G199 abgeschlossen: (1) Selektiver Intent-LLM-Einsatz im Hybrid-Modus fuer komplexe Inputs (Feature-Flag), (2) Bootstrap-Provider-Trace pro Preview/Create im API-Response + UI sichtbar gemacht.
+- G150-G159: Settings erweitert um LS_GREENFIELD_HYBRID_INTENT_LLM_FOR_COMPLEX_INPUTS (hybrid_intent_llm_for_complex_inputs, default false) und /health um Flag-Status erweitert.
+- G160-G169: LlmRuntime erweitert: enrich_world_bootstrap_preview_with_trace() (Bootstrap + Trace) und selektive Intent-Provider-Policy im Hybrid-Modus (openrouter nur bei komplexen Inputs; sonst preview). Komplexitaetsheuristik: Sequenzmarker (dann/danach/anschliessend), Semikolon oder mehrere Aktionsverben mit und.
+- G170-G179: main.py verdrahtet Bootstrap-Trace in /v1/worlds/bootstrap/preview und /v1/worlds/bootstrap (optionales Feld ootstrap_trace), 
+un_turn bleibt mit provider_trace aus G110-G149 kompatibel.
+- G180-G189: Shared-Schemas erweitert (WorldBootstrapResult.bootstrap_trace, WorldSessionResponse.bootstrap_trace, Reuse LlmCapabilityTrace), Frontend-API-Typen angepasst.
+- G190-G199: Web-UI zeigt Bootstrap-Trace im Story-Panel nach Welterstellung und beherrscht Provider-Trace + Bootstrap-Trace gleichzeitig. Bootstrap-Trace wird bei Weltwechsel/Neustart zurueckgesetzt.
+- Tests erweitert: Runtime-Unit-Tests fuer Hybrid-Complex-Intent-Flag (komplex -> OpenRouter, einfach -> Preview), Route-Tests fuer ootstrap_trace in Preview/Create und Health-Flag sowie bestehende Provider-Trace-Assertions im Turn-Flow.
+- G150-G199 Tests/Builds: pytest apps/game_api/tests/test_llm_runtime.py -q (13 passed), gezielte Route-Tests fuer Health/Bootstrap/Create/G2 (4 passed), 
+pm.cmd --prefix apps/web_client run build, finale Regression pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q -> 316 passed.
+- Hinweis/Tradeoff: Selektiver Intent-LLM im Hybrid-Modus ist bewusst nur per Feature-Flag aktiv (default aus), damit Kosten/Fehlinterpretationsrisiko kontrolliert bleiben. provider_trace/ootstrap_trace macht den tatsaechlich genutzten Provider sichtbar.
+
+
+- G200-G249 Draft (gestartet): Pronomen-/Referenzaufloesung in Mehrfachsatzketten (z.B. 'untersuche die Kiste, dann oeffne sie') plus Folgeverbesserungen fuer natuerliche Turn-Sequenzen. Fokus auf deterministische Preview-Intent-Analyse, Tests und stabile Fallbacks.
+
+- G200-G249 abgeschlossen (Teilfokus mit hohem Nutzwert): Pronomen-/Referenzaufloesung in Mehrfachsatzketten im deterministischen Preview-Analyzer eingefuehrt (Clause-Carryover fuer letzte NPC- und Umweltziele).
+- G200: Mehrfachsatz-Aggregator (`analyze_player_input_preview`) fuehrt jetzt einen Clause-Chain-Context (letztes NPC-Ziel / letztes Umweltziel) ueber Teilklauseln hinweg.
+- G201: Sichere Pronomenauflosung vor der Single-Clause-Analyse fuer Folgeklauseln (`ihn/ihm/sie/ihr/es`) je nach Aktionsfamilie:
+  - NPC-bezogen fuer TALK/ATTACK/APPROACH/RETREAT
+  - Umweltbezogen fuer INSPECT/OPEN/SEARCH/TAKE
+- G202: Konservativer Scope beibehalten (nur innerhalb derselben Mehrfachsatzkette, nur bei zuvor erfolgreich aufgeloesten Zielen; bei Unsicherheit weiterhin `clarify_required` statt stiller Fehlzuordnung).
+- G203: Parser-Regressions-Tests hinzugefuegt:
+  - `untersuche ... dann oeffne sie` -> `INSPECT + OPEN`
+  - `rede mit Kael, dann rede mit ihm` -> zwei TALK-Aktionen auf denselben NPC
+- G204: Route-Integrationstest hinzugefuegt: `rede mit Kael und untersuche die Vorratskiste, dann oeffne sie` fuehrt `talk_success`, `inspect_focus_success`, `open_focus_success` und `container_opened` im selben Turn aus (ohne `clarify_required`).
+- G205-G249: Abschluss-Regression und Frontend-Build erfolgreich; Fokusblock bewusst nicht auf globale Coreference ausgedehnt (keine freie Pronomenmagie ueber Turns/Discovery-Grenzen hinweg).
+- G200-G249 Tests/Builds: `pytest apps/game_api/tests/test_intent_analysis_preview.py -q` (42 passed), `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g200_run_turn_multiclause_pronoun_carryover_opens_inspected_container -q` (1 passed), `pytest apps/game_api/tests -q` (100 passed), `npm.cmd --prefix apps/web_client run build`, finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 319 passed.
+- Offener Punkt (naechste sinnvolle Ausbaustufe): Pronomenauflosung ist aktuell turn-lokal und klauselbasiert; echte Coreference ueber komplexere Bezuege (`diese`, `jene`, Ellipsen, implizite Ziele) bleibt bewusst offen und sollte nur mit klaren Guardrails erweitert werden.
+
+- G250-G259 Draft (gestartet): Narration Quality Debt dokumentieren (reporthafte/auflistende Erzaehlweise im Hybrid-Modus), Zielbild + Regeln + spaetere Architektur festhalten; bewusst ohne aktive Narration-Optimierung (Token sparen waehrend Entwicklungs-/Testphase).
+- G250-G259 abgeschlossen: Narration-Qualitaetsbaustelle verbindlich dokumentiert (kein aktiver Code-Ausbau, bewusst token-/zeitschonend waehrend Entwicklungs-/Testphase).
+- Neue Doku: `docs/narration_quality_debt_v1.md` mit vier Blo�cken: `Narration Quality Debt`, `Zielbild`, `Regeln`, `spaetere Architektur`.
+- Dokumentiert: Problem (reporthafte/auflistende Narration, Sprachmischung, schwacher Szenenfluss), Beispieltext, Zielbild mit szenischer/kausal verknuepfter Erzaehlweise und klarer Anschlussfrage.
+- Verbindliche Regeln festgelegt: DE-only, keine Eventlistenform, keine erfundenen Zustandsaenderungen, relevante Fakten priorisieren, `clarify_required`/Teilparse nicht narrativ "wegraeten".
+- Spaeteres Grundprinzip festgelegt (ohne Implementierung): `Rules/Persistenz -> Story Beat Composer -> Narrator` statt direkte rohe Eventlisten-Narration.
+- Greenfield-Roadmap ergaenzt um aktiven Tech-Debt-/Quality-Debt-Punkt mit Verweis auf `docs/narration_quality_debt_v1.md`.
+- Tests/Build: keine Ausfuehrung erforderlich (nur Doku-Aenderungen).
+
+- G260-G299 Draft (gestartet): Vertical-Slice-Fokus fuer erste wirklich bespielbare Welt: Questflags/Quest-Status (MVP), Dialogzustands-Basis pro NPC und authored World-Pack-Grundlage (Urban Occult), inkl. UI-Sichtbarkeit und Regressionstests.
+- G260-G299 abgeschlossen (Vertical-Slice-Foundation): Questflags/Quest-Status (MVP) + Dialogzustands-Basis pro NPC fuer Urban-Occult-Starterwelt integriert, inkl. Persistenz, Context-API und UI-Sichtbarkeit.
+- Shared Schemas erweitert: `ls_shared_schemas.quests` (WorldQuestState, QuestObjectiveState); `GameContextResponse.quests` hinzugefuegt und exportiert.
+- Neue Quest-Authoring/Progression-Logik (`apps/game_api/app/services/quest_authoring.py`): Urban-Occult-Starterquest (Kael sprechen -> Vorratskiste untersuchen -> Mira Bericht), questbezogene System-Events (`quest_objective_updated`, `quest_completed`) und leichte NPC-Dialoghinweise (`dialog_state`, `dialog_hint`).
+- Persistenz erweitert (`apps/game_api/app/persistence.py`): Migration `007_g260_world_quest_states.sql`, Quest-Seeding beim World-Bootstrap, Quest-Status-Updates in `save_turn_run`, `list_world_quest_states()` fuer Context-Aufbau.
+- Context-Aufbau erweitert (`main.py`, `context_assembly.py`): Quests werden in `/v1/worlds/{id}/context` ausgeliefert; NPC-Dialoghinweise aus Queststatus werden in `target_catalog.npcs[].discovery_state` eingetragen.
+- Web-UI erweitert (`apps/web_client/src/api.ts`, `apps/web_client/src/App.tsx`): Questlog (MVP) im Charaktersheet, Quest-Zaehler im Story-Panel, NPC-Panel zeigt questbezogene Dialoghinweise.
+- Neuer Route-Test `test_g260_urban_occult_starter_quest_progresses_via_kael_crate_mira`: validiert Quest-Seeding, Objective-Fortschritt ueber Kael/Kiste, Mira-Report-Stufe und Questabschluss-Ereignis.
+- Tests/Builds: `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g260_urban_occult_starter_quest_progresses_via_kael_crate_mira -q` (1 passed), `pytest apps/game_api/tests/test_preview_routes.py -q` (35 passed), `npm.cmd --prefix apps/web_client run build`, finale Regression `pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 320 passed.
+- Offene Punkte / technische Schuld: Quest-Events werden aktuell in `save_turn_run()` nach Narration angehaengt (im selben Turn nicht narrativ reflektiert). Spaeter fuer bessere Story-Qualitaet: Quest-Fortschritt vor Narration in einen Story-Beat-Composer einspeisen (`Rules/Persistenz -> Story Beats -> Narrator`).

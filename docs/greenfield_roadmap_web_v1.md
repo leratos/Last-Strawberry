@@ -106,6 +106,16 @@ Zeitraum: nach G4
 
 ---
 
+## Technische Schulden / Quality Debt (aktiv dokumentiert)
+
+- **Narration Quality Debt (reporthafte/auflistende Erzaehlweise)**
+  - Aktuelle Narration ist funktional korrekt, wirkt aber teilweise wie ein Status-/Eventbericht statt wie eine zusammenhaengende Szene.
+  - Bewusst waehrend Entwicklungs-/Testphase nicht voll optimiert (Token-/Zeitbudget).
+  - Verbindliche Zielregeln und spaetere Architektur (`Rules -> Story Beats -> Narrator`) dokumentiert in:
+    - `docs/narration_quality_debt_v1.md`
+
+---
+
 ## Fortschritt (Micro-Stages G30-G39, Discovery/World-Interaction Ausbau)
 
 ### Abgeschlossen

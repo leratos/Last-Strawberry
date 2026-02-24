@@ -34,7 +34,12 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
     def test_health(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "ok")
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("bootstrap_provider", payload)
+        self.assertIn("intent_provider", payload)
+        self.assertIn("narration_provider", payload)
+        self.assertIn("hybrid_intent_llm_for_complex_inputs", payload)
 
     def test_world_bootstrap_preview(self):
         response = self.client.post(
@@ -49,6 +54,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         payload = response.json()
         self.assertIn("world_seed", payload)
         self.assertIn("initial_narrative", payload)
+        self.assertIn("bootstrap_trace", payload)
+        self.assertEqual(payload["bootstrap_trace"]["capability"], "bootstrap")
 
     def test_g23_world_bootstrap_preview_uses_ip_safe_urban_occult_preset(self):
         response = self.client.post(
@@ -95,6 +102,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(created["character_state"]["location_name"], created["world_seed"]["start_location_name"])
         self.assertGreaterEqual(len(created["inventory"]), 1)
         self.assertGreaterEqual(len(created["journal"]), 1)
+        self.assertIn("bootstrap_trace", created)
+        self.assertEqual(created["bootstrap_trace"]["capability"], "bootstrap")
 
         get_response = self.client.get(f"/v1/worlds/{world_id}")
         self.assertEqual(get_response.status_code, 200)
@@ -102,6 +111,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(fetched["world_id"], world_id)
         self.assertEqual(fetched["world_seed"]["world_id"], world_id)
         self.assertEqual(fetched["initial_narrative"], created["initial_narrative"])
+        self.assertIsNone(fetched.get("bootstrap_trace"))
 
     def test_get_world_session_returns_404_for_unknown_world(self):
         response = self.client.get("/v1/worlds/world-does-not-exist")
@@ -140,6 +150,9 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("turn", run_payload)
         self.assertTrue(run_payload["turn"]["turn_id"].startswith("turn-"))
         self.assertGreaterEqual(len(run_payload["journal_entry_ids"]), 2)
+        self.assertIn("provider_trace", run_payload)
+        self.assertEqual(run_payload["provider_trace"]["intent"]["provider_used"], "preview")
+        self.assertEqual(run_payload["provider_trace"]["narration"]["provider_used"], "preview")
         self.assertIn("context_after_turn", run_payload)
         self.assertIsNotNone(run_payload["context_after_turn"])
         self.assertEqual(run_payload["context_after_turn"]["world"]["world_id"], world_id)
@@ -217,6 +230,131 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             bundle for bundle in bundles if bundle["profile"]["npc_id"].startswith("npc-auto-") and "beschwoer" in bundle["profile"]["name"].lower()
         ]
         self.assertEqual(auto_beschwoerer, [])
+
+    def test_g260_urban_occult_starter_quest_progresses_via_kael_crate_mira(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g260-quest",
+                "world_description": (
+                    "Eine moderne Stadt mit geheimer Magie, einem fehlgeschlagenen Binder-Ritual und rivalisierenden Zirkeln."
+                ),
+                "character_description": "Ein Ermittler, der den Vorfall am Marktplatz untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        self.assertGreaterEqual(len(context_payload["quests"]), 1)
+        quest = context_payload["quests"][0]
+        self.assertEqual(quest["current_stage"], "investigate_scene")
+        kael_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Kael")
+        mira_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+        self.assertEqual(kael_ref.get("discovery_state", {}).get("dialog_state"), "quest_hook")
+
+        talk_kael = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Kael",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": kael_ref["ref_id"],
+                            "target_name": kael_ref["name"],
+                            "target_role": kael_ref.get("role"),
+                            "target_location_name": kael_ref.get("location_name"),
+                            "target_zone_id": kael_ref.get("scene_zone_id"),
+                            "target_zone_name": kael_ref.get("scene_zone_name"),
+                            "target_distance_band": kael_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_kael.status_code, 200)
+        ctx_after_kael = talk_kael.json()["context_after_turn"]
+        quest_after_kael = ctx_after_kael["quests"][0]
+        objective_states_after_kael = {obj["objective_id"]: obj["status"] for obj in quest_after_kael["objectives"]}
+        self.assertEqual(objective_states_after_kael["speak_with_kael"], "completed")
+        self.assertEqual(objective_states_after_kael["inspect_supply_crate"], "pending")
+
+        broad_inspect = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "ich schau mich um"},
+        )
+        self.assertEqual(broad_inspect.status_code, 200)
+        ctx_after_broad = broad_inspect.json()["context_after_turn"]
+        crate_ref = next(
+            entry for entry in ctx_after_broad["target_catalog"]["scene_points"] if "supply-crate" in entry["ref_id"]
+        )
+
+        inspect_crate = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Vorratskiste",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": crate_ref["ref_id"],
+                        "target_kind": crate_ref["kind"],
+                        "parameters": {
+                            "intent": "inspect",
+                            "target_id": crate_ref["ref_id"],
+                            "target_name": crate_ref["name"],
+                            "target_kind": crate_ref["kind"],
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(inspect_crate.status_code, 200)
+        ctx_after_crate = inspect_crate.json()["context_after_turn"]
+        quest_after_crate = ctx_after_crate["quests"][0]
+        objective_states_after_crate = {obj["objective_id"]: obj["status"] for obj in quest_after_crate["objectives"]}
+        self.assertEqual(objective_states_after_crate["speak_with_kael"], "completed")
+        self.assertEqual(objective_states_after_crate["inspect_supply_crate"], "completed")
+        self.assertEqual(quest_after_crate["current_stage"], "report_to_mira")
+
+        mira_ref_after = next(entry for entry in ctx_after_crate["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
+        self.assertEqual(mira_ref_after.get("discovery_state", {}).get("dialog_state"), "quest_report")
+
+        talk_mira = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": mira_ref_after["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": mira_ref_after["ref_id"],
+                            "target_name": mira_ref_after["name"],
+                            "target_role": mira_ref_after.get("role"),
+                            "target_location_name": mira_ref_after.get("location_name"),
+                            "target_zone_id": mira_ref_after.get("scene_zone_id"),
+                            "target_zone_name": mira_ref_after.get("scene_zone_name"),
+                            "target_distance_band": mira_ref_after.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(talk_mira.status_code, 200)
+        talk_mira_payload = talk_mira.json()
+        quest_codes = [event["code"] for event in talk_mira_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("quest_completed", quest_codes)
+        final_quest = talk_mira_payload["context_after_turn"]["quests"][0]
+        self.assertEqual(final_quest["status"], "completed")
+        self.assertTrue(all(obj["status"] == "completed" for obj in final_quest["objectives"]))
 
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
@@ -999,6 +1137,98 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         bundles = memory_response.json()
         zorak_bundle = next(bundle for bundle in bundles if bundle["profile"]["npc_id"] == zorak_ref["ref_id"])
         self.assertEqual(zorak_bundle["relationship"]["standing"], 1)
+
+    def test_g100_run_turn_multiclause_dann_executes_talk_and_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g100-1",
+                "world_description": "Ein Markt mit Kisten und einem angespannten Beschwoerer am Brunnen.",
+                "character_description": "Eine vorsichtige Ermittlerin, die spricht und dann gezielt untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        # Broad inspect first so a container becomes visible for the second clause.
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich gehe zu Kael und rede mit ihm, dann untersuche die Vorratskiste."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+        self.assertIn("Mehrteilige Eingabe erkannt", " ".join(payload["turn"]["intent"]["analysis_notes"]))
+
+    def test_g110_run_turn_multiclause_safe_und_executes_talk_and_inspect(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g110-1",
+                "world_description": "Ein Markt mit Kisten und einem Binder am Brunnen.",
+                "character_description": "Eine Ermittlerin, die erst spricht und dann Dinge untersucht.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Kael und untersuche die Vorratskiste."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+
+    def test_g200_run_turn_multiclause_pronoun_carryover_opens_inspected_container(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g200-1",
+                "world_description": "Ein urbaner Markt mit Binder, Kisten und Spuren eines Rituals.",
+                "character_description": "Eine Ermittlerin, die in Sequenzen spricht, untersucht und dann handelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        inspect_broad = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_broad.status_code, 200)
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich rede mit Kael und untersuche die Vorratskiste, dann oeffne sie."},
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        event_codes = [event["code"] for event in payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("inspect_focus_success", event_codes)
+        self.assertIn("open_focus_success", event_codes)
+        self.assertIn("container_opened", event_codes)
+        self.assertNotIn("clarify_required", event_codes)
+        self.assertIn("Pronomenziel", " ".join(payload["turn"]["intent"]["analysis_notes"]))
 
     def test_g11_run_turn_accepts_multi_action_override_queue(self):
         create_response = self.client.post(

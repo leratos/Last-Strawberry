@@ -115,6 +115,21 @@ class NarrativeEnvelope(LSBaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class LlmCapabilityTrace(LSBaseModel):
+    capability: str = Field(min_length=1, max_length=40)
+    mode: str = Field(min_length=1, max_length=40)
+    provider_policy: str = Field(min_length=1, max_length=40)
+    provider_used: str = Field(min_length=1, max_length=40)
+    model: str | None = Field(default=None, max_length=200)
+    fallback_used: bool = False
+    fallback_reason: str | None = Field(default=None, max_length=200)
+
+
+class TurnProviderTrace(LSBaseModel):
+    intent: LlmCapabilityTrace
+    narration: LlmCapabilityTrace
+
+
 class TurnRunRequest(LSBaseModel):
     player_input: str = Field(min_length=1, max_length=2000)
     actions_override: list[TurnIntentAction] = Field(default_factory=list)
@@ -139,5 +154,6 @@ class TurnRunResponse(LSBaseModel):
     resulting_inventory: list[InventoryItemInstance] = Field(default_factory=list)
     journal_entry_ids: list[str] = Field(default_factory=list)
     analysis_context_notes: list[str] = Field(default_factory=list)
+    provider_trace: TurnProviderTrace | None = None
     context_before_turn: dict[str, object] | None = None
     context_after_turn: dict[str, object] | None = None
