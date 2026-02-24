@@ -11,10 +11,12 @@ from uuid import uuid4
 from apps.game_api.app.migration_runner import SqliteMigrationRunner
 from apps.game_api.app.services.quest_authoring import (
     advance_quests_for_turn,
+    derive_story_flags_from_quests,
     initial_quest_states_for_world_seed,
 )
 from apps.game_api.app.services.scene_point_catalog import build_scene_point_targets_for_location
 from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
+from apps.game_api.app.services.world_pack_authoring import initial_story_flags_for_world_seed
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
@@ -150,6 +152,13 @@ class WorldRepository:
                     world_character_id=world_character_id,
                     quests=initial_quest_states_for_world_seed(world_seed),
                 )
+                self._upsert_world_story_flags(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                    flags=initial_story_flags_for_world_seed(world_seed),
+                    allow_insert=True,
+                )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -227,6 +236,11 @@ class WorldRepository:
                     world_id=world_id,
                     world_character_id=resolution.world_character_id,
                 )
+                current_story_flags = self._get_world_story_flags_conn(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=resolution.world_character_id,
+                )
 
                 newly_revealed_npcs, newly_revealed_scene_points = self._apply_npc_discovery_updates(
                     conn=conn,
@@ -292,6 +306,17 @@ class WorldRepository:
                         quests=quest_progress.quests,
                     )
                     resolution.system_events.extend(quest_progress.system_events)
+                    next_story_flags = derive_story_flags_from_quests(
+                        quests=quest_progress.quests,
+                        existing_flags=current_story_flags,
+                    )
+                    self._upsert_world_story_flags(
+                        conn=conn,
+                        world_id=world_id,
+                        world_character_id=resolution.world_character_id,
+                        flags=next_story_flags,
+                        allow_insert=True,
+                    )
 
                 conn.execute(
                     """
@@ -378,6 +403,19 @@ class WorldRepository:
     ) -> list[WorldQuestState]:
         with self._connect() as conn:
             return self._list_world_quest_states_conn(
+                conn=conn,
+                world_id=world_id,
+                world_character_id=world_character_id,
+            )
+
+    def get_world_story_flags(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str,
+    ) -> dict[str, str | int | bool]:
+        with self._connect() as conn:
+            return self._get_world_story_flags_conn(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
@@ -717,6 +755,77 @@ class WorldRepository:
             (world_id, world_character_id),
         ).fetchall()
         return [WorldQuestState.model_validate_json(str(row["quest_state_json"])) for row in rows]
+
+    def _get_world_story_flags_conn(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+    ) -> dict[str, str | int | bool]:
+        row = conn.execute(
+            """
+            SELECT flags_json
+            FROM world_story_flags
+            WHERE world_id = ? AND world_character_id = ?
+            LIMIT 1
+            """,
+            (world_id, world_character_id),
+        ).fetchone()
+        if row is None:
+            return {}
+        payload = json.loads(str(row["flags_json"]))
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            str(key): value
+            for key, value in payload.items()
+            if isinstance(value, (str, int, bool))
+        }
+
+    def _upsert_world_story_flags(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        world_id: str,
+        world_character_id: str,
+        flags: dict[str, str | int | bool],
+        allow_insert: bool = True,
+    ) -> None:
+        timestamp = _utc_iso_now()
+        if allow_insert:
+            conn.execute(
+                """
+                INSERT INTO world_story_flags (
+                    world_id, world_character_id, flags_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(world_id, world_character_id)
+                DO UPDATE SET
+                    flags_json = excluded.flags_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    world_id,
+                    world_character_id,
+                    json.dumps(flags, ensure_ascii=True),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            return
+        conn.execute(
+            """
+            UPDATE world_story_flags
+            SET flags_json = ?, updated_at = ?
+            WHERE world_id = ? AND world_character_id = ?
+            """,
+            (
+                json.dumps(flags, ensure_ascii=True),
+                timestamp,
+                world_id,
+                world_character_id,
+            ),
+        )
 
     def _apply_npc_discovery_updates(
         self,

@@ -23,6 +23,9 @@ class WorldBootstrapRequest(LSBaseModel):
 class WorldSeed(LSBaseModel):
     world_id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=120)
+    world_pack_id: str | None = Field(default=None, max_length=160)
+    world_pack_version: str | None = Field(default=None, max_length=40)
+    world_pack_display_name: str | None = Field(default=None, max_length=200)
     summary: str = Field(min_length=1, max_length=4000)
     start_location_name: str = Field(min_length=1, max_length=120)
     start_hook: str = Field(min_length=1, max_length=2000)

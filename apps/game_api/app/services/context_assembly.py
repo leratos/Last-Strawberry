@@ -7,6 +7,7 @@ from ls_shared_schemas.npc_memory import NPCMemoryBundle
 from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import PersistedTurnRecord
 from ls_shared_schemas.world import JournalEntryRecord, WorldSessionResponse
+from apps.game_api.app.services.world_pack_authoring import build_world_pack_context
 
 
 def assemble_game_context(
@@ -14,6 +15,7 @@ def assemble_game_context(
     world: WorldSessionResponse,
     turns: list[PersistedTurnRecord],
     npc_memory: list[NPCMemoryBundle],
+    story_flags: dict[str, str | int | bool] | None = None,
     quests: list[WorldQuestState] | None = None,
     retrieval_player_input: str | None = None,
     scene_points: list[GameTargetReference] | None = None,
@@ -37,6 +39,8 @@ def assemble_game_context(
 
     return GameContextResponse(
         world=world,
+        world_pack=build_world_pack_context(world.world_seed),
+        story_flags=dict(story_flags or {}),
         quests=list(quests or []),
         recent_turns=recent_turns,
         recent_journal=recent_journal,
