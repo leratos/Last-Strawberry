@@ -17,7 +17,8 @@ OpenRouter-first Pen-and-Paper platform with a FastAPI V2 backend, bridge-compat
 ## Repository Overview
 - `backend_v2/`: primary game backend (auth, worlds, turns, memory, metrics).
 - `backend_server/`: legacy-compatible API facade used as V2 bridge.
-- `web_frontend/`: web client.
+- `apps/web_client/`: current greenfield web client (React + Vite).
+- `archive/legacy_frontend/web_frontend/`: archived legacy frontend.
 - `docs/`: runbooks, dashboards, roadmap, DoD documents.
 
 ## Architecture (Runtime)

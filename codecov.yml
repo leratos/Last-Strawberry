@@ -16,6 +16,7 @@ comment:
 ignore:
   - "docs/**"
   - "web_frontend/**"
+  - "archive/**"
 
 status:
   patch:

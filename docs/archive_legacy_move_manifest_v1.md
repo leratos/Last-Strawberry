@@ -47,3 +47,22 @@ git mv web_frontend archive/legacy_frontend/web_frontend
 1. CI-/Workflow-Pfade auf Greenfield umstellen
 2. Legacy-Dokumentation auf neue Archivpfade aktualisieren
 3. `server_tools/` und weitere Restordner geordnet archivieren
+
+## Update: Wave 1 bereits archiviert (teilweise)
+Bereits nach `archive/` verschoben:
+- `ai_service/`
+- `cronjob/`
+- `tools/`
+- `lora_adapter/`
+- `web_frontend/`
+- `game_main.py`
+- `test_suite_analysis.py`
+
+Offen fuer spaetere Archiv-Wellen (wegen aktiver Referenzen / CI):
+- `backend_v2/`
+- `backend_server/`
+- `server_tools/`
+- `class_folder/`
+- `trainer/`
+- `templates/`
+- `analysis_dataset.jsonl`

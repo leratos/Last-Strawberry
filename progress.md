@@ -302,3 +302,9 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 
 - G560-G600 abgeschlossen: UI rendert `dialog_topic_skill_check` im Turn-Verlauf jetzt kompakt mit Badges (Erfolg/Misserfolg, W20, Mod, DC, Total) und kurzer Probe-Zeile statt nur langem Eventtext; Fallback auf normalen Eventtext bleibt bei fehlenden Metadaten aktiv.
 - Tests/Builds: `npm.cmd --prefix apps/web_client run build` -> OK.
+
+- G610-G659 Draft (gestartet): Projektordner-Aufraeumen / Archiv-Welle 1. Verschiebe klar inaktive Legacy-Pfade nach `archive/`, lasse aktive Bridge-/CI-Pfade (`backend_v2`, `backend_server`, `server_tools`, `class_folder`) vorerst stehen. Aktualisiere minimale Doku/Codecov-Ignore-Pfade.
+
+- G610-G659 abgeschlossen (Archiv-Welle 1): Inaktive Legacy-Pfade nach `archive/` verschoben (`ai_service`, `cronjob`, `tools`, `lora_adapter`, `web_frontend`, `game_main.py`, `test_suite_analysis.py`). README/Codecov/Archiv-Doku auf neuen Stand aktualisiert.
+- Bewusst nicht verschoben (aktive Referenzen / CI): `backend_v2`, `backend_server`, `server_tools`, `class_folder`; zusaetzlich `trainer`, `templates`, `analysis_dataset.jsonl` wegen indirekter Legacy-Abhaengigkeiten.
+- Tests: keine Ausfuehrung (Move-/Doku-PR, keine Logikaenderung). Risiko: einzelne veraltete Doku-Verweise ausserhalb der aktualisierten Dateien koennen weiterhin historische Pfade nennen.
