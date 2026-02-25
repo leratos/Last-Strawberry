@@ -63,9 +63,11 @@ Bewusst vorerst **nicht** verschoben (aktuell noch in Workflows/Bridge referenzi
 - `class_folder/`
 
 Bewusst vorerst **nicht** verschoben (indirekte Legacy-Abhaengigkeiten):
-- `trainer/`
 - `templates/`
 - `analysis_dataset.jsonl`
+
+Zusatzstatus:
+- `trainer/` wurde in Wave 2 Schritt 2 bereits archiviert nach `archive/legacy_training_tools/trainer/`.
 
 Siehe Vorbereitung fuer die koordinierte Archiv-Welle 2:
 - `docs/archive_legacy_wave2_preparation.md`

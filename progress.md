@@ -324,3 +324,10 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Archiv-Pfad fuer Shim-Import als Python-Package vorbereitet (`archive/__init__.py`, `archive/legacy_desktop_core/__init__.py`).
 - Checks: `python -c \"from templates.regeln import ...\"` erfolgreich; `py_compile` fuer mehrere aktive `templates.regeln`-Importer (`class_folder`, `server_tools`, `trainer`) erfolgreich.
 - Offener Wave-2-Rest: `trainer/` verschieben (Fallback in `backend_server/main.py` vorbereitet) und `analysis_dataset.jsonl` verschieben (Fallback in `hf_fine_tuner.py` vorbereitet).
+
+- G750-G799 Draft (gestartet): Wave 2 Schritt 2 (`trainer/` nach `archive/legacy_training_tools/trainer/` verschieben), inkl. kurzer Pfadauflosungs-Pruefung fuer `backend_server`-Trainingsskripte und Doku-Statusupdate.
+
+- G750-G799 abgeschlossen (Wave 2 Schritt 2): `trainer/` nach `archive/legacy_training_tools/trainer/` verschoben.
+- `backend_server/main.py` bleibt kompatibel dank vorbereitetem Fallback-Resolver (`trainer/...` -> `archive/legacy_training_tools/trainer/...`).
+- Checks: Archiv-Zieldateien vorhanden (`train_analyst.py`, `train_narrative.py`) und `py_compile` fuer `backend_server/main.py` + beide Trainer-Skripte erfolgreich.
+- Doku-Status fuer Wave 2 aktualisiert (`docs/archive_legacy_wave2_preparation.md`, Archivplan/-Manifest).
