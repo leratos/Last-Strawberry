@@ -45,3 +45,24 @@ Legacy-Bestand im selben Repo erhalten, aber den Greenfield-Track klar trennen.
 3. Archiv-Move-PR fuer Legacy erstellen
 4. Dokument-Links und README aktualisieren
 5. Branch Protection um Greenfield-Checks erweitern
+
+## Status (Wave 1 erledigt)
+Archiviert (ohne aktive Bridge-/CI-Pfade anzufassen):
+- `ai_service/` -> `archive/legacy_training_tools/ai_service/`
+- `cronjob/` -> `archive/legacy_training_tools/cronjob/`
+- `tools/` -> `archive/legacy_training_tools/tools/`
+- `lora_adapter/` -> `archive/legacy_training_tools/lora_adapter/`
+- `web_frontend/` -> `archive/legacy_frontend/web_frontend/`
+- `game_main.py` -> `archive/legacy_desktop_core/game_main.py`
+- `test_suite_analysis.py` -> `archive/legacy_misc/test_suite_analysis.py`
+
+Bewusst vorerst **nicht** verschoben (aktuell noch in Workflows/Bridge referenziert):
+- `backend_v2/`
+- `backend_server/`
+- `server_tools/`
+- `class_folder/`
+
+Bewusst vorerst **nicht** verschoben (indirekte Legacy-Abhaengigkeiten):
+- `trainer/`
+- `templates/`
+- `analysis_dataset.jsonl`
