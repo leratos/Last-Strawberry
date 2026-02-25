@@ -35,7 +35,7 @@ Damit ist Wave 2 **kein** reiner `git mv`-PR, sondern ein koordinierter Migratio
 
 Damit sind zwei harte Dateipfad-Abhaengigkeiten bereits migrationsfest.
 
-## Offene Referenzbereinigung fuer Wave 2
+## Offene Referenzbereinigung fuer Wave 2 (historisch, inzwischen erledigt)
 
 ### A) `templates/` (kritisch)
 Aktive Imports:
@@ -77,7 +77,7 @@ Geplanter Zielpfad:
 1. `templates/`-Shim-PR (inkl. Archiv-Move + `__init__.py`-Pakete) ✅ erledigt (G700-G749)
 2. `trainer/`-Move-PR (Pfadreferenzen sind vorbereitet) ✅ erledigt (G750-G799)
 3. `analysis_dataset.jsonl`-Move-PR ✅ erledigt (G800-G829)
-4. Doku-Nachlauf-PR (restliche historische Pfade in README/docs bereinigen)
+4. Doku-Nachlauf-PR (restliche historische Pfade in README/docs bereinigen) ✅ erledigt (G610-G699)
 
 ## Abbruchkriterien / Risiken
 - Wenn `backend_server`-Admin-Training im laufenden Betrieb aktiv genutzt wird, `trainer/`-Move nur nach kurzem Smoke-Test.
@@ -88,3 +88,12 @@ Geplanter Zielpfad:
 1. `python -m uvicorn backend_server.main:app --reload --port 8001` (Importcheck)
 2. Optionaler Trainingspfad-Check (nur Path-Aufloesung, kein Training starten)
 3. `python -m pytest backend_server/tests -q` (soweit lauffaehig im aktuellen Env)
+
+## Abschlussstatus Wave 2
+Wave 2 ist abgeschlossen:
+- `templates/` archiviert (mit kompatiblem Top-Level-Shim)
+- `trainer/` archiviert
+- `analysis_dataset.jsonl` archiviert
+- Doku-Nachlauf fuer veraltete Pfadverweise durchgefuehrt
+
+Weitere Archivarbeit ist fuer Wave 2 nicht mehr noetig.

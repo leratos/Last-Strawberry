@@ -8,6 +8,11 @@ Dieses Manifest dient als Grundlage fuer einen **reinen Archiv-PR**:
 - keine Logikaenderungen
 - keine CI-/Testlogik in demselben PR
 
+## Statushinweis (historisch)
+Dieses Manifest ist inzwischen eine **historische Referenz**.
+
+Der urspruengliche Gesamt-Move wurde bewusst in mehrere Waves aufgeteilt. Wave 1 und Wave 2 sind abgeschlossen; die verbleibenden Top-Level-Komponenten werden aktuell aus Kompatibilitaetsgruenden nicht verschoben.
+
 ## Branch-Empfehlung
 - `chore/archive-legacy-v1`
 
@@ -58,7 +63,7 @@ Bereits nach `archive/` verschoben:
 - `game_main.py`
 - `test_suite_analysis.py`
 
-Offen fuer spaetere Archiv-Wellen (wegen aktiver Referenzen / CI):
+Bewusst weiter top-level belassen (aktiver Betrieb / Kompatibilitaet):
 - `backend_v2/`
 - `backend_server/`
 - `server_tools/`
@@ -69,5 +74,5 @@ Bereits in Wave 2 archiviert:
 - `trainer/` -> `archive/legacy_training_tools/trainer/`
 - `analysis_dataset.jsonl` -> `archive/legacy_misc/analysis_dataset.jsonl`
 
-Vor Wave 2 (trainer/templates/analysis_dataset) zuerst Referenzbereinigung beachten:
+Wave-2-Referenzdoku (historisch, abgeschlossen):
 - `docs/archive_legacy_wave2_preparation.md`

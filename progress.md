@@ -338,3 +338,9 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Fallback in `class_folder/core/hf_fine_tuner.py` greift wie vorbereitet: Root-Datei fehlt, Archivdatei vorhanden.
 - Checks: `python -c` Dateiexistenzcheck (root=false, archive=true), `python -m py_compile class_folder/core/hf_fine_tuner.py` erfolgreich.
 - Wave-2-Doku-/Archivstatus aktualisiert (`docs/archive_legacy_wave2_preparation.md`, Archivplan/-Manifest).
+
+- G610-G699 Draft (gestartet): Doku-Nachlauf fuer veraltete Legacy-Pfadverweise + Abschluss der Archivwellen. Fokus: repo-weite Referenzsuche auf bereits archivierte Pfade, gezielte Bereinigung aktiver Doku/Config-Verweise, Abschlussdokumentation mit klarer Liste verbleibender bewusst aktiver Legacy-Komponenten.
+
+- G610-G699 abgeschlossen: Doku-Nachlauf fuer archivierte Legacy-Pfade durchgefuehrt (codecov.yml, Archiv-Dokus, Roadmap-Hinweis zu historischem web_frontend).
+- Archivthema im aktuellen Scope als abgeschlossen dokumentiert: Wave 1 + Wave 2 erledigt; verbleibende Top-Level-Legacy-Komponenten (`backend_v2`, `backend_server`, `server_tools`, `class_folder`, `templates`-Shim) bewusst aktiv/kompatibilitaetsrelevant und daher kein weiterer Archiv-Move offen.
+- Finalscan: verbleibende Treffer zu archivierten Pfaden nur in historischen/Archiv-Dokus, README (korrekter Archivpfad) und aktiven Kompatibilitaets-Fallbacks/Shims.
