@@ -421,12 +421,13 @@ def apply_authored_dialog_topics_for_turn(
             dc_value = int(skill_check_result["dc"])
             roll_value = int(skill_check_result["roll"])
             mod_value = int(skill_check_result["modifier"])
+            attr_score = int(skill_check_result["attribute_score"])
             outcome_label = "Erfolg" if success else "Misserfolg"
             events.append(
                 TurnSystemEvent(
                     code="dialog_topic_skill_check",
                     message=(
-                        f"Probe {label} ({attr_name}) -> {outcome_label}: "
+                        f"Probe {label} ({attr_name} {attr_score} / Mod {'+' if mod_value >= 0 else '-'}{abs(mod_value)}) -> {outcome_label}: "
                         f"W20 {roll_value} {'+' if mod_value >= 0 else '-'} {abs(mod_value)} = {total_value} gegen DC {dc_value}."
                     ),
                     severity="info" if success else "warning",
@@ -435,7 +436,7 @@ def apply_authored_dialog_topics_for_turn(
                         "target_name": target_name,
                         "check_label": label,
                         "check_attribute": attr_name,
-                        "attribute_score": int(skill_check_result["attribute_score"]),
+                        "attribute_score": attr_score,
                         "modifier": mod_value,
                         "roll": roll_value,
                         "total": total_value,

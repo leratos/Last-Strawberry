@@ -292,3 +292,8 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - UI: Topic-Metadaten-Hinweistext von `Probe spaeter` auf `Probe` umgestellt (Skillcheck jetzt aktiv statt nur vorbereitet).
 - Tests/Builds: `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g450_dialog_topic_variant_and_followup_flag_transition -q` (1 passed), `pytest apps/game_api/tests -q` (104 passed), `npm.cmd --prefix apps/web_client run build`.
 - Offene Punkte / technische Schuld: Skillchecks laufen aktuell im Dialogtopic-Effektpfad nach Rules-Resolution (nicht im allgemeinen Regelkern) und sind deterministisch fuer Teststabilitaet. Spaeter fuer echtes Pen&Paper-Gefuehl: konfigurierbare Wurfquelle (seeded/random), UI-Wurftransparenz und breitere Integration in Dialog/Kampf/Discovery.
+
+- G550-G559 Draft (gestartet): Skillcheck-Eventtext klarer machen (Attributswert + Modifikator explizit anzeigen), damit `charisma=10` und `Mod +0` im UI nicht als Rechenfehler missverstanden werden.
+
+- G550-G559 abgeschlossen: Skillcheck-Eventtext (`dialog_topic_skill_check`) erweitert um Attributswert + Modifikator im Klartext, z. B. `Probe ... (charisma 10 / Mod +0)`, ohne Skillcheck-Logik zu aendern.
+- Tests: `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g450_dialog_topic_variant_and_followup_flag_transition -q` -> 1 passed.
