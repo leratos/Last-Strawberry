@@ -308,3 +308,12 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - G610-G659 abgeschlossen (Archiv-Welle 1): Inaktive Legacy-Pfade nach `archive/` verschoben (`ai_service`, `cronjob`, `tools`, `lora_adapter`, `web_frontend`, `game_main.py`, `test_suite_analysis.py`). README/Codecov/Archiv-Doku auf neuen Stand aktualisiert.
 - Bewusst nicht verschoben (aktive Referenzen / CI): `backend_v2`, `backend_server`, `server_tools`, `class_folder`; zusaetzlich `trainer`, `templates`, `analysis_dataset.jsonl` wegen indirekter Legacy-Abhaengigkeiten.
 - Tests: keine Ausfuehrung (Move-/Doku-PR, keine Logikaenderung). Risiko: einzelne veraltete Doku-Verweise ausserhalb der aktualisierten Dateien koennen weiterhin historische Pfade nennen.
+
+- G660-G699 Draft (gestartet): Archiv-Welle 2 vorbereiten (`trainer/`, `templates/`, `analysis_dataset.jsonl`) mit Referenzbereinigung vor dem eigentlichen Move. Ziel: aktive Pfade (`backend_server`, `class_folder`) migrationsfest machen und sichere Move-Reihenfolge dokumentieren.
+
+- G660-G699 abgeschlossen (Wave-2 Vorbereitung): Referenzbereinigung fuer spaetere Archivierung vorbereitet.
+- `backend_server/main.py`: Trainer-Script-Pfade auf Fallback-Resolver umgestellt (unterstuetzt `trainer/...` und spaeter `archive/legacy_training_tools/trainer/...`).
+- `class_folder/core/hf_fine_tuner.py`: Analyse-Dataset-Suche auf Root + spaeteren Archivpfad erweitert (`archive/legacy_misc/analysis_dataset.jsonl`).
+- Neue Doku `docs/archive_legacy_wave2_preparation.md`: Referenzmatrix, Risiken, Shim-Strategie fuer `templates/`, empfohlene Ausfuehrungsreihenfolge fuer Wave 2.
+- Archiv-Doku verlinkt (`docs/archive_legacy_greenfield_plan.md`, `docs/archive_legacy_move_manifest_v1.md`).
+- Tests: `python -m py_compile backend_server/main.py class_folder/core/hf_fine_tuner.py` (Syntax/Import-Basis ok). Keine Legacy-Runtime-Smokes ausgefuehrt.
