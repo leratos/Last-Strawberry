@@ -46,6 +46,15 @@ Legacy-Bestand im selben Repo erhalten, aber den Greenfield-Track klar trennen.
 4. Dokument-Links und README aktualisieren
 5. Branch Protection um Greenfield-Checks erweitern
 
+## Status (Archivierung abgeschlossen im aktuellen Scope)
+Das Archivprogramm ist fuer den **aktuellen Greenfield-/Kompatibilitaets-Scope** abgeschlossen.
+
+Erledigt:
+- Wave 1 (inaktive Legacy-Pfade)
+- Wave 2 (templates/trainer/analysis_dataset inkl. Referenzbereinigung + Doku-Nachlauf)
+
+Keine weitere Archivwelle ist aktuell erforderlich, solange die unten gelisteten Komponenten aktiv genutzt werden.
+
 ## Status (Wave 1 erledigt)
 Archiviert (ohne aktive Bridge-/CI-Pfade anzufassen):
 - `ai_service/` -> `archive/legacy_training_tools/ai_service/`
@@ -56,18 +65,26 @@ Archiviert (ohne aktive Bridge-/CI-Pfade anzufassen):
 - `game_main.py` -> `archive/legacy_desktop_core/game_main.py`
 - `test_suite_analysis.py` -> `archive/legacy_misc/test_suite_analysis.py`
 
-Bewusst vorerst **nicht** verschoben (aktuell noch in Workflows/Bridge referenziert):
+Bewusst weiterhin **nicht** verschoben (aktuell aktive Runtime-/Ops-/Bridge-Komponenten):
 - `backend_v2/`
 - `backend_server/`
 - `server_tools/`
 - `class_folder/`
 
-Bewusst vorerst **nicht** verschoben (indirekte Legacy-Abhaengigkeiten):
+Bewusst weiterhin **nicht** verschoben (Kompatibilitaets-Shim, absichtlich top-level belassen):
 - `templates/`
 
 Zusatzstatus:
 - `analysis_dataset.jsonl` wurde in Wave 2 Schritt 3 bereits archiviert nach `archive/legacy_misc/analysis_dataset.jsonl`.
 - `trainer/` wurde in Wave 2 Schritt 2 bereits archiviert nach `archive/legacy_training_tools/trainer/`.
 
-Siehe Vorbereitung fuer die koordinierte Archiv-Welle 2:
+Wave-2-Dokumentation (historisch / Nachvollziehbarkeit):
 - `docs/archive_legacy_wave2_preparation.md`
+
+## Abschlusskriterium fuer das Thema "Archivieren"
+Das Thema gilt als abgeschlossen, wenn:
+- keine offenen Move-Wellen fuer inaktive Legacy-Pfade existieren
+- verbleibende Top-Level-Legacy-Komponenten explizit als aktiv/notwendig dokumentiert sind
+- Dokumentation und Referenzen auf archivierte Pfade nachgezogen wurden
+
+Dieser Zustand ist mit Stand dieser Datei erreicht.
