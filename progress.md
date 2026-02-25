@@ -331,3 +331,10 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - `backend_server/main.py` bleibt kompatibel dank vorbereitetem Fallback-Resolver (`trainer/...` -> `archive/legacy_training_tools/trainer/...`).
 - Checks: Archiv-Zieldateien vorhanden (`train_analyst.py`, `train_narrative.py`) und `py_compile` fuer `backend_server/main.py` + beide Trainer-Skripte erfolgreich.
 - Doku-Status fuer Wave 2 aktualisiert (`docs/archive_legacy_wave2_preparation.md`, Archivplan/-Manifest).
+
+- G800-G829 Draft (gestartet): Wave 2 Schritt 3 (`analysis_dataset.jsonl` nach `archive/legacy_misc/analysis_dataset.jsonl` verschieben), inkl. Fallback-Pruefung ueber `class_folder/core/hf_fine_tuner.py` und Doku-Statusupdate.
+
+- G800-G829 abgeschlossen (Wave 2 Schritt 3): `analysis_dataset.jsonl` nach `archive/legacy_misc/analysis_dataset.jsonl` verschoben.
+- Fallback in `class_folder/core/hf_fine_tuner.py` greift wie vorbereitet: Root-Datei fehlt, Archivdatei vorhanden.
+- Checks: `python -c` Dateiexistenzcheck (root=false, archive=true), `python -m py_compile class_folder/core/hf_fine_tuner.py` erfolgreich.
+- Wave-2-Doku-/Archivstatus aktualisiert (`docs/archive_legacy_wave2_preparation.md`, Archivplan/-Manifest).
