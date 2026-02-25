@@ -632,11 +632,30 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         payload = topic_response.json()
         response_events = [e for e in payload["turn"]["resolution"]["system_events"] if e["code"] == "dialog_topic_response"]
         self.assertGreaterEqual(len(response_events), 1)
-        self.assertIn("gereizt", response_events[-1]["message"])
+        skill_events = [e for e in payload["turn"]["resolution"]["system_events"] if e["code"] == "dialog_topic_skill_check"]
+        self.assertGreaterEqual(len(skill_events), 1)
+        skill_event = skill_events[-1]
+        self.assertTrue(skill_event.get("metadata"))
+        self.assertEqual(skill_event["metadata"].get("check_attribute"), "charisma")
+        self.assertEqual(int(skill_event["metadata"].get("dc") or 0), 13)
+        self.assertIn("roll", skill_event["metadata"])
+        self.assertIn("total", skill_event["metadata"])
+        self.assertIn("success", skill_event["metadata"])
+        self.assertTrue(skill_event["message"].startswith("Probe Konfrontation"))
+        self.assertTrue(
+            ("gereizt" in response_events[-1]["message"])
+            or ("wahrscheinlich absichtlich gesetzt" in response_events[-1]["message"])
+        )
 
         flags = payload["context_after_turn"]["story_flags"]
         self.assertTrue(flags["ritual_sabotage_suspected"])
-        self.assertTrue(flags["kael_defensive_under_pressure"])
+        self.assertTrue(flags["dialog_skillcheck_used_kael_sabotage_hypothesis"])
+        self.assertIn("dialog_skillcheck_passed_kael_sabotage_hypothesis", flags)
+        self.assertIn("dialog_skillcheck_total_kael_sabotage_hypothesis", flags)
+        if bool(flags["dialog_skillcheck_passed_kael_sabotage_hypothesis"]):
+            self.assertTrue(flags["kael_sabotage_hypothesis_pressure_success"])
+        else:
+            self.assertTrue(flags["kael_defensive_under_pressure"])
         self.assertEqual(int(flags["occult_heat_level"]), 2)
 
         followup = next(q for q in payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup")

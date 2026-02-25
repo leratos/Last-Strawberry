@@ -1844,7 +1844,7 @@ export function App() {
                               <div key={`${entry.bundle.profile.npc_id}:${topic.topic_id}:meta`}>
                                 Topic {topic.label}
                                 {topic.future_check_label || topic.future_check_attribute
-                                  ? ` | Probe spaeter: ${topic.future_check_label || topic.future_check_attribute}${
+                                  ? ` | Probe: ${topic.future_check_label || topic.future_check_attribute}${
                                       typeof topic.future_check_dc === "number" && Number.isFinite(topic.future_check_dc)
                                         ? ` (DC ${topic.future_check_dc})`
                                         : ""
