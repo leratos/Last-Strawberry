@@ -60,6 +60,7 @@ type DialogTopicOption = {
   requires_flag?: string;
 };
 type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
+type TurnEventMetadata = NonNullable<TurnSystemEventView["metadata"]>;
 type ActiveClarifyState = {
   turnId: string;
   rawPlayerInput: string;
@@ -306,6 +307,86 @@ function eventGroupClass(eventCode: string): string {
     return "event-group-dialog";
   }
   return "event-group-system";
+}
+
+type SkillCheckEventSummary = {
+  label: string;
+  attribute: string;
+  attributeScore: number;
+  modifier: number;
+  roll: number;
+  total: number;
+  dc: number;
+  success: boolean;
+};
+
+function asMetadataNumber(metadata: TurnEventMetadata | undefined, key: string): number | null {
+  const value = metadata?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function asMetadataBoolean(metadata: TurnEventMetadata | undefined, key: string): boolean | null {
+  const value = metadata?.[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    if (value.toLowerCase() === "true") {
+      return true;
+    }
+    if (value.toLowerCase() === "false") {
+      return false;
+    }
+  }
+  return null;
+}
+
+function getSkillCheckEventSummary(event: TurnSystemEventView): SkillCheckEventSummary | null {
+  if (event.code !== "dialog_topic_skill_check") {
+    return null;
+  }
+  const metadata = event.metadata;
+  const label = typeof metadata?.check_label === "string" ? metadata.check_label : "";
+  const attribute = typeof metadata?.check_attribute === "string" ? metadata.check_attribute : "";
+  const attributeScore = asMetadataNumber(metadata, "attribute_score");
+  const modifier = asMetadataNumber(metadata, "modifier");
+  const roll = asMetadataNumber(metadata, "roll");
+  const total = asMetadataNumber(metadata, "total");
+  const dc = asMetadataNumber(metadata, "dc");
+  const success = asMetadataBoolean(metadata, "success");
+  if (
+    !label ||
+    !attribute ||
+    attributeScore === null ||
+    modifier === null ||
+    roll === null ||
+    total === null ||
+    dc === null ||
+    success === null
+  ) {
+    return null;
+  }
+  return {
+    label,
+    attribute,
+    attributeScore,
+    modifier,
+    roll,
+    total,
+    dc,
+    success,
+  };
+}
+
+function formatSignedNumber(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value)}`;
 }
 
 function parseClarifyCandidates(
@@ -1504,7 +1585,30 @@ export function App() {
                                     {eventGroupLabel(event.code)}
                                   </span>
                                   <span className={`event-badge event-${event.severity}`}>{event.code}</span>
-                                  <span className="event-message">{event.message}</span>
+                                  {(() => {
+                                    const skillCheckSummary = getSkillCheckEventSummary(event);
+                                    if (!skillCheckSummary) {
+                                      return <span className="event-message">{event.message}</span>;
+                                    }
+                                    return (
+                                      <div className="skillcheck-summary">
+                                        <div className="skillcheck-badges">
+                                          <span
+                                            className={`skillcheck-badge ${skillCheckSummary.success ? "skillcheck-success" : "skillcheck-fail"}`}
+                                          >
+                                            {skillCheckSummary.success ? "Erfolg" : "Misserfolg"}
+                                          </span>
+                                          <span className="skillcheck-badge">W20 {skillCheckSummary.roll}</span>
+                                          <span className="skillcheck-badge">Mod {formatSignedNumber(skillCheckSummary.modifier)}</span>
+                                          <span className="skillcheck-badge">DC {skillCheckSummary.dc}</span>
+                                          <span className="skillcheck-badge">Total {skillCheckSummary.total}</span>
+                                        </div>
+                                        <span className="event-message">
+                                          Probe {skillCheckSummary.label} ({skillCheckSummary.attribute} {skillCheckSummary.attributeScore})
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                   {event.code === "clarify_required" ? (
                                     (() => {
                                       const candidates = normalizeClarifyCandidates(event);
