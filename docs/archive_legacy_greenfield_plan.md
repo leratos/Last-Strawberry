@@ -66,3 +66,6 @@ Bewusst vorerst **nicht** verschoben (indirekte Legacy-Abhaengigkeiten):
 - `trainer/`
 - `templates/`
 - `analysis_dataset.jsonl`
+
+Siehe Vorbereitung fuer die koordinierte Archiv-Welle 2:
+- `docs/archive_legacy_wave2_preparation.md`

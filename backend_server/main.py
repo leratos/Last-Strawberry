@@ -33,9 +33,28 @@ import time
 from class_folder.core.database_manager import DatabaseManager
 from server_tools.auth_utils import verify_password, get_password_hash, create_access_token, verify_access_token, get_current_user_from_token
 
+
+def _resolve_legacy_script_path(*relative_candidates: str) -> Path:
+    """Resolve script path across legacy root and archived locations.
+
+    This keeps runtime compatibility while the repo is migrated in archive waves.
+    """
+    for relative in relative_candidates:
+        candidate = project_root / relative
+        if candidate.exists():
+            return candidate
+    return project_root / relative_candidates[0]
+
+
 ALLOWED_SCRIPTS = {
-    "train_analyst": project_root / "trainer/train_analyst.py",
-    "train_narrative": project_root / "trainer/train_narrative.py",
+    "train_analyst": _resolve_legacy_script_path(
+        "trainer/train_analyst.py",
+        "archive/legacy_training_tools/trainer/train_analyst.py",
+    ),
+    "train_narrative": _resolve_legacy_script_path(
+        "trainer/train_narrative.py",
+        "archive/legacy_training_tools/trainer/train_narrative.py",
+    ),
 }
 
 # --- Logging-Konfiguration ---

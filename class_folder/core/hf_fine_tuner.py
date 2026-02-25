@@ -33,6 +33,11 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
+
+def _existing_path_candidates(*paths: Path) -> list[Path]:
+    """Return all existing candidate paths in order."""
+    return [path for path in paths if path.exists()]
+
 class AnalysisJsonlDataset(Dataset):
     """Eine Dataset-Klasse, die vorformatierte Texte aus einer oder mehreren JSONL-Dateien lädt."""
     def __init__(self, data_paths: List[Path], tokenizer: Any, max_length: int):
@@ -125,12 +130,13 @@ class HFFineTuner:
 
         elif self.task_type == 'ANALYSIS':
             testsuite_data_path = Path("analysis_dataset.jsonl")
+            archived_testsuite_data_path = Path("archive/legacy_misc/analysis_dataset.jsonl")
             dm_corrected_data_path = Path("dm_corrected_analysis_dataset.jsonl")
             
             all_data_paths = []
-            if testsuite_data_path.exists():
-                all_data_paths.append(testsuite_data_path)
-                logger.info(f"Gefunden: {testsuite_data_path}")
+            for candidate_path in _existing_path_candidates(testsuite_data_path, archived_testsuite_data_path):
+                all_data_paths.append(candidate_path)
+                logger.info(f"Gefunden: {candidate_path}")
             if dm_corrected_data_path.exists():
                 all_data_paths.append(dm_corrected_data_path)
                 logger.info(f"Gefunden: {dm_corrected_data_path}")
