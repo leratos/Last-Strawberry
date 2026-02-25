@@ -317,3 +317,10 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Neue Doku `docs/archive_legacy_wave2_preparation.md`: Referenzmatrix, Risiken, Shim-Strategie fuer `templates/`, empfohlene Ausfuehrungsreihenfolge fuer Wave 2.
 - Archiv-Doku verlinkt (`docs/archive_legacy_greenfield_plan.md`, `docs/archive_legacy_move_manifest_v1.md`).
 - Tests: `python -m py_compile backend_server/main.py class_folder/core/hf_fine_tuner.py` (Syntax/Import-Basis ok). Keine Legacy-Runtime-Smokes ausgefuehrt.
+
+- G700-G749 Draft (gestartet): Wave 2 Schritt 1 umsetzen (`templates/` ins Archiv verschieben + Top-Level-Kompatibilitaets-Shim `templates.regeln` beibehalten), damit aktive Legacy-Imports nicht brechen.
+
+- G700-G749 abgeschlossen (Wave 2 Schritt 1): `templates/` nach `archive/legacy_desktop_core/templates/` verschoben und Top-Level-Kompatibilitaets-Shim (`templates/__init__.py`, `templates/regeln.py`) angelegt.
+- Archiv-Pfad fuer Shim-Import als Python-Package vorbereitet (`archive/__init__.py`, `archive/legacy_desktop_core/__init__.py`).
+- Checks: `python -c \"from templates.regeln import ...\"` erfolgreich; `py_compile` fuer mehrere aktive `templates.regeln`-Importer (`class_folder`, `server_tools`, `trainer`) erfolgreich.
+- Offener Wave-2-Rest: `trainer/` verschieben (Fallback in `backend_server/main.py` vorbereitet) und `analysis_dataset.jsonl` verschieben (Fallback in `hf_fine_tuner.py` vorbereitet).
