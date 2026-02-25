@@ -63,9 +63,11 @@ Offen fuer spaetere Archiv-Wellen (wegen aktiver Referenzen / CI):
 - `backend_server/`
 - `server_tools/`
 - `class_folder/`
-- `trainer/`
 - `templates/`
 - `analysis_dataset.jsonl`
+
+Bereits in Wave 2 archiviert:
+- `trainer/` -> `archive/legacy_training_tools/trainer/`
 
 Vor Wave 2 (trainer/templates/analysis_dataset) zuerst Referenzbereinigung beachten:
 - `docs/archive_legacy_wave2_preparation.md`
