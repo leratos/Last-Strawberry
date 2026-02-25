@@ -297,3 +297,8 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 
 - G550-G559 abgeschlossen: Skillcheck-Eventtext (`dialog_topic_skill_check`) erweitert um Attributswert + Modifikator im Klartext, z. B. `Probe ... (charisma 10 / Mod +0)`, ohne Skillcheck-Logik zu aendern.
 - Tests: `pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g450_dialog_topic_variant_and_followup_flag_transition -q` -> 1 passed.
+
+- G560-G600 Draft (gestartet): Skillcheck-Event im Turn-Verlauf kompakter rendern (Badges fuer W20, Mod, DC, Total, Erfolg/Misserfolg) auf Basis vorhandener `dialog_topic_skill_check`-Metadaten, ohne Backend-API zu aendern.
+
+- G560-G600 abgeschlossen: UI rendert `dialog_topic_skill_check` im Turn-Verlauf jetzt kompakt mit Badges (Erfolg/Misserfolg, W20, Mod, DC, Total) und kurzer Probe-Zeile statt nur langem Eventtext; Fallback auf normalen Eventtext bleibt bei fehlenden Metadaten aktiv.
+- Tests/Builds: `npm.cmd --prefix apps/web_client run build` -> OK.
