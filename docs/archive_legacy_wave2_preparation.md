@@ -76,7 +76,7 @@ Geplanter Zielpfad:
 ## Empfohlene Ausfuehrungsreihenfolge fuer Wave 2
 1. `templates/`-Shim-PR (inkl. Archiv-Move + `__init__.py`-Pakete) ✅ erledigt (G700-G749)
 2. `trainer/`-Move-PR (Pfadreferenzen sind vorbereitet) ✅ erledigt (G750-G799)
-3. `analysis_dataset.jsonl`-Move-PR
+3. `analysis_dataset.jsonl`-Move-PR ✅ erledigt (G800-G829)
 4. Doku-Nachlauf-PR (restliche historische Pfade in README/docs bereinigen)
 
 ## Abbruchkriterien / Risiken
