@@ -344,3 +344,13 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - G610-G699 abgeschlossen: Doku-Nachlauf fuer archivierte Legacy-Pfade durchgefuehrt (codecov.yml, Archiv-Dokus, Roadmap-Hinweis zu historischem web_frontend).
 - Archivthema im aktuellen Scope als abgeschlossen dokumentiert: Wave 1 + Wave 2 erledigt; verbleibende Top-Level-Legacy-Komponenten (`backend_v2`, `backend_server`, `server_tools`, `class_folder`, `templates`-Shim) bewusst aktiv/kompatibilitaetsrelevant und daher kein weiterer Archiv-Move offen.
 - Finalscan: verbleibende Treffer zu archivierten Pfaden nur in historischen/Archiv-Dokus, README (korrekter Archivpfad) und aktiven Kompatibilitaets-Fallbacks/Shims.
+
+- G700-G799 Draft (gestartet): Vertical-Slice-Produktpfad weiterziehen mit authored Dialog-Topics als kleinem Dialogbaum (Folgeoptionen), staerkeren Quest-/Flag-Transitions aus Topic-Entscheidungen und Skillcheck-Auswirkungen (MVP, ohne allgemeinen Dice-/Dialog-Engine-Refactor).
+
+- G700-G799 abgeschlossen: Kleiner authored Dialogbaum/Folgeoptionen fuer Urban-Occult-Vertical-Slice implementiert (Kael-Crosscheck-Branch nach `kael_sabotage_hypothesis`).
+- `quest_authoring.py`: skillcheck-abhaengige Folge-Topics (`kael_crosscheck_press_for_names` vs. `kael_crosscheck_reframe_with_evidence`), topicgetriebener Abschluss des Followup-Crosschecks inkl. Quest-Events aus Topic-Effekten, branch-spezifische Hinweise/Hints.
+- `persistence.py`: Story-Flags nach Dialogtopic-Effekten erneut aus Queststatus abgeleitet, damit topicbedingte Questabschluesse im selben Turn konsistent in `story_flags` landen.
+- `App.tsx`: Dialogtopic-UI/Parser erweitert (Folgeoption-Metadaten wie `followup_of`, `followup_condition`, `effect_hint`, `dialog_tree_step/group`) und Anzeige im NPC-Panel verbessert.
+- Tests: neuer Route-Test fuer den kompletten Kael-Folgebranch bis Questabschluss (`test_g700_dialog_topic_followup_branch_completes_followup_crosscheck`), bestehender G450-Test auf branch-spezifische Hint-Texte robust gemacht.
+- Validierung: `python -m pytest apps/game_api/tests -q`, `npm.cmd --prefix apps/web_client run build`, Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 324 passed.
+- Tech Debt (bewusst): Dialogtopic-Effekte/Questuebergaenge laufen weiterhin im Persistenz-/Questpfad nach Rules-Resolution; fuer spaetere Narrationsqualitaet bleibt das Ziel `Rules/Persistenz -> Story/Dialog Beats -> Narrator`.
