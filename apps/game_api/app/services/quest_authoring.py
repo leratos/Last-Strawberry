@@ -4,13 +4,16 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 import hashlib
 
-from ls_shared_schemas.quests import QuestObjectiveState, WorldQuestState
+from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnResolution, TurnSystemEvent
 from ls_shared_schemas.world import WorldSeed
 from apps.game_api.app.services.quest_specs import (
     ObjectiveSpec,
+    ObjectiveTriggerSpec,
+    PredicateSpec,
     QuestSpec,
     TransitionSpec,
+    apply_objective_trigger_specs_to_quest_state,
     apply_transition_specs_to_quest_state,
     compile_quest_spec_to_world_state,
     validate_quest_specs_for_activation,
@@ -45,6 +48,65 @@ URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
             objective_id="report_to_mira",
             title="Mit Mira die Funde abgleichen",
             hint="Mira beobachtet die Lage ruhig und kann Hinweise einordnen.",
+        ),
+    ),
+    objective_triggers=(
+        ObjectiveTriggerSpec(
+            trigger_id="starter_objective_speak_with_kael_by_name",
+            objective_id="speak_with_kael",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="talk_kael",
+                    kind="action_seen",
+                    action_types=("TALK",),
+                    target_names=("kael",),
+                ),
+            ),
+            set_hint="Kael hat ein Gespraech gefuehrt; seine Aussagen koennen mit Funden abgeglichen werden.",
+            priority=10,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="starter_objective_inspect_supply_crate_by_ref",
+            objective_id="inspect_supply_crate",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="inspect_supply_crate_ref",
+                    kind="action_seen",
+                    action_types=("INSPECT", "OPEN", "SEARCH"),
+                    target_id_contains=("supply-crate",),
+                ),
+            ),
+            set_hint="Die Vorratskiste wurde untersucht; die Funde sollten mit Mira oder Kael abgeglichen werden.",
+            priority=20,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="starter_objective_inspect_supply_crate_by_name",
+            objective_id="inspect_supply_crate",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="inspect_supply_crate_name",
+                    kind="action_seen",
+                    action_types=("INSPECT", "OPEN", "SEARCH"),
+                    target_names=("vorratskiste",),
+                ),
+            ),
+            set_hint="Die Vorratskiste wurde untersucht; die Funde sollten mit Mira oder Kael abgeglichen werden.",
+            priority=21,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="starter_objective_report_to_mira",
+            objective_id="report_to_mira",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="talk_mira",
+                    kind="action_seen",
+                    action_types=("TALK",),
+                    target_names=("mira",),
+                ),
+            ),
+            requires_objectives_completed=("speak_with_kael", "inspect_supply_crate"),
+            set_hint="Mira hat die Funde eingeordnet und neue Ermittlungsansaetze angedeutet.",
+            priority=30,
         ),
     ),
     transitions=(
@@ -98,6 +160,64 @@ URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
             objective_id="crosscheck_with_kael",
             title="Mit Kael die zweite Spur abgleichen",
             hint="Kael kann Runenspuren und Fundstuecke aus dem Koffer einordnen.",
+        ),
+    ),
+    objective_triggers=(
+        ObjectiveTriggerSpec(
+            trigger_id="followup_objective_inspect_rune_traces_by_ref",
+            objective_id="inspect_rune_traces",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="inspect_rune_ref",
+                    kind="action_seen",
+                    action_types=("INSPECT",),
+                    target_ids=("poi-marktplatz-runenspuren",),
+                ),
+            ),
+            set_hint="Die Runenspuren wurden gesichert; ihr Verlauf laesst sich nun mit Werkzeug- oder Kofferspuren vergleichen.",
+            priority=10,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="followup_objective_inspect_rune_traces_by_name",
+            objective_id="inspect_rune_traces",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="inspect_rune_name",
+                    kind="action_seen",
+                    action_types=("INSPECT",),
+                    target_name_contains=("runenspuren",),
+                ),
+            ),
+            set_hint="Die Runenspuren wurden gesichert; ihr Verlauf laesst sich nun mit Werkzeug- oder Kofferspuren vergleichen.",
+            priority=11,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="followup_objective_open_sealed_case_by_ref",
+            objective_id="open_sealed_case",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="open_case_ref",
+                    kind="action_seen",
+                    action_types=("OPEN", "SEARCH"),
+                    target_ids=("obj-marktplatz-siegelkoffer",),
+                ),
+            ),
+            set_hint="Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen.",
+            priority=20,
+        ),
+        ObjectiveTriggerSpec(
+            trigger_id="followup_objective_open_sealed_case_by_name",
+            objective_id="open_sealed_case",
+            predicates=(
+                PredicateSpec(
+                    predicate_id="open_case_name",
+                    kind="action_seen",
+                    action_types=("OPEN", "SEARCH"),
+                    target_name_contains=("koffer",),
+                ),
+            ),
+            set_hint="Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen.",
+            priority=21,
         ),
     ),
     transitions=(
@@ -759,37 +879,12 @@ def advance_quests_for_turn(
         before_status = quest.status
         before_objectives = {obj.objective_id: obj.status for obj in quest.objectives}
         quest_copy = quest.model_copy(deep=True)
-
-        talked_to_kael = False
-        talked_to_mira = False
-        inspected_supply_crate = False
-        for action in resolution.applied_actions:
-            target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
-            target_name = str(action.parameters.get("target_name") or "").strip().lower()
-            if action.action_type == ActionType.talk:
-                if target_id == "npc-circle-binder" or target_name == "kael":
-                    talked_to_kael = True
-                if target_name == "mira":
-                    talked_to_mira = True
-            if action.action_type in {ActionType.inspect, ActionType.open, ActionType.search}:
-                if "supply-crate" in target_id or target_name == "vorratskiste":
-                    inspected_supply_crate = True
-
-        objective_map = {obj.objective_id: obj for obj in quest_copy.objectives}
-        if talked_to_kael and "speak_with_kael" in objective_map:
-            objective_map["speak_with_kael"].status = "completed"
-            objective_map["speak_with_kael"].hint = "Kael hat ein Gespraech gefuehrt; seine Aussagen koennen mit Funden abgeglichen werden."
-        if inspected_supply_crate and "inspect_supply_crate" in objective_map:
-            objective_map["inspect_supply_crate"].status = "completed"
-            objective_map["inspect_supply_crate"].hint = "Die Vorratskiste wurde untersucht; die Funde sollten mit Mira oder Kael abgeglichen werden."
-
-        can_report_to_mira = (
-            objective_map.get("speak_with_kael", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
-            and objective_map.get("inspect_supply_crate", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
+        apply_objective_trigger_specs_to_quest_state(
+            quest=quest_copy,
+            spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
+            resolution=resolution,
+            now=now,
         )
-        if "report_to_mira" in objective_map and talked_to_mira and can_report_to_mira:
-            objective_map["report_to_mira"].status = "completed"
-            objective_map["report_to_mira"].hint = "Mira hat die Funde eingeordnet und neue Ermittlungsansaetze angedeutet."
 
         apply_transition_specs_to_quest_state(
             quest=quest_copy,
@@ -909,26 +1004,12 @@ def _advance_urban_occult_followup_quest(
     before_status = quest.status
     before_objectives = {obj.objective_id: obj.status for obj in quest.objectives}
     quest_copy = quest.model_copy(deep=True)
-
-    inspected_runes = False
-    opened_case = False
-    for action in resolution.applied_actions:
-        target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
-        target_name = str(action.parameters.get("target_name") or "").strip().lower()
-        if action.action_type == ActionType.inspect and ("runenspuren" in target_name or "poi-marktplatz-runenspuren" == target_id):
-            inspected_runes = True
-        if action.action_type in {ActionType.open, ActionType.search} and (
-            "obj-marktplatz-siegelkoffer" == target_id or "koffer" in target_name
-        ):
-            opened_case = True
-
-    objective_map = {obj.objective_id: obj for obj in quest_copy.objectives}
-    if inspected_runes and "inspect_rune_traces" in objective_map:
-        objective_map["inspect_rune_traces"].status = "completed"
-        objective_map["inspect_rune_traces"].hint = "Die Runenspuren wurden gesichert; ihr Verlauf laesst sich nun mit Werkzeug- oder Kofferspuren vergleichen."
-    if opened_case and "open_sealed_case" in objective_map:
-        objective_map["open_sealed_case"].status = "completed"
-        objective_map["open_sealed_case"].hint = "Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen."
+    apply_objective_trigger_specs_to_quest_state(
+        quest=quest_copy,
+        spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
+        resolution=resolution,
+        now=now,
+    )
 
     apply_transition_specs_to_quest_state(
         quest=quest_copy,

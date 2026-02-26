@@ -373,3 +373,27 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Neue Tests: `apps/game_api/tests/test_quest_specs.py` (Compiler/Validator/Transitionen), bestehende Route-Tests weiter gruen.
 - Validierung: `python -m pytest apps/game_api/tests -q`, `npm.cmd --prefix apps/web_client run build`, Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 329 passed.
 - Tech Debt (bewusst): Objective-Trigger selbst sind noch questspezifisch codiert; naechster Schritt fuer KI-Quests waere TriggerSpec/Predicate-Layer (z. B. action-/flag-basierte Trigger) als Datenformat.
+
+- G900-G999 Draft (gestartet): TriggerSpec/Predicate-Layer (MVP) fuer datengetriebenen Questfortschritt einfuehren und Urban-Occult-Objective-Trigger von questspezifischen If-Ketten auf Trigger-/Predicate-Auswertung umstellen (Vorstufe fuer validierbare KI-Quest-Objectives).
+
+- G900-G999 abgeschlossen: TriggerSpec/Predicate-Layer (MVP) fuer datengetriebenen Objective-Fortschritt eingefuehrt und Urban-Occult-Starter-/Followup-Quest auf `objective_triggers` umgestellt.
+- `apps/game_api/app/services/quest_specs.py` erweitert um:
+  - `PredicateSpec` (MVP: `action_seen`, `story_flag_true`)
+  - `ObjectiveTriggerSpec`
+  - `apply_objective_trigger_specs_to_quest_state(...)`
+  - Trigger-/Predicate-Validierung in `validate_quest_spec(...)`
+- `QuestSpec` traegt jetzt `objective_triggers`; Trigger werden priorisiert ausgewertet und koennen Objective-Status/Hint datengetrieben setzen (in-place auf `WorldQuestState`).
+- `quest_authoring.py`:
+  - Starterquest-Objective-Trigger (`Kael`, `Vorratskiste`, `Mira-Report`) als `ObjectiveTriggerSpec`
+  - Followup-Objective-Trigger (`Runenspuren`, `Siegelkoffer`) als `ObjectiveTriggerSpec`
+  - questspezifische If-Ketten in `advance_quests_for_turn()` und `_advance_urban_occult_followup_quest()` fuer diese Objective-Completion entfernt; stattdessen Trigger-Evaluator + bestehende `TransitionSpec`-Auswertung
+  - topic-getriebener Kael-Crosscheck-Abschluss bleibt bewusst separat (Dialogtopic-Effektpfad), damit der Trigger-Layer nur generische Objective-Completion ersetzt
+- Neue/erweiterte Tests:
+  - `apps/game_api/tests/test_quest_specs.py`: Trigger-Evaluator (Starter-Objectives), Trigger-Voraussetzungen, Trigger-Referenzvalidierung
+  - bestehende Quest-Route-Tests bleiben gruen (Starterquest + Followup-Quest-Flow)
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_quest_specs.py -q` (8 passed)
+  - `python -m pytest apps/game_api/tests -q` (113 passed)
+  - `npm.cmd --prefix apps/web_client run build`
+  - Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 332 passed
+- Tech Debt (bewusst): Trigger-Predicates sind noch MVP (`action_seen`, `story_flag_true`) und Objective-Trigger setzen nur Status/Hint. Fuer spaetere KI-Questvorschlaege fehlen noch ein allgemeiner `TriggerSpec/Predicate`-Katalog (z. B. Inventory-/NPC-/Discovery-/Quest-Event-Predicates) und ein datengetriebener Transition-/Effect-Layer jenseits von Objective-Completion.
