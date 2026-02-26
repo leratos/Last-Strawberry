@@ -397,3 +397,24 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 332 passed
 - Tech Debt (bewusst): Trigger-Predicates sind noch MVP (`action_seen`, `story_flag_true`) und Objective-Trigger setzen nur Status/Hint. Fuer spaetere KI-Questvorschlaege fehlen noch ein allgemeiner `TriggerSpec/Predicate`-Katalog (z. B. Inventory-/NPC-/Discovery-/Quest-Event-Predicates) und ein datengetriebener Transition-/Effect-Layer jenseits von Objective-Completion.
+
+- G1000-G1099 Draft (gestartet): Predicate-Katalog fuer Quest-Trigger erweitern (Discovery/Inventory/NPC-bezogene Predicates) und Trigger-Evaluator/Validator dafuer vorbereiten. Ziel: Quest-Objective-Trigger weniger auf Action-Heuristiken beschraenken und KI-Quest-Specs spaeter auf reichere, aber weiterhin validierbare Triggerbedingungen stützen.
+
+- G1000-G1099 abgeschlossen: Predicate-Katalog fuer datengetriebene Quest-Trigger erweitert (Discovery/Inventory/NPC), inkl. Evaluator- und Validator-Support.
+- `apps/game_api/app/services/quest_specs.py` erweitert:
+  - `PredicateSpec` um Katalogfelder fuer `action_seen` (u. a. `target_roles`)
+  - neue Predicate-Kinds: `system_event_seen`, `inventory_item_present`, `inventory_delta_seen`, `relationship_change_seen`
+  - Evaluator-Helper fuer Systemevents, Inventar-Endzustand, Inventar-Deltas (`inventory_gained`/`inventory_consumed`) und NPC-Beziehungsdeltas (`state_delta.relationship_changes`)
+  - Validator-Regeln fuer neue Predicate-Kinds (Pflichtfilter, gueltige `inventory_delta_kind`-/`relationship_delta_sign`-Werte)
+- `quest_authoring.py`: keine fachliche Quest-Logik geaendert; bestehende Urban-Occult-Quests bleiben auf den vorhandenen Triggern/Transitions lauffaehig (Katalog-Ausbau als Infrastruktur-Schritt).
+- `apps/game_api/tests/test_quest_specs.py` erweitert:
+  - `system_event_seen` (Discovery-Event als Trigger)
+  - `inventory_item_present` + `inventory_delta_seen`
+  - `relationship_change_seen` + `action_seen` mit `target_role`
+  - Validator-Test fuer unbekannte Trigger-Objective-Referenz bleibt/ist erweitert abgesichert
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_quest_specs.py -q` (11 passed)
+  - `python -m pytest apps/game_api/tests -q` (116 passed)
+  - `npm.cmd --prefix apps/web_client run build`
+  - Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 335 passed
+- Tech Debt (bewusst): Der Predicate-Katalog ist jetzt breiter, aber authored Quests nutzen die neuen Predicate-Kinds noch nicht aktiv. Nächster sinnvoller Schritt fuer KI-Questvorschlaege ist ein datengetriebener Effect-/Transition-Layer (nicht nur Objective-Status/Hint) plus Spec-Validator fuer Referenzen auf NPCs/POIs/Items/Flags.
