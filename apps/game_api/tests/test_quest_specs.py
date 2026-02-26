@@ -24,6 +24,7 @@ from apps.game_api.app.services.quest_specs import (
     apply_transition_specs_to_quest_state,
     compile_quest_spec_to_world_state,
     validate_quest_spec,
+    validate_quest_specs_for_activation,
 )
 
 
@@ -183,6 +184,73 @@ class TestQuestSpecs(unittest.TestCase):
             "transition_effect_error:transition-invalid-effect:effect_increment_step_invalid:bad-transition-effect",
             result.errors,
         )
+
+    def test_validate_quest_specs_for_activation_detects_unknown_effect_target_quest(self):
+        spec = QuestSpec(
+            quest_id="quest-a",
+            title="A",
+            description="A",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-a", title="A", hint="a"),),
+            transitions=(
+                TransitionSpec(
+                    transition_id="to-next",
+                    to_stage="next",
+                    effects=(
+                        EffectSpec(
+                            effect_id="set-state-external",
+                            kind="set_quest_state",
+                            params={"quest_id": "quest-missing", "stage": "active_elsewhere"},
+                        ),
+                    ),
+                ),
+            ),
+        )
+        result = validate_quest_specs_for_activation([spec], existing_quest_ids=set())
+        self.assertFalse(result.ok)
+        self.assertIn(
+            "transition_effect_error:to-next:effect_unknown_target_quest:set-state-external:quest-missing",
+            result.errors,
+        )
+
+    def test_validate_quest_specs_for_activation_allows_cross_quest_objective_effect_when_target_exists(self):
+        spec_a = QuestSpec(
+            quest_id="quest-a",
+            title="A",
+            description="A",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-a", title="A", hint="a"),),
+            transitions=(
+                TransitionSpec(
+                    transition_id="sync-b",
+                    to_stage="next",
+                    effects=(
+                        EffectSpec(
+                            effect_id="activate-b-objective",
+                            kind="set_objective_status",
+                            params={
+                                "quest_id": "quest-b",
+                                "objective_id": "obj-b",
+                                "status": "active",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        spec_b = QuestSpec(
+            quest_id="quest-b",
+            title="B",
+            description="B",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-b", title="B", hint="b"),),
+        )
+        result = validate_quest_specs_for_activation([spec_a, spec_b], existing_quest_ids=set())
+        self.assertTrue(result.ok)
+        self.assertEqual(result.errors, ())
 
     def test_apply_objective_trigger_specs_completes_starter_objectives_from_actions(self):
         now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)
@@ -546,6 +614,30 @@ class TestQuestSpecs(unittest.TestCase):
         self.assertEqual(quest_state.current_stage, "crosscheck_with_kael")
         self.assertEqual(quest_state.status, "active")
         self.assertIn("Runenspuren", str(objective_map["crosscheck_with_kael"].hint))
+
+    def test_authored_starter_transition_sets_story_flag_and_objective_status(self):
+        now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)
+        quest_state = compile_quest_spec_to_world_state(URBAN_OCCULT_STARTER_QUEST_SPEC, now=now)
+        objective_map = {obj.objective_id: obj for obj in quest_state.objectives}
+        objective_map["speak_with_kael"].status = "completed"
+        objective_map["inspect_supply_crate"].status = "completed"
+        objective_map["report_to_mira"].status = "pending"
+        flags: dict[str, str | int | bool] = {}
+        events: list[TurnSystemEvent] = []
+
+        apply_transition_specs_to_quest_state(
+            quest=quest_state,
+            spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
+            story_flags=flags,
+            mutable_story_flags=flags,
+            emitted_events=events,
+            now=now,
+        )
+
+        self.assertEqual(quest_state.current_stage, "report_to_mira")
+        self.assertEqual(objective_map["report_to_mira"].status, "active")
+        self.assertTrue(bool(flags.get("quest_report_to_mira_ready")))
+        self.assertTrue(any(event.code == "quest_stage_shifted" for event in events))
 
     def test_apply_transition_specs_completes_quest_when_all_objectives_complete(self):
         now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)

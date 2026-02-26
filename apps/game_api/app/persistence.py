@@ -299,10 +299,11 @@ class WorldRepository:
                         quests=current_quests,
                         intent=intent,
                         resolution=resolution,
+                        story_flags=current_story_flags,
                     )
                     next_story_flags = derive_story_flags_from_quests(
                         quests=quest_progress.quests,
-                        existing_flags=current_story_flags,
+                        existing_flags=quest_progress.story_flags,
                     )
                     dialog_topic_effects = apply_authored_dialog_topics_for_turn(
                         quests=quest_progress.quests,

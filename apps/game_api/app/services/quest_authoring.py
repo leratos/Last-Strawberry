@@ -118,6 +118,15 @@ URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
             requires_all_objectives_completed=True,
             effects=(
                 EffectSpec(
+                    effect_id="starter_complete_flag",
+                    kind="set_story_flag",
+                    params={
+                        "flag_name": "quest_urban_occult_market_ritual_completed",
+                        "value": True,
+                    },
+                    priority=5,
+                ),
+                EffectSpec(
                     effect_id="starter_complete_event",
                     kind="emit_system_event",
                     params={
@@ -139,6 +148,24 @@ URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
                 ("report_to_mira", "Sprich mit Mira ueber Kaels Aussagen und die Funde aus der Vorratskiste."),
             ),
             effects=(
+                EffectSpec(
+                    effect_id="starter_report_objective_active",
+                    kind="set_objective_status",
+                    params={
+                        "objective_id": "report_to_mira",
+                        "status": "active",
+                    },
+                    priority=5,
+                ),
+                EffectSpec(
+                    effect_id="starter_report_flag",
+                    kind="set_story_flag",
+                    params={
+                        "flag_name": "quest_report_to_mira_ready",
+                        "value": True,
+                    },
+                    priority=8,
+                ),
                 EffectSpec(
                     effect_id="starter_report_stage_event",
                     kind="emit_system_event",
@@ -253,6 +280,15 @@ URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
             requires_all_objectives_completed=True,
             effects=(
                 EffectSpec(
+                    effect_id="followup_complete_flag",
+                    kind="set_story_flag",
+                    params={
+                        "flag_name": "quest_urban_occult_resonance_followup_completed",
+                        "value": True,
+                    },
+                    priority=5,
+                ),
+                EffectSpec(
                     effect_id="followup_complete_event",
                     kind="emit_system_event",
                     params={
@@ -274,6 +310,24 @@ URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
                 ("crosscheck_with_kael", "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."),
             ),
             effects=(
+                EffectSpec(
+                    effect_id="followup_crosscheck_objective_active",
+                    kind="set_objective_status",
+                    params={
+                        "objective_id": "crosscheck_with_kael",
+                        "status": "active",
+                    },
+                    priority=5,
+                ),
+                EffectSpec(
+                    effect_id="followup_crosscheck_flag",
+                    kind="set_story_flag",
+                    params={
+                        "flag_name": "quest_followup_crosscheck_ready",
+                        "value": True,
+                    },
+                    priority=8,
+                ),
                 EffectSpec(
                     effect_id="followup_crosscheck_stage_event",
                     kind="emit_system_event",
@@ -314,6 +368,7 @@ def validate_authored_quest_specs() -> tuple[bool, tuple[str, ...]]:
 @dataclass(frozen=True)
 class QuestAdvanceResult:
     quests: list[WorldQuestState]
+    story_flags: dict[str, str | int | bool]
     system_events: list[TurnSystemEvent]
 
 
@@ -909,12 +964,14 @@ def advance_quests_for_turn(
     quests: list[WorldQuestState],
     intent: TurnIntent,
     resolution: TurnResolution,
+    story_flags: dict[str, str | int | bool] | None = None,
 ) -> QuestAdvanceResult:
     if not quests:
-        return QuestAdvanceResult(quests=[], system_events=[])
+        return QuestAdvanceResult(quests=[], story_flags=dict(story_flags or {}), system_events=[])
 
     updated_quests: list[WorldQuestState] = []
     emitted_events: list[TurnSystemEvent] = []
+    updated_story_flags: dict[str, str | int | bool] = dict(story_flags or {})
     now = datetime.now(UTC)
 
     for quest in quests:
@@ -922,7 +979,15 @@ def advance_quests_for_turn(
             if quest.quest_id != URBAN_OCCULT_FOLLOWUP_QUEST_ID:
                 updated_quests.append(quest)
                 continue
-            updated_quests.append(_advance_urban_occult_followup_quest(quest=quest, resolution=resolution, now=now, emitted_events=emitted_events))
+            updated_quests.append(
+                _advance_urban_occult_followup_quest(
+                    quest=quest,
+                    resolution=resolution,
+                    now=now,
+                    emitted_events=emitted_events,
+                    story_flags=updated_story_flags,
+                )
+            )
             continue
 
         before_status = quest.status
@@ -932,6 +997,8 @@ def advance_quests_for_turn(
             quest=quest_copy,
             spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
             resolution=resolution,
+            story_flags=updated_story_flags,
+            mutable_story_flags=updated_story_flags,
             emitted_events=emitted_events,
             now=now,
         )
@@ -939,6 +1006,8 @@ def advance_quests_for_turn(
         apply_transition_specs_to_quest_state(
             quest=quest_copy,
             spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
+            story_flags=updated_story_flags,
+            mutable_story_flags=updated_story_flags,
             emitted_events=emitted_events,
             now=now,
         )
@@ -984,7 +1053,7 @@ def advance_quests_for_turn(
 
         updated_quests.append(quest_copy)
 
-    return QuestAdvanceResult(quests=updated_quests, system_events=emitted_events)
+    return QuestAdvanceResult(quests=updated_quests, story_flags=updated_story_flags, system_events=emitted_events)
 
 
 def build_npc_dialog_hints_for_context(
@@ -1051,6 +1120,7 @@ def _advance_urban_occult_followup_quest(
     resolution: TurnResolution,
     now: datetime,
     emitted_events: list[TurnSystemEvent],
+    story_flags: dict[str, str | int | bool],
 ) -> WorldQuestState:
     before_status = quest.status
     before_objectives = {obj.objective_id: obj.status for obj in quest.objectives}
@@ -1059,6 +1129,8 @@ def _advance_urban_occult_followup_quest(
         quest=quest_copy,
         spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
         resolution=resolution,
+        story_flags=story_flags,
+        mutable_story_flags=story_flags,
         emitted_events=emitted_events,
         now=now,
     )
@@ -1066,6 +1138,8 @@ def _advance_urban_occult_followup_quest(
     apply_transition_specs_to_quest_state(
         quest=quest_copy,
         spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
+        story_flags=story_flags,
+        mutable_story_flags=story_flags,
         emitted_events=emitted_events,
         now=now,
     )

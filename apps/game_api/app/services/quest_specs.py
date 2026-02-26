@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
+import re
 
 from ls_shared_schemas.quests import QuestObjectiveState, WorldQuestState
 from ls_shared_schemas.turns import TurnResolution, TurnSystemEvent
@@ -101,6 +102,10 @@ class QuestSpecValidationResult:
     errors: tuple[str, ...]
 
 
+_FLAG_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+_EVENT_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
 def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
     errors: list[str] = []
     if not effect.effect_id.strip():
@@ -121,6 +126,8 @@ def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
         flag_name = str(params.get("flag_name") or "").strip()
         if not flag_name:
             errors.append(f"effect_missing_flag_name:{effect.effect_id}")
+        elif not _FLAG_NAME_PATTERN.match(flag_name):
+            errors.append(f"effect_invalid_flag_name:{effect.effect_id}:{flag_name}")
     if effect.kind == "increment_story_flag":
         step = params.get("step")
         if not isinstance(step, int):
@@ -141,10 +148,56 @@ def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
         if not str(params.get("stage") or "").strip() and not str(params.get("status") or "").strip():
             errors.append(f"effect_missing_quest_state_fields:{effect.effect_id}")
     if effect.kind == "emit_system_event":
-        if not str(params.get("code") or "").strip():
+        event_code = str(params.get("code") or "").strip()
+        if not event_code:
             errors.append(f"effect_missing_event_code:{effect.effect_id}")
+        elif not _EVENT_CODE_PATTERN.match(event_code):
+            errors.append(f"effect_invalid_event_code:{effect.effect_id}:{event_code}")
         if not str(params.get("message") or "").strip():
             errors.append(f"effect_missing_event_message:{effect.effect_id}")
+        severity = str(params.get("severity") or "info").strip().lower()
+        if severity not in {"info", "warning", "error"}:
+            errors.append(f"effect_invalid_event_severity:{effect.effect_id}:{severity}")
+    return tuple(errors)
+
+
+def _validate_effect_references(
+    *,
+    effect: EffectSpec,
+    source_id: str,
+    source_type: str,
+    default_quest_id: str,
+    known_quest_ids: set[str],
+    objective_ids_by_quest: dict[str, set[str]],
+    allow_unknown_external_quest: bool = False,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    params = dict(effect.params or {})
+    target_quest_id = str(params.get("quest_id") or "").strip() or default_quest_id
+
+    if effect.kind in {"set_objective_hint", "set_objective_status"}:
+        objective_id = str(params.get("objective_id") or "").strip()
+        if allow_unknown_external_quest and target_quest_id != default_quest_id and target_quest_id not in known_quest_ids:
+            return tuple(errors)
+        if target_quest_id not in known_quest_ids:
+            errors.append(
+                f"{source_type}_effect_error:{source_id}:effect_unknown_target_quest:{effect.effect_id}:{target_quest_id}"
+            )
+            return tuple(errors)
+        known_objectives = objective_ids_by_quest.get(target_quest_id)
+        if known_objectives is not None and objective_id not in known_objectives:
+            errors.append(
+                f"{source_type}_effect_error:{source_id}:effect_unknown_target_objective:{effect.effect_id}:{target_quest_id}:{objective_id}"
+            )
+
+    if effect.kind == "set_quest_state":
+        if allow_unknown_external_quest and target_quest_id != default_quest_id and target_quest_id not in known_quest_ids:
+            return tuple(errors)
+        if target_quest_id not in known_quest_ids:
+            errors.append(
+                f"{source_type}_effect_error:{source_id}:effect_unknown_target_quest:{effect.effect_id}:{target_quest_id}"
+            )
+
     return tuple(errors)
 
 
@@ -187,6 +240,8 @@ def validate_quest_spec(spec: QuestSpec) -> QuestSpecValidationResult:
         errors.append(f"duplicate_objective_id:{objective_id}")
 
     known_objectives = set(objective_ids)
+    known_quest_ids = {spec.quest_id}
+    objective_ids_by_quest = {spec.quest_id: known_objectives}
     trigger_ids: list[str] = []
     for trigger in spec.objective_triggers:
         if not trigger.trigger_id.strip():
@@ -252,6 +307,17 @@ def validate_quest_spec(spec: QuestSpec) -> QuestSpecValidationResult:
         for effect in trigger.effects:
             for effect_error in _validate_effect_spec(effect):
                 errors.append(f"trigger_effect_error:{trigger.trigger_id}:{effect_error}")
+            errors.extend(
+                _validate_effect_references(
+                    effect=effect,
+                    source_id=trigger.trigger_id,
+                    source_type="trigger",
+                    default_quest_id=spec.quest_id,
+                    known_quest_ids=known_quest_ids,
+                    objective_ids_by_quest=objective_ids_by_quest,
+                    allow_unknown_external_quest=True,
+                )
+            )
 
     duplicate_trigger_ids = {trigger_id for trigger_id in trigger_ids if trigger_ids.count(trigger_id) > 1 and trigger_id}
     for trigger_id in sorted(duplicate_trigger_ids):
@@ -273,6 +339,17 @@ def validate_quest_spec(spec: QuestSpec) -> QuestSpecValidationResult:
         for effect in transition.effects:
             for effect_error in _validate_effect_spec(effect):
                 errors.append(f"transition_effect_error:{transition.transition_id}:{effect_error}")
+            errors.extend(
+                _validate_effect_references(
+                    effect=effect,
+                    source_id=transition.transition_id,
+                    source_type="transition",
+                    default_quest_id=spec.quest_id,
+                    known_quest_ids=known_quest_ids,
+                    objective_ids_by_quest=objective_ids_by_quest,
+                    allow_unknown_external_quest=True,
+                )
+            )
 
     duplicate_transition_ids = {
         transition_id for transition_id in transition_ids if transition_ids.count(transition_id) > 1 and transition_id
@@ -298,6 +375,11 @@ def validate_quest_specs_for_activation(
     errors: list[str] = []
     existing_ids = set(existing_quest_ids or set())
     seen_new_ids: set[str] = set()
+    objective_ids_by_quest = {
+        spec.quest_id: {objective.objective_id for objective in spec.objectives}
+        for spec in specs
+    }
+    known_quest_ids = set(existing_ids) | set(objective_ids_by_quest.keys())
     for spec in specs:
         result = validate_quest_spec(spec)
         errors.extend(result.errors)
@@ -306,6 +388,36 @@ def validate_quest_specs_for_activation(
         if spec.quest_id in seen_new_ids:
             errors.append(f"duplicate_quest_id_in_batch:{spec.quest_id}")
         seen_new_ids.add(spec.quest_id)
+        for trigger in spec.objective_triggers:
+            for effect in trigger.effects:
+                target_quest_id = str((effect.params or {}).get("quest_id") or "").strip()
+                if not target_quest_id:
+                    continue
+                errors.extend(
+                    _validate_effect_references(
+                        effect=effect,
+                        source_id=trigger.trigger_id,
+                        source_type="trigger",
+                        default_quest_id=spec.quest_id,
+                        known_quest_ids=known_quest_ids,
+                        objective_ids_by_quest=objective_ids_by_quest,
+                    )
+                )
+        for transition in spec.transitions:
+            for effect in transition.effects:
+                target_quest_id = str((effect.params or {}).get("quest_id") or "").strip()
+                if not target_quest_id:
+                    continue
+                errors.extend(
+                    _validate_effect_references(
+                        effect=effect,
+                        source_id=transition.transition_id,
+                        source_type="transition",
+                        default_quest_id=spec.quest_id,
+                        known_quest_ids=known_quest_ids,
+                        objective_ids_by_quest=objective_ids_by_quest,
+                    )
+                )
     return QuestSpecValidationResult(ok=not errors, errors=tuple(errors))
 
 

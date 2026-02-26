@@ -442,3 +442,28 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (339 passed, 1 warning)
 - Tech Debt (bewusst): Effekt-Validierung prueft derzeit nur Struktur/Minimalkonsistenz. Referenzvalidierung fuer Effekt-Targets (z. B. Objective-/Quest-Referenzen ueber Questgrenzen, Story-Flag-Namenskonventionen) sollte als naechster Schritt staerker formalisiert werden.
+
+- G1200-G1299 Draft (gestartet): Effekt-Referenzvalidierung fuer QuestSpecs erweitern (Objective-/Quest-/Story-Flag-Targets) und erste authored Nutzung von `set_story_flag` + `set_objective_status` in Urban-Occult-Transitions/Triggers umsetzen. Inklusive Verdrahtung der Story-Flag-Effektpfade bis in Persistenz/Turn-Advance und Testabdeckung.
+- G1200-G1299 abgeschlossen: Effekt-Referenzvalidierung ausgebaut und authored Effect-Nutzung fuer Story-Flags/Objective-Status im Urban-Occult-Flow aktiviert.
+- `apps/game_api/app/services/quest_specs.py` erweitert:
+  - Effect-Validierung haertet Namen/Formate ab (`flag_name`-Pattern, `emit_system_event`-Code/Severity)
+  - neue Referenzvalidierung fuer Effects (`_validate_effect_references`) mit Pruefung auf gueltige Ziel-Quest/Ziel-Objective-Referenzen
+  - Batch-Validierung (`validate_quest_specs_for_activation`) prueft explizite `quest_id`-Targets ueber Spec-Grenzen hinweg
+- `apps/game_api/app/services/quest_authoring.py` erweitert:
+  - `QuestAdvanceResult` liefert nun `story_flags`
+  - `advance_quests_for_turn(...)` akzeptiert `story_flags` und reicht sie als mutable Story-Flag-Map in Trigger-/Transition-Effect-Pfade durch
+  - Urban-Occult authored Transitions nutzen jetzt zusaetzlich:
+    - `set_story_flag` (u. a. `quest_report_to_mira_ready`, Completion-Flags)
+    - `set_objective_status` (`report_to_mira`/`crosscheck_with_kael` auf `active` bei Stage-Shift)
+- `apps/game_api/app/persistence.py` angepasst:
+  - uebergibt `current_story_flags` an `advance_quests_for_turn(...)`
+  - nutzt `quest_progress.story_flags` als Basis fuer die nachgelagerte Flag-Ableitung
+- Tests erweitert/angepasst:
+  - `apps/game_api/tests/test_quest_specs.py`: neue Tests fuer cross-quest Effect-Referenzvalidierung und authored Stage-Effektverhalten (Objective-Status + Story-Flag)
+  - `apps/game_api/tests/test_preview_routes.py`: Erwartung fuer `crosscheck_with_kael` auf `active` angepasst (durch neuen `set_objective_status`-Effect)
+- Validierung:
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_quest_specs.py -q` (18 passed)
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests -q` (123 passed)
+  - `npm.cmd --prefix apps/web_client run build`
+  - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (342 passed, 1 warning)
+- Tech Debt (bewusst): Referenzvalidierung fuer Effects deckt Quest-/Objective-Targets ab; Referenzmodelle fuer NPC/POI/Item innerhalb von Effect-Params (falls spaeter eingefuehrt) sind noch nicht typisiert und sollten mit dedizierten Param-Schemas abgesichert werden.

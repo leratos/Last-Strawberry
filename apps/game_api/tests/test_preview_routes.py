@@ -778,7 +778,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             q for q in sabotage_payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup"
         )
         crosscheck_obj_before_branch = next(obj for obj in followup_after_topic["objectives"] if obj["objective_id"] == "crosscheck_with_kael")
-        self.assertEqual(crosscheck_obj_before_branch["status"], "pending")
+        self.assertEqual(crosscheck_obj_before_branch["status"], "active")
 
         kael_ref_after_topic = next(
             entry for entry in sabotage_payload["context_after_turn"]["target_catalog"]["npcs"] if entry["ref_id"] == kael_ref["ref_id"]
