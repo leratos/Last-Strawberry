@@ -137,6 +137,10 @@ def build_npc_dialog_topics_for_context(
     is_kael = npc_id == "npc-circle-binder" or lowered_name == "kael" or lowered_role == "beschwoerer"
     is_mira = lowered_name == "mira"
     flags = dict(story_flags or {})
+    followup_clues_ready = bool(flags.get("rune_traces_inspected", False)) and bool(flags.get("sealed_case_opened", False))
+    sabotage_topic_used = bool(flags.get("dialog_topic_used_kael_sabotage_hypothesis", False))
+    sabotage_skill_used = bool(flags.get("dialog_skillcheck_used_kael_sabotage_hypothesis", False))
+    sabotage_skill_passed = bool(flags.get("dialog_skillcheck_passed_kael_sabotage_hypothesis", False))
 
     topics: list[dict[str, str | int | bool]] = []
     for quest in quests:
@@ -197,16 +201,46 @@ def build_npc_dialog_topics_for_context(
                     }
                 )
             if is_kael and stage in {"trace_residue", "crosscheck_with_kael"}:
-                topics.append(
-                    {
-                        "topic_id": "kael_sabotage_hypothesis",
-                        "label": "Sabotageverdacht",
-                        "summary": "Kael mit dem Verdacht einer Sabotage konfrontieren.",
-                        "future_check_attribute": "charisma",
-                        "future_check_label": "Konfrontation",
-                        "future_check_dc": 13,
-                    }
-                )
+                if not sabotage_topic_used:
+                    topics.append(
+                        {
+                            "topic_id": "kael_sabotage_hypothesis",
+                            "label": "Sabotageverdacht",
+                            "summary": "Kael mit dem Verdacht einer Sabotage konfrontieren.",
+                            "future_check_attribute": "charisma",
+                            "future_check_label": "Konfrontation",
+                            "future_check_dc": 13,
+                            "dialog_tree_group": "kael_followup_crosscheck",
+                            "dialog_tree_step": 1,
+                        }
+                    )
+                elif stage == "crosscheck_with_kael" and followup_clues_ready and sabotage_skill_used:
+                    if sabotage_skill_passed:
+                        topics.append(
+                            {
+                                "topic_id": "kael_crosscheck_press_for_names",
+                                "label": "Unter Druck nach Namen fragen",
+                                "summary": "Nutze Kaels Unsicherheit aus und verlange konkrete Namen oder Zugangswege.",
+                                "followup_of": "kael_sabotage_hypothesis",
+                                "followup_condition": "skillcheck_success",
+                                "effect_hint": "Kann den Kael-Abgleich abschliessen und eine neue Spur konkretisieren.",
+                                "dialog_tree_group": "kael_followup_crosscheck",
+                                "dialog_tree_step": 2,
+                            }
+                        )
+                    else:
+                        topics.append(
+                            {
+                                "topic_id": "kael_crosscheck_reframe_with_evidence",
+                                "label": "Mit Spuren neu ansetzen",
+                                "summary": "Lege Kael die gesicherten Spuren und den Kofferfund vor, um ihn zum Abgleich zu bewegen.",
+                                "followup_of": "kael_sabotage_hypothesis",
+                                "followup_condition": "skillcheck_failure",
+                                "effect_hint": "Fuehrt den Kael-Abgleich trotz Abwehrhaltung weiter.",
+                                "dialog_tree_group": "kael_followup_crosscheck",
+                                "dialog_tree_step": 2,
+                            }
+                        )
 
     # Deduplicate by topic_id while preserving order.
     seen: set[str] = set()
@@ -237,6 +271,13 @@ def apply_authored_dialog_topics_for_turn(
     updated_quests = [quest.model_copy(deep=True) for quest in quests]
     updated_flags: dict[str, str | int | bool] = dict(story_flags or {})
     events: list[TurnSystemEvent] = []
+    now = datetime.now(UTC)
+    before_quest_statuses = {quest.quest_id: quest.status for quest in updated_quests}
+    before_objective_statuses = {
+        (quest.quest_id, objective.objective_id): objective.status
+        for quest in updated_quests
+        for objective in quest.objectives
+    }
 
     quest_map = {quest.quest_id: quest for quest in updated_quests}
     starter_quest = quest_map.get(URBAN_OCCULT_QUEST_ID)
@@ -377,26 +418,70 @@ def apply_authored_dialog_topics_for_turn(
                 except (TypeError, ValueError):
                     heat = 1
                 updated_flags["occult_heat_level"] = min(5, heat + 1)
-            if followup_quest is not None:
-                _update_objective_hint(
-                    followup_quest,
-                    "crosscheck_with_kael",
-                    "Kael hat den Sabotageverdacht eingeraeumt; die Spur weist auf gezielte Stoerung statt Unfall hin.",
-                )
             if bool(skill_check_result and bool(skill_check_result.get("success"))):
                 updated_flags["kael_sabotage_hypothesis_pressure_success"] = True
+                if followup_quest is not None:
+                    _update_objective_hint(
+                        followup_quest,
+                        "crosscheck_with_kael",
+                        "Kael steht unter Druck. Frage jetzt nach konkreten Namen oder Zugangswegen zum Ritualplatz.",
+                    )
                 response_text = (
                     "Du setzt Kael gezielt unter Druck und triffst die richtigen Punkte; nach kurzem Zaudern raeumt er ein, dass die Stoerung sehr wahrscheinlich absichtlich gesetzt wurde."
                 )
             elif target_standing <= -1:
                 updated_flags["kael_defensive_under_pressure"] = True
+                if followup_quest is not None:
+                    _update_objective_hint(
+                        followup_quest,
+                        "crosscheck_with_kael",
+                        "Kael blockt. Lege ihm Runenspuren und Kofferfund direkt vor, um den Abgleich zu erzwingen.",
+                    )
                 response_text = (
                     "Kael reagiert gereizt auf den Sabotageverdacht und versucht auszuweichen, bestaetigt aber zwischen den Zeilen eine gezielte Stoerung."
                 )
             else:
+                if followup_quest is not None:
+                    _update_objective_hint(
+                        followup_quest,
+                        "crosscheck_with_kael",
+                        "Kael wirkt angespannt. Ein zweites Nachsetzen mit den gesicherten Hinweisen koennte den Abgleich vervollstaendigen.",
+                    )
                 response_text = (
                     "Kael reagiert angespannt auf den Sabotageverdacht und raeumt ein, dass die Stoerung eher gesetzt als zufaellig gewesen sein koennte."
                 )
+        elif topic_id == "kael_crosscheck_press_for_names":
+            updated_flags[flag_key] = True
+            updated_flags["kael_followup_crosscheck_dialog_resolved"] = True
+            updated_flags["kael_named_possible_conclave_access"] = True
+            updated_flags["urban_occult_next_hook_ready"] = True
+            if followup_quest is not None:
+                _update_objective_hint(
+                    followup_quest,
+                    "crosscheck_with_kael",
+                    "Kael nannte moegliche Zugangswege/Namen aus dem Konklave; die zweite Spur ist damit ausgewertet.",
+                )
+                _mark_objective_completed(followup_quest, "crosscheck_with_kael", now=now)
+                _recompute_quest_completion_state(followup_quest, now=now)
+            response_text = (
+                "Unter dem Druck der Beweise nennt Kael zwei moegliche Zugangswege zum Ritualplatz und deutet an, wer aus dem Konklave davon wusste."
+            )
+        elif topic_id == "kael_crosscheck_reframe_with_evidence":
+            updated_flags[flag_key] = True
+            updated_flags["kael_followup_crosscheck_dialog_resolved"] = True
+            updated_flags["kael_reluctant_crosscheck_done"] = True
+            updated_flags["urban_occult_next_hook_ready"] = True
+            if followup_quest is not None:
+                _update_objective_hint(
+                    followup_quest,
+                    "crosscheck_with_kael",
+                    "Der Abgleich mit Kael ist abgeschlossen; er bleibt vorsichtig, bestaetigt aber die Relevanz der Spur.",
+                )
+                _mark_objective_completed(followup_quest, "crosscheck_with_kael", now=now)
+                _recompute_quest_completion_state(followup_quest, now=now)
+            response_text = (
+                "Mit den gesicherten Runenspuren und dem Kofferfund zwingst du Kael zu einem sachlichen Abgleich; widerwillig bestaetigt er, dass die Hinweise zusammenpassen."
+            )
         else:
             continue
 
@@ -454,6 +539,34 @@ def apply_authored_dialog_topics_for_turn(
             )
         )
 
+    for quest in updated_quests:
+        for objective in quest.objectives:
+            before_state = before_objective_statuses.get((quest.quest_id, objective.objective_id))
+            if before_state == objective.status:
+                continue
+            events.append(
+                TurnSystemEvent(
+                    code="quest_objective_updated",
+                    message=f"Quest-Fortschritt: {objective.title} ({objective.status}).",
+                    severity="info",
+                    metadata={
+                        "quest_id": quest.quest_id,
+                        "objective_id": objective.objective_id,
+                        "objective_status": objective.status,
+                        "source": "dialog_topic",
+                    },
+                )
+            )
+        if before_quest_statuses.get(quest.quest_id) != quest.status and quest.status == "completed":
+            events.append(
+                TurnSystemEvent(
+                    code="quest_completed",
+                    message=f"Quest abgeschlossen: {quest.title}.",
+                    severity="info",
+                    metadata={"quest_id": quest.quest_id, "source": "dialog_topic"},
+                )
+            )
+
     return DialogTopicApplyResult(quests=updated_quests, story_flags=updated_flags, system_events=events)
 
 
@@ -463,6 +576,23 @@ def _update_objective_hint(quest: WorldQuestState, objective_id: str, hint: str)
             objective.hint = hint
             quest.updated_at = datetime.now(UTC)
             return
+
+
+def _mark_objective_completed(quest: WorldQuestState, objective_id: str, *, now: datetime) -> None:
+    for objective in quest.objectives:
+        if objective.objective_id != objective_id:
+            continue
+        objective.status = "completed"
+        quest.updated_at = now
+        return
+
+
+def _recompute_quest_completion_state(quest: WorldQuestState, *, now: datetime) -> None:
+    if all(obj.status == "completed" for obj in quest.objectives):
+        quest.status = "completed"
+        quest.current_stage = "completed"
+        quest.completed_at = quest.completed_at or now
+        quest.updated_at = now
 
 
 def initial_quest_states_for_world_seed(world_seed: WorldSeed) -> list[WorldQuestState]:
@@ -727,12 +857,9 @@ def _advance_urban_occult_followup_quest(
 
     inspected_runes = False
     opened_case = False
-    talked_to_kael = False
     for action in resolution.applied_actions:
         target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
         target_name = str(action.parameters.get("target_name") or "").strip().lower()
-        if action.action_type == ActionType.talk and (target_id == "npc-circle-binder" or target_name == "kael"):
-            talked_to_kael = True
         if action.action_type == ActionType.inspect and ("runenspuren" in target_name or "poi-marktplatz-runenspuren" == target_id):
             inspected_runes = True
         if action.action_type in {ActionType.open, ActionType.search} and (
@@ -755,9 +882,6 @@ def _advance_urban_occult_followup_quest(
     if "crosscheck_with_kael" in objective_map:
         if can_crosscheck and objective_map["crosscheck_with_kael"].status != "completed":
             objective_map["crosscheck_with_kael"].hint = "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."
-        if talked_to_kael and can_crosscheck:
-            objective_map["crosscheck_with_kael"].status = "completed"
-            objective_map["crosscheck_with_kael"].hint = "Kael hat den Abgleich vorgenommen und eine neue Sabotagespur angedeutet."
 
     all_completed = all(obj.status == "completed" for obj in quest_copy.objectives)
     if all_completed:

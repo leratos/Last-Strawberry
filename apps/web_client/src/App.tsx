@@ -58,6 +58,11 @@ type DialogTopicOption = {
   future_check_label?: string;
   future_check_dc?: number;
   requires_flag?: string;
+  followup_of?: string;
+  followup_condition?: string;
+  effect_hint?: string;
+  dialog_tree_group?: string;
+  dialog_tree_step?: number;
 };
 type TurnSystemEventView = GameContextResponse["recent_turns"][number]["resolution"]["system_events"][number];
 type TurnEventMetadata = NonNullable<TurnSystemEventView["metadata"]>;
@@ -135,6 +140,11 @@ function parseDialogTopicOptions(rawValue: unknown): DialogTopicOption[] {
           future_check_label?: unknown;
           future_check_dc?: unknown;
           requires_flag?: unknown;
+          followup_of?: unknown;
+          followup_condition?: unknown;
+          effect_hint?: unknown;
+          dialog_tree_group?: unknown;
+          dialog_tree_step?: unknown;
         };
         return {
           topic_id: typeof topic.topic_id === "string" ? topic.topic_id.trim() : "",
@@ -150,6 +160,16 @@ function parseDialogTopicOptions(rawValue: unknown): DialogTopicOption[] {
                 ? Number(topic.future_check_dc)
                 : undefined,
           requires_flag: typeof topic.requires_flag === "string" ? topic.requires_flag.trim() : undefined,
+          followup_of: typeof topic.followup_of === "string" ? topic.followup_of.trim() : undefined,
+          followup_condition: typeof topic.followup_condition === "string" ? topic.followup_condition.trim() : undefined,
+          effect_hint: typeof topic.effect_hint === "string" ? topic.effect_hint.trim() : undefined,
+          dialog_tree_group: typeof topic.dialog_tree_group === "string" ? topic.dialog_tree_group.trim() : undefined,
+          dialog_tree_step:
+            typeof topic.dialog_tree_step === "number"
+              ? topic.dialog_tree_step
+              : typeof topic.dialog_tree_step === "string" && topic.dialog_tree_step.trim()
+                ? Number(topic.dialog_tree_step)
+                : undefined,
         };
       })
       .filter((topic) => Boolean(topic.topic_id && topic.label));
@@ -1937,7 +1957,9 @@ export function App() {
                                   )
                                 }
                               >
-                                {topic.label}
+                                {typeof topic.dialog_tree_step === "number" && Number.isFinite(topic.dialog_tree_step)
+                                  ? `${topic.dialog_tree_step}. ${topic.label}`
+                                  : topic.label}
                               </button>
                             ))}
                           </div>
@@ -1947,6 +1969,8 @@ export function App() {
                             {dialogTopicOptions.map((topic) => (
                               <div key={`${entry.bundle.profile.npc_id}:${topic.topic_id}:meta`}>
                                 Topic {topic.label}
+                                {topic.followup_of ? ` | Folge von: ${topic.followup_of}` : ""}
+                                {topic.followup_condition ? ` | Branch: ${topic.followup_condition}` : ""}
                                 {topic.future_check_label || topic.future_check_attribute
                                   ? ` | Probe: ${topic.future_check_label || topic.future_check_attribute}${
                                       typeof topic.future_check_dc === "number" && Number.isFinite(topic.future_check_dc)
@@ -1954,6 +1978,7 @@ export function App() {
                                         : ""
                                     }`
                                   : ""}
+                                {topic.effect_hint ? ` | Effekt: ${topic.effect_hint}` : ""}
                               </div>
                             ))}
                           </div>

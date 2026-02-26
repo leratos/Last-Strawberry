@@ -660,7 +660,175 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
 
         followup = next(q for q in payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup")
         crosscheck_obj = next(obj for obj in followup["objectives"] if obj["objective_id"] == "crosscheck_with_kael")
-        self.assertIn("Sabotageverdacht", crosscheck_obj["hint"])
+        self.assertTrue(
+            ("Sabotage" in crosscheck_obj["hint"])
+            or ("Kael blockt" in crosscheck_obj["hint"])
+            or ("unter Druck" in crosscheck_obj["hint"])
+        )
+
+    def test_g700_dialog_topic_followup_branch_completes_followup_crosscheck(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g700-dialog-branch",
+                "world_description": "Eine moderne Stadt mit geheimer Magie, Binder-Ritual und Fraktionsdruck am Marktplatz.",
+                "character_description": "Eine Ermittlerin, die Gespraeche und Spuren kombiniert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        # Starter-Quest vorbereiten: Kael -> Kiste -> Mira.
+        ctx0 = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        kael_ref = next(entry for entry in ctx0["target_catalog"]["npcs"] if entry["name"] == "Kael")
+        mira_ref = next(entry for entry in ctx0["target_catalog"]["npcs"] if entry["name"] == "Mira")
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Kael",
+                "actions_override": [{"action_type": "TALK", "target_ref": kael_ref["ref_id"], "target_kind": "npc", "parameters": {"target_id": kael_ref["ref_id"], "target_name": "Kael"}}],
+            },
+        )
+        self.client.post(f"/v1/worlds/{world_id}/turns/run", json={"player_input": "ich schau mich um"})
+        ctx1 = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        supply_crate_ref = next(entry for entry in ctx1["target_catalog"]["scene_points"] if "supply-crate" in entry["ref_id"])
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Vorratskiste",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": supply_crate_ref["ref_id"],
+                        "target_kind": supply_crate_ref["kind"],
+                        "parameters": {"target_id": supply_crate_ref["ref_id"], "target_name": supply_crate_ref["name"], "target_kind": supply_crate_ref["kind"]},
+                    }
+                ],
+            },
+        )
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [{"action_type": "TALK", "target_ref": mira_ref["ref_id"], "target_kind": "npc", "parameters": {"target_id": mira_ref["ref_id"], "target_name": "Mira"}}],
+            },
+        )
+
+        # Followup clues vorbereiten: Runenspuren + Koffer.
+        ctx_follow = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        rune_ref = next(entry for entry in ctx_follow["target_catalog"]["scene_points"] if "runenspuren" in entry["ref_id"])
+        case_ref = next(entry for entry in ctx_follow["target_catalog"]["scene_points"] if "siegelkoffer" in entry["ref_id"])
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Untersuche Runenspuren",
+                "actions_override": [
+                    {
+                        "action_type": "INSPECT",
+                        "target_ref": rune_ref["ref_id"],
+                        "target_kind": rune_ref["kind"],
+                        "parameters": {"target_id": rune_ref["ref_id"], "target_name": rune_ref["name"], "target_kind": rune_ref["kind"]},
+                    }
+                ],
+            },
+        )
+        self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Oeffne Instrumentenkoffer",
+                "actions_override": [
+                    {
+                        "action_type": "OPEN",
+                        "target_ref": case_ref["ref_id"],
+                        "target_kind": case_ref["kind"],
+                        "parameters": {"target_id": case_ref["ref_id"], "target_name": case_ref["name"], "target_kind": case_ref["kind"]},
+                    }
+                ],
+            },
+        )
+
+        ctx_crosscheck = self.client.get(f"/v1/worlds/{world_id}/context").json()
+        kael_ref_crosscheck = next(entry for entry in ctx_crosscheck["target_catalog"]["npcs"] if entry["ref_id"] == kael_ref["ref_id"])
+        kael_topics = json.loads(str(kael_ref_crosscheck.get("discovery_state", {}).get("dialog_topics_json") or "[]"))
+        self.assertTrue(any(topic["topic_id"] == "kael_sabotage_hypothesis" for topic in kael_topics))
+
+        sabotage_topic_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Konfrontiere Kael mit Sabotageverdacht",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref_crosscheck["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "target_id": kael_ref_crosscheck["ref_id"],
+                            "target_name": "Kael",
+                            "target_standing": -1,
+                            "topic_id": "kael_sabotage_hypothesis",
+                            "topic_label": "Sabotageverdacht",
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(sabotage_topic_response.status_code, 200)
+        sabotage_payload = sabotage_topic_response.json()
+        followup_after_topic = next(
+            q for q in sabotage_payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup"
+        )
+        crosscheck_obj_before_branch = next(obj for obj in followup_after_topic["objectives"] if obj["objective_id"] == "crosscheck_with_kael")
+        self.assertEqual(crosscheck_obj_before_branch["status"], "pending")
+
+        kael_ref_after_topic = next(
+            entry for entry in sabotage_payload["context_after_turn"]["target_catalog"]["npcs"] if entry["ref_id"] == kael_ref["ref_id"]
+        )
+        kael_topics_after = json.loads(str(kael_ref_after_topic.get("discovery_state", {}).get("dialog_topics_json") or "[]"))
+        branch_topics = [topic for topic in kael_topics_after if str(topic.get("followup_of") or "") == "kael_sabotage_hypothesis"]
+        self.assertEqual(len(branch_topics), 1)
+        branch_topic = branch_topics[0]
+        self.assertIn(branch_topic["topic_id"], {"kael_crosscheck_press_for_names", "kael_crosscheck_reframe_with_evidence"})
+        self.assertIn(branch_topic.get("followup_condition"), {"skillcheck_success", "skillcheck_failure"})
+
+        branch_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": f"UI: Folgetopic {branch_topic['label']}",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": kael_ref_after_topic["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "target_id": kael_ref_after_topic["ref_id"],
+                            "target_name": "Kael",
+                            "topic_id": branch_topic["topic_id"],
+                            "topic_label": branch_topic["label"],
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(branch_response.status_code, 200)
+        branch_payload = branch_response.json()
+        branch_codes = [event["code"] for event in branch_payload["turn"]["resolution"]["system_events"]]
+        self.assertIn("dialog_topic_applied", branch_codes)
+        self.assertIn("dialog_topic_response", branch_codes)
+        self.assertIn("quest_objective_updated", branch_codes)
+        self.assertIn("quest_completed", branch_codes)
+
+        flags = branch_payload["context_after_turn"]["story_flags"]
+        self.assertTrue(flags["kael_followup_crosscheck_dialog_resolved"])
+        self.assertTrue(flags["urban_occult_next_hook_ready"])
+
+        followup_after_branch = next(
+            q for q in branch_payload["context_after_turn"]["quests"] if q["quest_id"] == "quest-urban-occult-resonance-followup"
+        )
+        self.assertEqual(followup_after_branch["status"], "completed")
+        crosscheck_obj_after_branch = next(
+            obj for obj in followup_after_branch["objectives"] if obj["objective_id"] == "crosscheck_with_kael"
+        )
+        self.assertEqual(crosscheck_obj_after_branch["status"], "completed")
     def test_g24_ambiguous_role_title_talk_returns_clarify_instead_of_creating_new_npc(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

@@ -309,6 +309,10 @@ class WorldRepository:
                         story_flags=next_story_flags,
                         resolution=resolution,
                     )
+                    final_story_flags = derive_story_flags_from_quests(
+                        quests=dialog_topic_effects.quests,
+                        existing_flags=dialog_topic_effects.story_flags,
+                    )
                     self._apply_world_quest_updates(
                         conn=conn,
                         world_id=world_id,
@@ -321,7 +325,7 @@ class WorldRepository:
                         conn=conn,
                         world_id=world_id,
                         world_character_id=resolution.world_character_id,
-                        flags=dialog_topic_effects.story_flags,
+                        flags=final_story_flags,
                         allow_insert=True,
                     )
 
