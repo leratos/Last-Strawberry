@@ -354,3 +354,22 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Tests: neuer Route-Test fuer den kompletten Kael-Folgebranch bis Questabschluss (`test_g700_dialog_topic_followup_branch_completes_followup_crosscheck`), bestehender G450-Test auf branch-spezifische Hint-Texte robust gemacht.
 - Validierung: `python -m pytest apps/game_api/tests -q`, `npm.cmd --prefix apps/web_client run build`, Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 324 passed.
 - Tech Debt (bewusst): Dialogtopic-Effekte/Questuebergaenge laufen weiterhin im Persistenz-/Questpfad nach Rules-Resolution; fuer spaetere Narrationsqualitaet bleibt das Ziel `Rules/Persistenz -> Story/Dialog Beats -> Narrator`.
+
+- G800-G899 Draft (gestartet): QuestSpec/ObjectiveSpec/TransitionSpec (MVP) einfuehren, Urban-Occult-Quests auf datengesteuerte Questdefinitionen umstellen und einen validier-/kompilierbaren Andockpunkt fuer spaetere KI-Questvorschlaege vorbereiten (ohne freie KI-Questaktivierung).
+
+- G800-G899 abgeschlossen: Datengesteuertes Quest-Modell (QuestSpec/ObjectiveSpec/TransitionSpec, MVP) eingefuehrt und Urban-Occult-Quests darauf umgestellt.
+- Neues Modul `apps/game_api/app/services/quest_specs.py`:
+  - `ObjectiveSpec`, `TransitionSpec`, `QuestSpec`
+  - `compile_quest_spec_to_world_state(...)`
+  - `apply_transition_specs_to_quest_state(...)`
+  - `validate_quest_spec(...)`
+  - `validate_quest_specs_for_activation(...)` (Andockpunkt fuer spaetere KI-Questvorschlaege)
+- `quest_authoring.py`:
+  - Urban-Occult Starter- und Followup-Quest als `QuestSpec` definiert (`URBAN_OCCULT_*_QUEST_SPEC`)
+  - Initialisierung/Folgequest-Erzeugung ueber Spec-Compiler statt hart kodierter `WorldQuestState`-Bloecke
+  - Stage-/Statuswechsel in Starter/Followup ueber `TransitionSpec`-Auswertung statt verstreuter If-Ketten
+  - Helper `validate_authored_quest_specs()` + Registry-Funktion fuer authored Specs
+- Bestehender Vertical-Slice bleibt funktional (Dialogtopics/Skillchecks/Folgebranch), aber Questdefinitionen sind jetzt datengetriebene Vorstufe fuer spaetere dynamische/validierte Quest-Aktivierung.
+- Neue Tests: `apps/game_api/tests/test_quest_specs.py` (Compiler/Validator/Transitionen), bestehende Route-Tests weiter gruen.
+- Validierung: `python -m pytest apps/game_api/tests -q`, `npm.cmd --prefix apps/web_client run build`, Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 329 passed.
+- Tech Debt (bewusst): Objective-Trigger selbst sind noch questspezifisch codiert; naechster Schritt fuer KI-Quests waere TriggerSpec/Predicate-Layer (z. B. action-/flag-basierte Trigger) als Datenformat.

@@ -7,10 +7,139 @@ import hashlib
 from ls_shared_schemas.quests import QuestObjectiveState, WorldQuestState
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnResolution, TurnSystemEvent
 from ls_shared_schemas.world import WorldSeed
+from apps.game_api.app.services.quest_specs import (
+    ObjectiveSpec,
+    QuestSpec,
+    TransitionSpec,
+    apply_transition_specs_to_quest_state,
+    compile_quest_spec_to_world_state,
+    validate_quest_specs_for_activation,
+)
 
 
 URBAN_OCCULT_QUEST_ID = "quest-urban-occult-market-ritual-leads"
 URBAN_OCCULT_FOLLOWUP_QUEST_ID = "quest-urban-occult-resonance-followup"
+
+
+URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
+    quest_id=URBAN_OCCULT_QUEST_ID,
+    title="Spuren des fehlgeschlagenen Rituals",
+    description=(
+        "Finde heraus, was am Marktplatz schiefgelaufen ist: sprich mit Kael, "
+        "untersuche die Vorratskiste und gleiche deine Erkenntnisse mit Mira ab."
+    ),
+    initial_stage="investigate_scene",
+    tags=("urban_occult", "starter", "investigation"),
+    objectives=(
+        ObjectiveSpec(
+            objective_id="speak_with_kael",
+            title="Mit Kael sprechen",
+            hint="Kael wirkt angespannt am Brunnenplatz und weiss vermutlich mehr ueber das Ritual.",
+        ),
+        ObjectiveSpec(
+            objective_id="inspect_supply_crate",
+            title="Vorratskiste untersuchen",
+            hint="Am Marktplatz gibt es eine Vorratskiste mit moeglichen Hinweisen oder Materialspuren.",
+        ),
+        ObjectiveSpec(
+            objective_id="report_to_mira",
+            title="Mit Mira die Funde abgleichen",
+            hint="Mira beobachtet die Lage ruhig und kann Hinweise einordnen.",
+        ),
+    ),
+    transitions=(
+        TransitionSpec(
+            transition_id="starter_complete",
+            to_stage="completed",
+            to_status="completed",
+            requires_all_objectives_completed=True,
+            priority=10,
+        ),
+        TransitionSpec(
+            transition_id="starter_report_to_mira_stage",
+            to_stage="report_to_mira",
+            to_status="active",
+            requires_objectives_completed=("speak_with_kael", "inspect_supply_crate"),
+            objective_hint_updates=(
+                ("report_to_mira", "Sprich mit Mira ueber Kaels Aussagen und die Funde aus der Vorratskiste."),
+            ),
+            priority=20,
+        ),
+        TransitionSpec(
+            transition_id="starter_default_investigate_scene",
+            to_stage="investigate_scene",
+            to_status="active",
+            priority=999,
+        ),
+    ),
+)
+
+URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
+    quest_id=URBAN_OCCULT_FOLLOWUP_QUEST_ID,
+    title="Resonanzspur am Rand der Gasse",
+    description=(
+        "Verfolge die zweite Spur des fehlgeschlagenen Rituals: untersuche die verkohlten Runenspuren, "
+        "oeffne den versiegelten Instrumentenkoffer und gleiche die Hinweise mit Kael ab."
+    ),
+    initial_stage="trace_residue",
+    tags=("urban_occult", "followup", "investigation"),
+    objectives=(
+        ObjectiveSpec(
+            objective_id="inspect_rune_traces",
+            title="Runenspuren untersuchen",
+            hint="Am Brunnenplatz liegen verkohlte Runenspuren, die zur Stoerung des Rituals passen koennten.",
+        ),
+        ObjectiveSpec(
+            objective_id="open_sealed_case",
+            title="Versiegelten Instrumentenkoffer oeffnen",
+            hint="In der Randgasse liegt ein versiegelter Koffer, moeglicherweise mit Ritualwerkzeug.",
+        ),
+        ObjectiveSpec(
+            objective_id="crosscheck_with_kael",
+            title="Mit Kael die zweite Spur abgleichen",
+            hint="Kael kann Runenspuren und Fundstuecke aus dem Koffer einordnen.",
+        ),
+    ),
+    transitions=(
+        TransitionSpec(
+            transition_id="followup_complete",
+            to_stage="completed",
+            to_status="completed",
+            requires_all_objectives_completed=True,
+            priority=10,
+        ),
+        TransitionSpec(
+            transition_id="followup_crosscheck_stage",
+            to_stage="crosscheck_with_kael",
+            to_status="active",
+            requires_objectives_completed=("inspect_rune_traces", "open_sealed_case"),
+            objective_hint_updates=(
+                ("crosscheck_with_kael", "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."),
+            ),
+            priority=20,
+        ),
+        TransitionSpec(
+            transition_id="followup_default_trace_residue",
+            to_stage="trace_residue",
+            to_status="active",
+            priority=999,
+        ),
+    ),
+)
+
+AUTHORED_QUEST_SPECS: dict[str, QuestSpec] = {
+    URBAN_OCCULT_QUEST_ID: URBAN_OCCULT_STARTER_QUEST_SPEC,
+    URBAN_OCCULT_FOLLOWUP_QUEST_ID: URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
+}
+
+
+def get_authored_quest_spec_registry() -> dict[str, QuestSpec]:
+    return dict(AUTHORED_QUEST_SPECS)
+
+
+def validate_authored_quest_specs() -> tuple[bool, tuple[str, ...]]:
+    result = validate_quest_specs_for_activation(list(AUTHORED_QUEST_SPECS.values()), existing_quest_ids=set())
+    return result.ok, result.errors
 
 
 @dataclass(frozen=True)
@@ -599,76 +728,11 @@ def initial_quest_states_for_world_seed(world_seed: WorldSeed) -> list[WorldQues
     if not _looks_urban_occult_world_seed(world_seed):
         return []
     now = datetime.now(UTC)
-    return [
-        WorldQuestState(
-            quest_id=URBAN_OCCULT_QUEST_ID,
-            title="Spuren des fehlgeschlagenen Rituals",
-            description=(
-                "Finde heraus, was am Marktplatz schiefgelaufen ist: sprich mit Kael, "
-                "untersuche die Vorratskiste und gleiche deine Erkenntnisse mit Mira ab."
-            ),
-            status="active",
-            current_stage="investigate_scene",
-            objectives=[
-                QuestObjectiveState(
-                    objective_id="speak_with_kael",
-                    title="Mit Kael sprechen",
-                    status="pending",
-                    hint="Kael wirkt angespannt am Brunnenplatz und weiss vermutlich mehr ueber das Ritual.",
-                ),
-                QuestObjectiveState(
-                    objective_id="inspect_supply_crate",
-                    title="Vorratskiste untersuchen",
-                    status="pending",
-                    hint="Am Marktplatz gibt es eine Vorratskiste mit moeglichen Hinweisen oder Materialspuren.",
-                ),
-                QuestObjectiveState(
-                    objective_id="report_to_mira",
-                    title="Mit Mira die Funde abgleichen",
-                    status="pending",
-                    hint="Mira beobachtet die Lage ruhig und kann Hinweise einordnen.",
-                ),
-            ],
-            tags=["urban_occult", "starter", "investigation"],
-            updated_at=now,
-        )
-    ]
+    return [compile_quest_spec_to_world_state(URBAN_OCCULT_STARTER_QUEST_SPEC, now=now)]
 
 
 def _make_urban_occult_followup_quest(*, now: datetime | None = None) -> WorldQuestState:
-    created_at = now or datetime.now(UTC)
-    return WorldQuestState(
-        quest_id=URBAN_OCCULT_FOLLOWUP_QUEST_ID,
-        title="Resonanzspur am Rand der Gasse",
-        description=(
-            "Verfolge die zweite Spur des fehlgeschlagenen Rituals: untersuche die verkohlten Runenspuren, "
-            "oeffne den versiegelten Instrumentenkoffer und gleiche die Hinweise mit Kael ab."
-        ),
-        status="active",
-        current_stage="trace_residue",
-        objectives=[
-            QuestObjectiveState(
-                objective_id="inspect_rune_traces",
-                title="Runenspuren untersuchen",
-                status="pending",
-                hint="Am Brunnenplatz liegen verkohlte Runenspuren, die zur Stoerung des Rituals passen koennten.",
-            ),
-            QuestObjectiveState(
-                objective_id="open_sealed_case",
-                title="Versiegelten Instrumentenkoffer oeffnen",
-                status="pending",
-                hint="In der Randgasse liegt ein versiegelter Koffer, moeglicherweise mit Ritualwerkzeug.",
-            ),
-            QuestObjectiveState(
-                objective_id="crosscheck_with_kael",
-                title="Mit Kael die zweite Spur abgleichen",
-                status="pending",
-                hint="Kael kann Runenspuren und Fundstuecke aus dem Koffer einordnen.",
-            ),
-        ],
-        tags=["urban_occult", "followup", "investigation"],
-        updated_at=created_at,
-    )
+    return compile_quest_spec_to_world_state(URBAN_OCCULT_FOLLOWUP_QUEST_SPEC, now=now or datetime.now(UTC))
 
 
 def advance_quests_for_turn(
@@ -723,24 +787,15 @@ def advance_quests_for_turn(
             objective_map.get("speak_with_kael", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
             and objective_map.get("inspect_supply_crate", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
         )
-        if "report_to_mira" in objective_map:
-            if can_report_to_mira and objective_map["report_to_mira"].status != "completed":
-                objective_map["report_to_mira"].hint = "Sprich mit Mira ueber Kaels Aussagen und die Funde aus der Vorratskiste."
-            if talked_to_mira and can_report_to_mira:
-                objective_map["report_to_mira"].status = "completed"
-                objective_map["report_to_mira"].hint = "Mira hat die Funde eingeordnet und neue Ermittlungsansaetze angedeutet."
+        if "report_to_mira" in objective_map and talked_to_mira and can_report_to_mira:
+            objective_map["report_to_mira"].status = "completed"
+            objective_map["report_to_mira"].hint = "Mira hat die Funde eingeordnet und neue Ermittlungsansaetze angedeutet."
 
-        all_completed = all(obj.status == "completed" for obj in quest_copy.objectives)
-        if all_completed:
-            quest_copy.status = "completed"
-            quest_copy.current_stage = "completed"
-            quest_copy.completed_at = quest_copy.completed_at or now
-        elif can_report_to_mira:
-            quest_copy.status = "active"
-            quest_copy.current_stage = "report_to_mira"
-        else:
-            quest_copy.status = "active"
-            quest_copy.current_stage = "investigate_scene"
+        apply_transition_specs_to_quest_state(
+            quest=quest_copy,
+            spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
+            now=now,
+        )
         quest_copy.updated_at = now
 
         after_objectives = {obj.objective_id: obj.status for obj in quest_copy.objectives}
@@ -875,25 +930,11 @@ def _advance_urban_occult_followup_quest(
         objective_map["open_sealed_case"].status = "completed"
         objective_map["open_sealed_case"].hint = "Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen."
 
-    can_crosscheck = (
-        objective_map.get("inspect_rune_traces", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
-        and objective_map.get("open_sealed_case", QuestObjectiveState(objective_id="x", title="x")).status == "completed"
+    apply_transition_specs_to_quest_state(
+        quest=quest_copy,
+        spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
+        now=now,
     )
-    if "crosscheck_with_kael" in objective_map:
-        if can_crosscheck and objective_map["crosscheck_with_kael"].status != "completed":
-            objective_map["crosscheck_with_kael"].hint = "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."
-
-    all_completed = all(obj.status == "completed" for obj in quest_copy.objectives)
-    if all_completed:
-        quest_copy.status = "completed"
-        quest_copy.current_stage = "completed"
-        quest_copy.completed_at = quest_copy.completed_at or now
-    elif can_crosscheck:
-        quest_copy.status = "active"
-        quest_copy.current_stage = "crosscheck_with_kael"
-    else:
-        quest_copy.status = "active"
-        quest_copy.current_stage = "trace_residue"
     quest_copy.updated_at = now
 
     after_objectives = {obj.objective_id: obj.status for obj in quest_copy.objectives}
