@@ -418,3 +418,27 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - Vollregression `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 335 passed
 - Tech Debt (bewusst): Der Predicate-Katalog ist jetzt breiter, aber authored Quests nutzen die neuen Predicate-Kinds noch nicht aktiv. Nächster sinnvoller Schritt fuer KI-Questvorschlaege ist ein datengetriebener Effect-/Transition-Layer (nicht nur Objective-Status/Hint) plus Spec-Validator fuer Referenzen auf NPCs/POIs/Items/Flags.
+
+- G1100-G1199 Draft (gestartet): Datengetriebenen Effect-/Transition-Layer (MVP) auf QuestSpec-Ebene einfuehren, damit Trigger/Transitions nicht nur Objective-Status setzen, sondern auch Story-Flags, Quest-State, Objective-Hints/-Status und Systemevents strukturiert aus Specs heraus anwenden koennen.
+
+- G1100-G1199 abgeschlossen: Effect-/Transition-Layer (MVP) in `QuestSpec` eingefuehrt und in den authored Urban-Occult-Transitions aktiv genutzt.
+- `apps/game_api/app/services/quest_specs.py` erweitert:
+  - neue `EffectSpec`-Struktur + Validator `_validate_effect_spec(...)`
+  - `TransitionSpec.effects` und `ObjectiveTriggerSpec.effects`
+  - `apply_effect_specs(...)` als zentrale Ausfuehrung fuer datengetriebene Effekte
+  - erweiterte Signaturen:
+    - `apply_transition_specs_to_quest_state(..., mutable_story_flags, emitted_events, ...)`
+    - `apply_objective_trigger_specs_to_quest_state(..., mutable_story_flags, emitted_events, ...)`
+  - unterstuetzte Effektarten (MVP): `set_story_flag`, `increment_story_flag`, `set_objective_hint`, `set_objective_status`, `set_quest_state`, `emit_system_event`
+- `apps/game_api/app/services/quest_authoring.py` angepasst:
+  - Starter-/Followup-Transitions emittieren jetzt authored `quest_stage_shifted`-Systemevents per `EffectSpec`
+  - Quest-Advance-Pfade uebergeben `emitted_events`, damit Effekt-Events im Turn-Kontext sichtbar sind
+- `apps/game_api/tests/test_quest_specs.py` erweitert:
+  - Tests fuer `apply_effect_specs(...)` (Story-Flags + Event-Emission)
+  - Test fuer Objective-Hint-Update per Effekt
+- Validierung:
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_quest_specs.py -q` (15 passed)
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests -q` (120 passed)
+  - `npm.cmd --prefix apps/web_client run build`
+  - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (339 passed, 1 warning)
+- Tech Debt (bewusst): Effekt-Validierung prueft derzeit nur Struktur/Minimalkonsistenz. Referenzvalidierung fuer Effekt-Targets (z. B. Objective-/Quest-Referenzen ueber Questgrenzen, Story-Flag-Namenskonventionen) sollte als naechster Schritt staerker formalisiert werden.

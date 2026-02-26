@@ -13,11 +13,13 @@ from apps.game_api.app.services.quest_authoring import (
     validate_authored_quest_specs,
 )
 from apps.game_api.app.services.quest_specs import (
+    EffectSpec,
     ObjectiveSpec,
     ObjectiveTriggerSpec,
     PredicateSpec,
     QuestSpec,
     TransitionSpec,
+    apply_effect_specs,
     apply_objective_trigger_specs_to_quest_state,
     apply_transition_specs_to_quest_state,
     compile_quest_spec_to_world_state,
@@ -128,6 +130,59 @@ class TestQuestSpecs(unittest.TestCase):
         result = validate_quest_spec(spec)
         self.assertFalse(result.ok)
         self.assertIn("objective_trigger_unknown_objective:trig-a:obj-missing", result.errors)
+
+    def test_validate_quest_spec_detects_invalid_effect_specs(self):
+        spec = QuestSpec(
+            quest_id="quest-test-effects",
+            title="Effect Validation",
+            description="Effect validation.",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-a", title="A", hint="a"),),
+            objective_triggers=(
+                ObjectiveTriggerSpec(
+                    trigger_id="trig-invalid-effect",
+                    objective_id="obj-a",
+                    predicates=(
+                        PredicateSpec(
+                            predicate_id="pred-a",
+                            kind="story_flag_true",
+                            flag_name="flag_a",
+                        ),
+                    ),
+                    effects=(
+                        EffectSpec(
+                            effect_id="bad-trigger-effect",
+                            kind="emit_system_event",
+                            params={"code": "missing_message"},
+                        ),
+                    ),
+                ),
+            ),
+            transitions=(
+                TransitionSpec(
+                    transition_id="transition-invalid-effect",
+                    to_stage="next",
+                    effects=(
+                        EffectSpec(
+                            effect_id="bad-transition-effect",
+                            kind="increment_story_flag",
+                            params={"flag_name": "heat"},
+                        ),
+                    ),
+                ),
+            ),
+        )
+        result = validate_quest_spec(spec)
+        self.assertFalse(result.ok)
+        self.assertIn(
+            "trigger_effect_error:trig-invalid-effect:effect_missing_event_message:bad-trigger-effect",
+            result.errors,
+        )
+        self.assertIn(
+            "transition_effect_error:transition-invalid-effect:effect_increment_step_invalid:bad-transition-effect",
+            result.errors,
+        )
 
     def test_apply_objective_trigger_specs_completes_starter_objectives_from_actions(self):
         now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)
@@ -344,6 +399,135 @@ class TestQuestSpecs(unittest.TestCase):
         self.assertEqual(objective_map["gain_trust"], "completed")
         self.assertIn("talk-summoner-role", fired)
         self.assertIn("relationship-positive-kael", fired)
+
+    def test_apply_effect_specs_updates_story_flags_and_emits_event(self):
+        quest_state = compile_quest_spec_to_world_state(URBAN_OCCULT_STARTER_QUEST_SPEC)
+        flags: dict[str, str | int | bool] = {}
+        events = apply_effect_specs(
+            effects=(
+                EffectSpec(
+                    effect_id="set-flag",
+                    kind="set_story_flag",
+                    params={"flag_name": "test_flag", "value": True},
+                    priority=10,
+                ),
+                EffectSpec(
+                    effect_id="inc-flag",
+                    kind="increment_story_flag",
+                    params={"flag_name": "heat", "step": 2},
+                    priority=20,
+                ),
+                EffectSpec(
+                    effect_id="emit",
+                    kind="emit_system_event",
+                    params={"code": "test_effect_applied", "message": "Effect ran.", "severity": "info"},
+                    priority=30,
+                ),
+            ),
+            current_quest=quest_state,
+            all_quests={quest_state.quest_id: quest_state},
+            story_flags=flags,
+        )
+        self.assertTrue(flags["test_flag"])
+        self.assertEqual(flags["heat"], 2)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].code, "test_effect_applied")
+
+    def test_apply_effect_specs_can_update_objective_hint(self):
+        quest_state = compile_quest_spec_to_world_state(URBAN_OCCULT_STARTER_QUEST_SPEC)
+        updated_hint = "Neue authored Hint-Zeile."
+        apply_effect_specs(
+            effects=(
+                EffectSpec(
+                    effect_id="hint",
+                    kind="set_objective_hint",
+                    params={
+                        "objective_id": "speak_with_kael",
+                        "hint": updated_hint,
+                    },
+                ),
+            ),
+            current_quest=quest_state,
+            all_quests={quest_state.quest_id: quest_state},
+            story_flags={},
+        )
+        objective_map = {obj.objective_id: obj for obj in quest_state.objectives}
+        self.assertEqual(objective_map["speak_with_kael"].hint, updated_hint)
+
+    def test_apply_trigger_and_transition_effects_can_emit_events(self):
+        now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)
+        spec = QuestSpec(
+            quest_id="quest-effects",
+            title="Effects",
+            description="Effects.",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-a", title="A", hint="a"),),
+            objective_triggers=(
+                ObjectiveTriggerSpec(
+                    trigger_id="trigger-a",
+                    objective_id="obj-a",
+                    predicates=(
+                        PredicateSpec(
+                            predicate_id="pred-a",
+                            kind="action_seen",
+                            action_types=("TALK",),
+                        ),
+                    ),
+                    effects=(
+                        EffectSpec(
+                            effect_id="trigger-event",
+                            kind="emit_system_event",
+                            params={
+                                "code": "trigger_effect_event",
+                                "message": "Trigger effect emitted.",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+            transitions=(
+                TransitionSpec(
+                    transition_id="transition-complete",
+                    to_stage="completed",
+                    to_status="completed",
+                    requires_all_objectives_completed=True,
+                    effects=(
+                        EffectSpec(
+                            effect_id="transition-event",
+                            kind="emit_system_event",
+                            params={
+                                "code": "transition_effect_event",
+                                "message": "Transition effect emitted.",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        quest_state = compile_quest_spec_to_world_state(spec, now=now)
+        events: list[TurnSystemEvent] = []
+        resolution = self._resolution_with_actions(
+            TurnIntentAction(action_type=ActionType.talk, target_ref="npc-any"),
+        )
+        fired = apply_objective_trigger_specs_to_quest_state(
+            quest=quest_state,
+            spec=spec,
+            resolution=resolution,
+            emitted_events=events,
+            now=now,
+        )
+        self.assertIn("trigger-a", fired)
+        self.assertEqual(events[0].code, "trigger_effect_event")
+
+        apply_transition_specs_to_quest_state(
+            quest=quest_state,
+            spec=spec,
+            emitted_events=events,
+            now=now,
+        )
+        self.assertEqual(quest_state.status, "completed")
+        self.assertEqual(events[1].code, "transition_effect_event")
 
     def test_apply_transition_specs_moves_followup_to_crosscheck_when_clues_ready(self):
         now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)

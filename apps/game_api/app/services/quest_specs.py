@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 
 from ls_shared_schemas.quests import QuestObjectiveState, WorldQuestState
-from ls_shared_schemas.turns import TurnResolution
+from ls_shared_schemas.turns import TurnResolution, TurnSystemEvent
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,17 @@ class TransitionSpec:
     requires_objectives_completed: tuple[str, ...] = ()
     requires_story_flags_true: tuple[str, ...] = ()
     objective_hint_updates: tuple[tuple[str, str], ...] = ()
+    effects: tuple["EffectSpec", ...] = ()
+    priority: int = 100
+
+
+@dataclass(frozen=True)
+class EffectSpec:
+    effect_id: str
+    kind: str
+    params: dict[str, str | int | float | bool | None | dict[str, str | int | float | bool | None]] = field(
+        default_factory=dict
+    )
     priority: int = 100
 
 
@@ -67,6 +78,7 @@ class ObjectiveTriggerSpec:
     requires_story_flags_true: tuple[str, ...] = ()
     set_status: str = "completed"
     set_hint: str | None = None
+    effects: tuple[EffectSpec, ...] = ()
     priority: int = 100
     only_if_objective_status_in: tuple[str, ...] = ("pending", "active")
 
@@ -87,6 +99,53 @@ class QuestSpec:
 class QuestSpecValidationResult:
     ok: bool
     errors: tuple[str, ...]
+
+
+def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
+    errors: list[str] = []
+    if not effect.effect_id.strip():
+        errors.append("effect_id_empty")
+    if effect.kind not in {
+        "set_story_flag",
+        "increment_story_flag",
+        "set_objective_hint",
+        "set_objective_status",
+        "set_quest_state",
+        "emit_system_event",
+    }:
+        errors.append(f"effect_unknown_kind:{effect.effect_id}:{effect.kind}")
+        return tuple(errors)
+
+    params = dict(effect.params or {})
+    if effect.kind in {"set_story_flag", "increment_story_flag"}:
+        flag_name = str(params.get("flag_name") or "").strip()
+        if not flag_name:
+            errors.append(f"effect_missing_flag_name:{effect.effect_id}")
+    if effect.kind == "increment_story_flag":
+        step = params.get("step")
+        if not isinstance(step, int):
+            errors.append(f"effect_increment_step_invalid:{effect.effect_id}")
+    if effect.kind in {"set_objective_hint", "set_objective_status"}:
+        objective_id = str(params.get("objective_id") or "").strip()
+        if not objective_id:
+            errors.append(f"effect_missing_objective_id:{effect.effect_id}")
+    if effect.kind == "set_objective_hint":
+        hint = str(params.get("hint") or "").strip()
+        if not hint:
+            errors.append(f"effect_missing_hint:{effect.effect_id}")
+    if effect.kind == "set_objective_status":
+        status = str(params.get("status") or "").strip()
+        if status not in {"pending", "active", "completed", "failed"}:
+            errors.append(f"effect_invalid_objective_status:{effect.effect_id}")
+    if effect.kind == "set_quest_state":
+        if not str(params.get("stage") or "").strip() and not str(params.get("status") or "").strip():
+            errors.append(f"effect_missing_quest_state_fields:{effect.effect_id}")
+    if effect.kind == "emit_system_event":
+        if not str(params.get("code") or "").strip():
+            errors.append(f"effect_missing_event_code:{effect.effect_id}")
+        if not str(params.get("message") or "").strip():
+            errors.append(f"effect_missing_event_message:{effect.effect_id}")
+    return tuple(errors)
 
 
 def compile_quest_spec_to_world_state(spec: QuestSpec, *, now: datetime | None = None) -> WorldQuestState:
@@ -190,6 +249,9 @@ def validate_quest_spec(spec: QuestSpec) -> QuestSpecValidationResult:
                     errors.append(f"predicate_relationship_missing_target:{trigger.trigger_id}:{predicate.predicate_id}")
                 if predicate.relationship_delta_sign and predicate.relationship_delta_sign not in {"positive", "negative", "nonzero"}:
                     errors.append(f"predicate_relationship_sign_invalid:{trigger.trigger_id}:{predicate.predicate_id}")
+        for effect in trigger.effects:
+            for effect_error in _validate_effect_spec(effect):
+                errors.append(f"trigger_effect_error:{trigger.trigger_id}:{effect_error}")
 
     duplicate_trigger_ids = {trigger_id for trigger_id in trigger_ids if trigger_ids.count(trigger_id) > 1 and trigger_id}
     for trigger_id in sorted(duplicate_trigger_ids):
@@ -208,6 +270,9 @@ def validate_quest_spec(spec: QuestSpec) -> QuestSpecValidationResult:
         for objective_id, _hint in transition.objective_hint_updates:
             if objective_id not in known_objectives:
                 errors.append(f"transition_hint_unknown_objective:{transition.transition_id}:{objective_id}")
+        for effect in transition.effects:
+            for effect_error in _validate_effect_spec(effect):
+                errors.append(f"transition_effect_error:{transition.transition_id}:{effect_error}")
 
     duplicate_transition_ids = {
         transition_id for transition_id in transition_ids if transition_ids.count(transition_id) > 1 and transition_id
@@ -249,6 +314,8 @@ def apply_transition_specs_to_quest_state(
     quest: WorldQuestState,
     spec: QuestSpec,
     story_flags: dict[str, str | int | bool] | None = None,
+    mutable_story_flags: dict[str, str | int | bool] | None = None,
+    emitted_events: list[TurnSystemEvent] | None = None,
     now: datetime | None = None,
 ) -> None:
     """Apply the highest-priority matching transition to a quest state (in place)."""
@@ -282,6 +349,16 @@ def apply_transition_specs_to_quest_state(
         quest.updated_at = timestamp
         if transition.to_status == "completed":
             quest.completed_at = quest.completed_at or timestamp
+        if transition.effects:
+            effect_events = apply_effect_specs(
+                effects=transition.effects,
+                current_quest=quest,
+                all_quests={quest.quest_id: quest},
+                story_flags=mutable_story_flags,
+                now=timestamp,
+            )
+            if emitted_events is not None and effect_events:
+                emitted_events.extend(effect_events)
         return
 
 
@@ -488,6 +565,8 @@ def apply_objective_trigger_specs_to_quest_state(
     spec: QuestSpec,
     resolution: TurnResolution,
     story_flags: dict[str, str | int | bool] | None = None,
+    mutable_story_flags: dict[str, str | int | bool] | None = None,
+    emitted_events: list[TurnSystemEvent] | None = None,
     now: datetime | None = None,
 ) -> tuple[str, ...]:
     """Apply objective completion triggers to quest state (in place)."""
@@ -533,8 +612,130 @@ def apply_objective_trigger_specs_to_quest_state(
         if trigger.set_hint:
             objective.hint = trigger.set_hint
         quest.updated_at = timestamp
+        if trigger.effects:
+            effect_events = apply_effect_specs(
+                effects=trigger.effects,
+                current_quest=quest,
+                all_quests={quest.quest_id: quest},
+                story_flags=mutable_story_flags,
+                now=timestamp,
+            )
+            if emitted_events is not None and effect_events:
+                emitted_events.extend(effect_events)
         fired_trigger_ids.append(trigger.trigger_id)
         triggered_objectives.add(objective.objective_id)
 
     return tuple(fired_trigger_ids)
+
+
+def apply_effect_specs(
+    *,
+    effects: tuple[EffectSpec, ...],
+    current_quest: WorldQuestState,
+    all_quests: dict[str, WorldQuestState] | None = None,
+    story_flags: dict[str, str | int | bool] | None = None,
+    now: datetime | None = None,
+) -> list[TurnSystemEvent]:
+    if not effects:
+        return []
+    timestamp = now or datetime.now(UTC)
+    events: list[TurnSystemEvent] = []
+    quest_lookup = dict(all_quests or {})
+    quest_lookup.setdefault(current_quest.quest_id, current_quest)
+    flags = story_flags if story_flags is not None else {}
+
+    for effect in sorted(effects, key=lambda item: item.priority):
+        params = dict(effect.params or {})
+        quest_id = str(params.get("quest_id") or "").strip() or current_quest.quest_id
+        quest = quest_lookup.get(quest_id)
+        if quest is None:
+            continue
+
+        if effect.kind == "set_story_flag":
+            flag_name = str(params.get("flag_name") or "").strip()
+            if not flag_name:
+                continue
+            value = params.get("value", True)
+            flags[flag_name] = bool(value) if isinstance(value, bool) else value
+            continue
+
+        if effect.kind == "increment_story_flag":
+            flag_name = str(params.get("flag_name") or "").strip()
+            step = params.get("step")
+            if not flag_name or not isinstance(step, int):
+                continue
+            current_value = flags.get(flag_name, 0)
+            try:
+                base = int(current_value)
+            except (TypeError, ValueError):
+                base = 0
+            flags[flag_name] = base + step
+            continue
+
+        if effect.kind == "set_objective_hint":
+            objective_id = str(params.get("objective_id") or "").strip()
+            hint = str(params.get("hint") or "").strip()
+            if not objective_id or not hint:
+                continue
+            for objective in quest.objectives:
+                if objective.objective_id == objective_id:
+                    objective.hint = hint
+                    quest.updated_at = timestamp
+                    break
+            continue
+
+        if effect.kind == "set_objective_status":
+            objective_id = str(params.get("objective_id") or "").strip()
+            status = str(params.get("status") or "").strip()
+            if not objective_id or status not in {"pending", "active", "completed", "failed"}:
+                continue
+            for objective in quest.objectives:
+                if objective.objective_id == objective_id:
+                    objective.status = status
+                    quest.updated_at = timestamp
+                    if status == "completed":
+                        if all(obj.status == "completed" for obj in quest.objectives):
+                            quest.status = "completed"
+                            quest.current_stage = "completed"
+                            quest.completed_at = quest.completed_at or timestamp
+                    break
+            continue
+
+        if effect.kind == "set_quest_state":
+            stage = str(params.get("stage") or "").strip()
+            status = str(params.get("status") or "").strip()
+            if stage:
+                quest.current_stage = stage
+            if status:
+                quest.status = status
+                if status == "completed":
+                    quest.completed_at = quest.completed_at or timestamp
+            quest.updated_at = timestamp
+            continue
+
+        if effect.kind == "emit_system_event":
+            code = str(params.get("code") or "").strip()
+            message = str(params.get("message") or "").strip()
+            if not code or not message:
+                continue
+            severity = str(params.get("severity") or "info").strip().lower()
+            if severity not in {"info", "warning", "error"}:
+                severity = "info"
+            metadata_raw = params.get("metadata")
+            metadata: dict[str, str | int | float | bool | None] = {}
+            if isinstance(metadata_raw, dict):
+                for key, value in metadata_raw.items():
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        metadata[str(key)] = value
+            events.append(
+                TurnSystemEvent(
+                    code=code,
+                    message=message,
+                    severity=severity,
+                    metadata=metadata,
+                )
+            )
+            continue
+
+    return events
 

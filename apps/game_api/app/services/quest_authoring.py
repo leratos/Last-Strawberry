@@ -8,6 +8,7 @@ from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnResolution, TurnSystemEvent
 from ls_shared_schemas.world import WorldSeed
 from apps.game_api.app.services.quest_specs import (
+    EffectSpec,
     ObjectiveSpec,
     ObjectiveTriggerSpec,
     PredicateSpec,
@@ -115,6 +116,18 @@ URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
             to_stage="completed",
             to_status="completed",
             requires_all_objectives_completed=True,
+            effects=(
+                EffectSpec(
+                    effect_id="starter_complete_event",
+                    kind="emit_system_event",
+                    params={
+                        "code": "quest_stage_shifted",
+                        "message": "Die Untersuchung am Marktplatz ist abgeschlossen; eine weitere Spur wird frei.",
+                        "severity": "info",
+                    },
+                    priority=10,
+                ),
+            ),
             priority=10,
         ),
         TransitionSpec(
@@ -124,6 +137,18 @@ URBAN_OCCULT_STARTER_QUEST_SPEC = QuestSpec(
             requires_objectives_completed=("speak_with_kael", "inspect_supply_crate"),
             objective_hint_updates=(
                 ("report_to_mira", "Sprich mit Mira ueber Kaels Aussagen und die Funde aus der Vorratskiste."),
+            ),
+            effects=(
+                EffectSpec(
+                    effect_id="starter_report_stage_event",
+                    kind="emit_system_event",
+                    params={
+                        "code": "quest_stage_shifted",
+                        "message": "Neue Prioritaet: Berichte Mira von den gesammelten Hinweisen.",
+                        "severity": "info",
+                    },
+                    priority=10,
+                ),
             ),
             priority=20,
         ),
@@ -226,6 +251,18 @@ URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
             to_stage="completed",
             to_status="completed",
             requires_all_objectives_completed=True,
+            effects=(
+                EffectSpec(
+                    effect_id="followup_complete_event",
+                    kind="emit_system_event",
+                    params={
+                        "code": "quest_stage_shifted",
+                        "message": "Der Resonanzspur-Abgleich ist abgeschlossen.",
+                        "severity": "info",
+                    },
+                    priority=10,
+                ),
+            ),
             priority=10,
         ),
         TransitionSpec(
@@ -235,6 +272,18 @@ URBAN_OCCULT_FOLLOWUP_QUEST_SPEC = QuestSpec(
             requires_objectives_completed=("inspect_rune_traces", "open_sealed_case"),
             objective_hint_updates=(
                 ("crosscheck_with_kael", "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."),
+            ),
+            effects=(
+                EffectSpec(
+                    effect_id="followup_crosscheck_stage_event",
+                    kind="emit_system_event",
+                    params={
+                        "code": "quest_stage_shifted",
+                        "message": "Kael kann jetzt den Spurabgleich mit den neuen Funden vornehmen.",
+                        "severity": "info",
+                    },
+                    priority=10,
+                ),
             ),
             priority=20,
         ),
@@ -883,12 +932,14 @@ def advance_quests_for_turn(
             quest=quest_copy,
             spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
             resolution=resolution,
+            emitted_events=emitted_events,
             now=now,
         )
 
         apply_transition_specs_to_quest_state(
             quest=quest_copy,
             spec=URBAN_OCCULT_STARTER_QUEST_SPEC,
+            emitted_events=emitted_events,
             now=now,
         )
         quest_copy.updated_at = now
@@ -1008,12 +1059,14 @@ def _advance_urban_occult_followup_quest(
         quest=quest_copy,
         spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
         resolution=resolution,
+        emitted_events=emitted_events,
         now=now,
     )
 
     apply_transition_specs_to_quest_state(
         quest=quest_copy,
         spec=URBAN_OCCULT_FOLLOWUP_QUEST_SPEC,
+        emitted_events=emitted_events,
         now=now,
     )
     quest_copy.updated_at = now
