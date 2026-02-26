@@ -185,6 +185,57 @@ class TestQuestSpecs(unittest.TestCase):
             result.errors,
         )
 
+    def test_validate_quest_spec_detects_effect_unknown_params_and_types(self):
+        spec = QuestSpec(
+            quest_id="quest-test-effect-params",
+            title="Effect Params",
+            description="Effect param validation.",
+            initial_stage="start",
+            tags=("test",),
+            objectives=(ObjectiveSpec(objective_id="obj-a", title="A", hint="a"),),
+            transitions=(
+                TransitionSpec(
+                    transition_id="transition-bad-params",
+                    to_stage="next",
+                    effects=(
+                        EffectSpec(
+                            effect_id="set-flag-bad",
+                            kind="set_story_flag",
+                            params={"flag_name": "ok_flag", "value": {"bad": "dict"}, "extra": "x"},
+                        ),
+                        EffectSpec(
+                            effect_id="emit-bad-meta",
+                            kind="emit_system_event",
+                            params={
+                                "code": "event_ok",
+                                "message": "msg",
+                                "severity": "verbose",
+                                "metadata": {"k": {"nested": "bad"}},
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        result = validate_quest_spec(spec)
+        self.assertFalse(result.ok)
+        self.assertIn(
+            "transition_effect_error:transition-bad-params:effect_unknown_param:set-flag-bad:extra",
+            result.errors,
+        )
+        self.assertIn(
+            "transition_effect_error:transition-bad-params:effect_invalid_flag_value_type:set-flag-bad",
+            result.errors,
+        )
+        self.assertIn(
+            "transition_effect_error:transition-bad-params:effect_invalid_event_severity:emit-bad-meta:verbose",
+            result.errors,
+        )
+        self.assertIn(
+            "transition_effect_error:transition-bad-params:effect_invalid_event_metadata_value_type:emit-bad-meta:k",
+            result.errors,
+        )
+
     def test_validate_quest_specs_for_activation_detects_unknown_effect_target_quest(self):
         spec = QuestSpec(
             quest_id="quest-a",
@@ -521,6 +572,22 @@ class TestQuestSpecs(unittest.TestCase):
         )
         objective_map = {obj.objective_id: obj for obj in quest_state.objectives}
         self.assertEqual(objective_map["speak_with_kael"].hint, updated_hint)
+
+    def test_apply_effect_specs_ignores_non_primitive_story_flag_value(self):
+        quest_state = compile_quest_spec_to_world_state(URBAN_OCCULT_STARTER_QUEST_SPEC)
+        flags: dict[str, str | int | bool] = {}
+        apply_effect_specs(
+            effects=(
+                EffectSpec(
+                    effect_id="set-bad-value",
+                    kind="set_story_flag",
+                    params={"flag_name": "bad_flag", "value": {"nested": True}},
+                ),
+            ),
+            current_quest=quest_state,
+            story_flags=flags,
+        )
+        self.assertNotIn("bad_flag", flags)
 
     def test_apply_trigger_and_transition_effects_can_emit_events(self):
         now = datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)

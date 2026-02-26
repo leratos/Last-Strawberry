@@ -467,3 +467,24 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (342 passed, 1 warning)
 - Tech Debt (bewusst): Referenzvalidierung fuer Effects deckt Quest-/Objective-Targets ab; Referenzmodelle fuer NPC/POI/Item innerhalb von Effect-Params (falls spaeter eingefuehrt) sind noch nicht typisiert und sollten mit dedizierten Param-Schemas abgesichert werden.
+- G1300-G1399 Draft (gestartet): Typisierte Effect-Param-Schemas (MVP) fuer bestehende Effect-Kinds einfuehren, inklusive Unknown-Param-Checks und stricter Typpruefungen (`step`, `value`, `metadata`). Ziel: robuste, vorhersagbare Effect-Authoring-Validierung als Grundlage fuer spaetere NPC/POI/Item-Effects.
+- G1300-G1399 abgeschlossen: Typisierte Effect-Param-Schemas (MVP) fuer bestehende Effect-Kinds eingefuehrt und runtime-seitig defensiv abgesichert.
+- `apps/game_api/app/services/quest_specs.py` erweitert:
+  - zentrale erlaubte Param-Mengen pro Effect-Kind (`_EFFECT_ALLOWED_PARAMS_BY_KIND`)
+  - strict Unknown-Param-Checks (`effect_unknown_param`)
+  - strictere Typpruefungen:
+    - `step` nur echter `int` (kein bool)
+    - `flag_name`/`objective_id`/`hint`/`status`/`stage`/`quest_id` Typvalidierung
+    - `set_story_flag.value` nur primitive Werte (`str|int|float|bool|None`)
+    - `emit_system_event.metadata` nur `dict[str, primitive]`
+  - bestehende Pattern-Validierung fuer `flag_name`/Event-Code und Severity-Validierung bleibt aktiv
+  - `apply_effect_specs(...)` defensiver gemacht (ungueltige Value-/Step-/Metadata-Formen werden ignoriert)
+- `apps/game_api/tests/test_quest_specs.py` erweitert:
+  - Validierungstest fuer Unknown-Params + Typfehler in Effect-Params
+  - Runtime-Test: non-primitive Story-Flag-Werte werden nicht angewendet
+- Validierung:
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_quest_specs.py -q` (20 passed)
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests -q` (125 passed)
+  - `npm.cmd --prefix apps/web_client run build`
+  - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (344 passed, 1 warning)
+- Tech Debt (bewusst): Param-Schema ist aktuell regelbasiert in Python-Validatorlogik kodiert. Naechster Schritt fuer KI-Authoring waere ein explizites, serialisierbares Schema-Format (z. B. JSON-Schema-Export pro Effect-Kind) fuer externe Spec-Generatoren/Editoren.

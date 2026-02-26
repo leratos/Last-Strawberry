@@ -104,6 +104,18 @@ class QuestSpecValidationResult:
 
 _FLAG_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _EVENT_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+_EFFECT_ALLOWED_PARAMS_BY_KIND: dict[str, set[str]] = {
+    "set_story_flag": {"quest_id", "flag_name", "value"},
+    "increment_story_flag": {"quest_id", "flag_name", "step"},
+    "set_objective_hint": {"quest_id", "objective_id", "hint"},
+    "set_objective_status": {"quest_id", "objective_id", "status"},
+    "set_quest_state": {"quest_id", "stage", "status"},
+    "emit_system_event": {"quest_id", "code", "message", "severity", "metadata"},
+}
+
+
+def _is_primitive_value(value: object) -> bool:
+    return isinstance(value, (str, int, float, bool)) or value is None
 
 
 def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
@@ -122,42 +134,104 @@ def _validate_effect_spec(effect: EffectSpec) -> tuple[str, ...]:
         return tuple(errors)
 
     params = dict(effect.params or {})
+    allowed_params = _EFFECT_ALLOWED_PARAMS_BY_KIND.get(effect.kind, set())
+    for param_name in sorted(params.keys()):
+        if param_name not in allowed_params:
+            errors.append(f"effect_unknown_param:{effect.effect_id}:{param_name}")
+    quest_id_raw = params.get("quest_id")
+    if quest_id_raw is not None:
+        if not isinstance(quest_id_raw, str):
+            errors.append(f"effect_invalid_quest_id_type:{effect.effect_id}")
+        elif not str(quest_id_raw).strip():
+            errors.append(f"effect_invalid_quest_id:{effect.effect_id}")
+
     if effect.kind in {"set_story_flag", "increment_story_flag"}:
-        flag_name = str(params.get("flag_name") or "").strip()
+        flag_name_raw = params.get("flag_name")
+        flag_name = str(flag_name_raw or "").strip()
         if not flag_name:
             errors.append(f"effect_missing_flag_name:{effect.effect_id}")
         elif not _FLAG_NAME_PATTERN.match(flag_name):
             errors.append(f"effect_invalid_flag_name:{effect.effect_id}:{flag_name}")
+        if flag_name_raw is not None and not isinstance(flag_name_raw, str):
+            errors.append(f"effect_invalid_flag_name_type:{effect.effect_id}")
+
+    if effect.kind == "set_story_flag" and "value" in params:
+        if not _is_primitive_value(params.get("value")):
+            errors.append(f"effect_invalid_flag_value_type:{effect.effect_id}")
+
     if effect.kind == "increment_story_flag":
         step = params.get("step")
-        if not isinstance(step, int):
+        if type(step) is not int:
             errors.append(f"effect_increment_step_invalid:{effect.effect_id}")
+
     if effect.kind in {"set_objective_hint", "set_objective_status"}:
-        objective_id = str(params.get("objective_id") or "").strip()
+        objective_id_raw = params.get("objective_id")
+        objective_id = str(objective_id_raw or "").strip()
         if not objective_id:
             errors.append(f"effect_missing_objective_id:{effect.effect_id}")
+        if objective_id_raw is not None and not isinstance(objective_id_raw, str):
+            errors.append(f"effect_invalid_objective_id_type:{effect.effect_id}")
+
     if effect.kind == "set_objective_hint":
-        hint = str(params.get("hint") or "").strip()
+        hint_raw = params.get("hint")
+        hint = str(hint_raw or "").strip()
         if not hint:
             errors.append(f"effect_missing_hint:{effect.effect_id}")
+        if hint_raw is not None and not isinstance(hint_raw, str):
+            errors.append(f"effect_invalid_hint_type:{effect.effect_id}")
+
     if effect.kind == "set_objective_status":
-        status = str(params.get("status") or "").strip()
+        status_raw = params.get("status")
+        status = str(status_raw or "").strip()
         if status not in {"pending", "active", "completed", "failed"}:
             errors.append(f"effect_invalid_objective_status:{effect.effect_id}")
+        if status_raw is not None and not isinstance(status_raw, str):
+            errors.append(f"effect_invalid_objective_status_type:{effect.effect_id}")
+
     if effect.kind == "set_quest_state":
-        if not str(params.get("stage") or "").strip() and not str(params.get("status") or "").strip():
+        stage_raw = params.get("stage")
+        status_raw = params.get("status")
+        stage = str(stage_raw or "").strip()
+        status = str(status_raw or "").strip()
+        if not stage and not status:
             errors.append(f"effect_missing_quest_state_fields:{effect.effect_id}")
+        if stage_raw is not None and not isinstance(stage_raw, str):
+            errors.append(f"effect_invalid_stage_type:{effect.effect_id}")
+        if status_raw is not None and not isinstance(status_raw, str):
+            errors.append(f"effect_invalid_quest_status_type:{effect.effect_id}")
+
     if effect.kind == "emit_system_event":
-        event_code = str(params.get("code") or "").strip()
+        event_code_raw = params.get("code")
+        event_code = str(event_code_raw or "").strip()
         if not event_code:
             errors.append(f"effect_missing_event_code:{effect.effect_id}")
         elif not _EVENT_CODE_PATTERN.match(event_code):
             errors.append(f"effect_invalid_event_code:{effect.effect_id}:{event_code}")
-        if not str(params.get("message") or "").strip():
+        if event_code_raw is not None and not isinstance(event_code_raw, str):
+            errors.append(f"effect_invalid_event_code_type:{effect.effect_id}")
+        message_raw = params.get("message")
+        if not str(message_raw or "").strip():
             errors.append(f"effect_missing_event_message:{effect.effect_id}")
-        severity = str(params.get("severity") or "info").strip().lower()
+        if message_raw is not None and not isinstance(message_raw, str):
+            errors.append(f"effect_invalid_event_message_type:{effect.effect_id}")
+        severity_raw = params.get("severity")
+        severity = str(severity_raw or "info").strip().lower()
         if severity not in {"info", "warning", "error"}:
             errors.append(f"effect_invalid_event_severity:{effect.effect_id}:{severity}")
+        if severity_raw is not None and not isinstance(severity_raw, str):
+            errors.append(f"effect_invalid_event_severity_type:{effect.effect_id}")
+        metadata_raw = params.get("metadata")
+        if metadata_raw is not None:
+            if not isinstance(metadata_raw, dict):
+                errors.append(f"effect_invalid_event_metadata_type:{effect.effect_id}")
+            else:
+                for metadata_key, metadata_value in metadata_raw.items():
+                    if not isinstance(metadata_key, str):
+                        errors.append(f"effect_invalid_event_metadata_key_type:{effect.effect_id}")
+                        break
+                    if not _is_primitive_value(metadata_value):
+                        errors.append(f"effect_invalid_event_metadata_value_type:{effect.effect_id}:{metadata_key}")
+                        break
     return tuple(errors)
 
 
@@ -768,13 +842,15 @@ def apply_effect_specs(
             if not flag_name:
                 continue
             value = params.get("value", True)
+            if not _is_primitive_value(value):
+                continue
             flags[flag_name] = bool(value) if isinstance(value, bool) else value
             continue
 
         if effect.kind == "increment_story_flag":
             flag_name = str(params.get("flag_name") or "").strip()
             step = params.get("step")
-            if not flag_name or not isinstance(step, int):
+            if not flag_name or type(step) is not int:
                 continue
             current_value = flags.get(flag_name, 0)
             try:
@@ -837,7 +913,7 @@ def apply_effect_specs(
             metadata: dict[str, str | int | float | bool | None] = {}
             if isinstance(metadata_raw, dict):
                 for key, value in metadata_raw.items():
-                    if isinstance(value, (str, int, float, bool)) or value is None:
+                    if isinstance(key, str) and _is_primitive_value(value):
                         metadata[str(key)] = value
             events.append(
                 TurnSystemEvent(
