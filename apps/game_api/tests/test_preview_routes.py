@@ -42,6 +42,57 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("narration_provider", payload)
         self.assertIn("hybrid_intent_llm_for_complex_inputs", payload)
 
+    def test_quest_spec_schema_endpoints(self):
+        effect_response = self.client.get("/v1/quest-specs/effects/schema")
+        self.assertEqual(effect_response.status_code, 200)
+        effect_payload = effect_response.json()
+        effect_kinds = {entry["kind"] for entry in effect_payload["effect_kinds"]}
+        self.assertIn("set_story_flag", effect_kinds)
+        self.assertIn("emit_system_event", effect_kinds)
+
+        predicate_response = self.client.get("/v1/quest-specs/predicates/schema")
+        self.assertEqual(predicate_response.status_code, 200)
+        predicate_payload = predicate_response.json()
+        predicate_kinds = {entry["kind"] for entry in predicate_payload["predicate_kinds"]}
+        self.assertIn("action_seen", predicate_kinds)
+        self.assertIn("inventory_item_present", predicate_kinds)
+
+    def test_validate_quest_specs_endpoint(self):
+        payload = {
+            "specs": [
+                {
+                    "quest_id": "quest-api-validate-smoke",
+                    "title": "Validate Smoke",
+                    "description": "Validation smoke test.",
+                    "initial_stage": "start",
+                    "tags": ["test"],
+                    "objectives": [{"objective_id": "obj-a", "title": "A", "hint": "h"}],
+                    "objective_triggers": [
+                        {
+                            "trigger_id": "trig-a",
+                            "objective_id": "obj-a",
+                            "predicates": [{"predicate_id": "pred-a", "kind": "action_seen", "action_types": ["TALK"]}],
+                        }
+                    ],
+                    "transitions": [
+                        {
+                            "transition_id": "done",
+                            "to_stage": "completed",
+                            "to_status": "completed",
+                            "requires_all_objectives_completed": True,
+                        }
+                    ],
+                }
+            ],
+            "existing_quest_ids": [],
+        }
+        response = self.client.post("/v1/quest-specs/validate", json=payload)
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["parsed_count"], 1)
+
     def test_world_bootstrap_preview(self):
         response = self.client.post(
             "/v1/worlds/bootstrap/preview",

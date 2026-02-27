@@ -488,3 +488,24 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (344 passed, 1 warning)
 - Tech Debt (bewusst): Param-Schema ist aktuell regelbasiert in Python-Validatorlogik kodiert. Naechster Schritt fuer KI-Authoring waere ein explizites, serialisierbares Schema-Format (z. B. JSON-Schema-Export pro Effect-Kind) fuer externe Spec-Generatoren/Editoren.
+- G1500-G1599 Draft (gestartet): Quest-Authoring-API v1 fuer spaetere KI-/Tooling-Anbindung. Geplant: (1) Predicate-Schema-Export analog Effect-Schema, (2) POST-Validierungsendpoint fuer externe QuestSpec-Payloads (Parse + validate_quest_specs_for_activation), (3) Route-/Unit-Tests.
+- G1500-G1599 abgeschlossen: Quest-Authoring-API v1 umgesetzt (Schema-Exports + Validierungsendpoint fuer externe QuestSpecs).
+- `apps/game_api/app/services/quest_specs.py` erweitert um:
+  - `build_effect_schema_document()`
+  - `build_predicate_schema_document()`
+  - `parse_quest_spec_from_dict(...)` (JSON-like Payload -> datengesteuerte `QuestSpec`-Dataclass)
+  - Hilfsparser fuer Listen/Ints/Bools (`_as_string_tuple`, `_as_optional_int`, `_as_bool`)
+- `apps/game_api/app/main.py` erweitert um neue Endpunkte:
+  - `GET /v1/quest-specs/effects/schema`
+  - `GET /v1/quest-specs/predicates/schema`
+  - `POST /v1/quest-specs/validate`
+- Validierungsroute verarbeitet externe Payloads, meldet Parse-Fehler (`parse_error:<idx>:...`) und fuehrt danach `validate_quest_specs_for_activation(...)` aus.
+- Tests erweitert:
+  - `apps/game_api/tests/test_quest_specs.py`: Schema-Exports + Payload-Parsing
+  - `apps/game_api/tests/test_preview_routes.py`: neue Schema-/Validate-Routen
+- Tests:
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_quest_specs.py -q` -> 22 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_quest_spec_schema_endpoints apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_validate_quest_specs_endpoint -q` -> 2 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests -q` -> 129 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 348 passed, 1 warning
+- Offener Punkt: Parse-/Schema-Layer ist bewusst tolerant gehalten. Fuer spaetere Authoring-Tools sinnvoll: dedizierte Pydantic-Request-Modelle fuer QuestSpec/Trigger/Effect und strictere Fehlercodes je Feld.

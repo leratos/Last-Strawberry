@@ -112,6 +112,115 @@ _EFFECT_ALLOWED_PARAMS_BY_KIND: dict[str, set[str]] = {
     "set_quest_state": {"quest_id", "stage", "status"},
     "emit_system_event": {"quest_id", "code", "message", "severity", "metadata"},
 }
+_EFFECT_REQUIRED_PARAMS_BY_KIND: dict[str, tuple[str, ...]] = {
+    "set_story_flag": ("flag_name",),
+    "increment_story_flag": ("flag_name", "step"),
+    "set_objective_hint": ("objective_id", "hint"),
+    "set_objective_status": ("objective_id", "status"),
+    "set_quest_state": (),
+    "emit_system_event": ("code", "message"),
+}
+_EFFECT_KIND_DESCRIPTIONS: dict[str, str] = {
+    "set_story_flag": "Sets or overwrites a story flag value.",
+    "increment_story_flag": "Increments an integer-like story flag by step.",
+    "set_objective_hint": "Updates objective hint text.",
+    "set_objective_status": "Sets objective status (pending|active|completed|failed).",
+    "set_quest_state": "Sets quest stage and/or quest status.",
+    "emit_system_event": "Emits a system event into turn resolution.",
+}
+_EFFECT_PARAM_DOCS: dict[str, dict[str, str]] = {
+    "quest_id": {"type": "string", "description": "Optional target quest id. Defaults to current quest."},
+    "flag_name": {"type": "string", "description": "Story flag key (pattern: ^[a-z][a-z0-9_]*$)."},
+    "value": {"type": "string|int|float|bool|null", "description": "Primitive story flag value."},
+    "step": {"type": "int", "description": "Increment step for integer-like story flags."},
+    "objective_id": {"type": "string", "description": "Objective id in target quest."},
+    "hint": {"type": "string", "description": "Human-readable objective hint text."},
+    "status": {"type": "string", "description": "Objective/quest status value."},
+    "stage": {"type": "string", "description": "Quest stage identifier."},
+    "code": {"type": "string", "description": "System event code (pattern: ^[a-z][a-z0-9_]*$)."},
+    "message": {"type": "string", "description": "System event message."},
+    "severity": {"type": "string", "description": "One of: info, warning, error."},
+    "metadata": {"type": "object<string, primitive>", "description": "Optional flat metadata map."},
+}
+_PREDICATE_ALLOWED_FIELDS_BY_KIND: dict[str, set[str]] = {
+    "action_seen": {
+        "action_types",
+        "target_ids",
+        "target_id_contains",
+        "target_names",
+        "target_name_contains",
+        "target_kinds",
+        "target_roles",
+    },
+    "story_flag_true": {"flag_name", "expected_bool"},
+    "system_event_seen": {"event_codes", "event_code_prefixes", "event_severities", "event_message_contains"},
+    "inventory_item_present": {
+        "inventory_item_def_ids",
+        "inventory_item_ids",
+        "inventory_item_names",
+        "inventory_item_name_contains",
+        "inventory_categories",
+        "inventory_min_quantity",
+    },
+    "inventory_delta_seen": {
+        "inventory_delta_kind",
+        "inventory_item_def_ids",
+        "inventory_item_ids",
+        "inventory_item_names",
+        "inventory_item_name_contains",
+        "inventory_min_quantity",
+    },
+    "relationship_change_seen": {
+        "relationship_npc_ids",
+        "relationship_npc_names",
+        "relationship_delta_sign",
+        "relationship_min_delta",
+        "relationship_max_delta",
+    },
+}
+_PREDICATE_REQUIRED_FIELDS_BY_KIND: dict[str, tuple[str, ...]] = {
+    "action_seen": ("action_types",),
+    "story_flag_true": ("flag_name",),
+    "system_event_seen": (),
+    "inventory_item_present": (),
+    "inventory_delta_seen": ("inventory_delta_kind",),
+    "relationship_change_seen": (),
+}
+_PREDICATE_KIND_DESCRIPTIONS: dict[str, str] = {
+    "action_seen": "Matches if an applied action satisfies action/target filters.",
+    "story_flag_true": "Matches if a story flag equals expected_bool (default true).",
+    "system_event_seen": "Matches if a system event satisfies code/severity/message filters.",
+    "inventory_item_present": "Matches against resulting inventory snapshot.",
+    "inventory_delta_seen": "Matches against inventory_gained or inventory_consumed deltas.",
+    "relationship_change_seen": "Matches against relationship delta entries in state_delta.",
+}
+_PREDICATE_FIELD_DOCS: dict[str, dict[str, str]] = {
+    "action_types": {"type": "array<string>", "description": "Action types like TALK/INSPECT/OPEN."},
+    "target_ids": {"type": "array<string>", "description": "Exact target ids."},
+    "target_id_contains": {"type": "array<string>", "description": "Target id substrings."},
+    "target_names": {"type": "array<string>", "description": "Exact target names (case-insensitive)."},
+    "target_name_contains": {"type": "array<string>", "description": "Target name substrings (case-insensitive)."},
+    "target_kinds": {"type": "array<string>", "description": "Target kinds (npc/container/scene_object/...)."},
+    "target_roles": {"type": "array<string>", "description": "NPC role filters."},
+    "flag_name": {"type": "string", "description": "Story flag key to read."},
+    "expected_bool": {"type": "bool", "description": "Expected boolean value (default true)."},
+    "event_codes": {"type": "array<string>", "description": "Exact event code match list."},
+    "event_code_prefixes": {"type": "array<string>", "description": "Event code prefixes."},
+    "event_severities": {"type": "array<string>", "description": "Event severities (info/warning/error)."},
+    "event_message_contains": {"type": "array<string>", "description": "Event message substring filters."},
+    "inventory_item_def_ids": {"type": "array<string>", "description": "Inventory item definition ids."},
+    "inventory_item_ids": {"type": "array<string>", "description": "Inventory instance ids."},
+    "inventory_item_names": {"type": "array<string>", "description": "Exact item names."},
+    "inventory_item_name_contains": {"type": "array<string>", "description": "Item name substrings."},
+    "inventory_categories": {"type": "array<string>", "description": "Item category filters."},
+    "inventory_min_quantity": {"type": "int", "description": "Minimum quantity threshold."},
+    "inventory_delta_kind": {"type": "string", "description": "One of: gained, consumed."},
+    "relationship_npc_ids": {"type": "array<string>", "description": "Relationship delta NPC ids."},
+    "relationship_npc_names": {"type": "array<string>", "description": "Relationship delta NPC names."},
+    "relationship_delta_sign": {"type": "string", "description": "One of: positive, negative, nonzero."},
+    "relationship_min_delta": {"type": "int", "description": "Minimum standing delta."},
+    "relationship_max_delta": {"type": "int", "description": "Maximum standing delta."},
+}
 
 
 def _is_primitive_value(value: object) -> bool:
@@ -273,6 +382,248 @@ def _validate_effect_references(
             )
 
     return tuple(errors)
+
+
+def build_effect_schema_document() -> dict[str, object]:
+    effect_kinds: list[dict[str, object]] = []
+    for kind in sorted(_EFFECT_ALLOWED_PARAMS_BY_KIND.keys()):
+        allowed = sorted(_EFFECT_ALLOWED_PARAMS_BY_KIND[kind])
+        required = list(_EFFECT_REQUIRED_PARAMS_BY_KIND.get(kind, ()))
+        params: dict[str, dict[str, object]] = {}
+        for param_name in allowed:
+            doc = _EFFECT_PARAM_DOCS.get(param_name, {})
+            params[param_name] = {
+                "type": str(doc.get("type") or "unknown"),
+                "required": param_name in required,
+                "description": str(doc.get("description") or ""),
+            }
+        effect_kinds.append(
+            {
+                "kind": kind,
+                "description": _EFFECT_KIND_DESCRIPTIONS.get(kind, ""),
+                "required_params": required,
+                "allowed_params": allowed,
+                "params": params,
+            }
+        )
+    return {
+        "schema_version": "1.0.0",
+        "effect_kind_count": len(effect_kinds),
+        "effect_kinds": effect_kinds,
+    }
+
+
+def build_predicate_schema_document() -> dict[str, object]:
+    predicate_kinds: list[dict[str, object]] = []
+    for kind in sorted(_PREDICATE_ALLOWED_FIELDS_BY_KIND.keys()):
+        allowed = sorted(_PREDICATE_ALLOWED_FIELDS_BY_KIND[kind])
+        required = list(_PREDICATE_REQUIRED_FIELDS_BY_KIND.get(kind, ()))
+        fields: dict[str, dict[str, object]] = {}
+        for field_name in allowed:
+            doc = _PREDICATE_FIELD_DOCS.get(field_name, {})
+            fields[field_name] = {
+                "type": str(doc.get("type") or "unknown"),
+                "required": field_name in required,
+                "description": str(doc.get("description") or ""),
+            }
+        predicate_kinds.append(
+            {
+                "kind": kind,
+                "description": _PREDICATE_KIND_DESCRIPTIONS.get(kind, ""),
+                "required_fields": required,
+                "allowed_fields": allowed,
+                "fields": fields,
+            }
+        )
+    return {
+        "schema_version": "1.0.0",
+        "predicate_kind_count": len(predicate_kinds),
+        "predicate_kinds": predicate_kinds,
+    }
+
+
+def _as_string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    out: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            out.append(text)
+    return tuple(out)
+
+
+def _as_optional_int(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _as_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off"}:
+            return False
+    return default
+
+
+def parse_quest_spec_from_dict(payload: dict[str, object]) -> QuestSpec:
+    """Parse external JSON-like payload into QuestSpec dataclass."""
+
+    objectives_raw = payload.get("objectives")
+    objective_specs: list[ObjectiveSpec] = []
+    if isinstance(objectives_raw, list):
+        for obj in objectives_raw:
+            if not isinstance(obj, dict):
+                continue
+            objective_specs.append(
+                ObjectiveSpec(
+                    objective_id=str(obj.get("objective_id") or "").strip(),
+                    title=str(obj.get("title") or "").strip(),
+                    hint=str(obj.get("hint") or "").strip(),
+                )
+            )
+
+    def _parse_effects(raw_effects: object) -> tuple[EffectSpec, ...]:
+        effects: list[EffectSpec] = []
+        if not isinstance(raw_effects, list):
+            return ()
+        for item in raw_effects:
+            if not isinstance(item, dict):
+                continue
+            params_raw = item.get("params")
+            params = dict(params_raw) if isinstance(params_raw, dict) else {}
+            effects.append(
+                EffectSpec(
+                    effect_id=str(item.get("effect_id") or "").strip(),
+                    kind=str(item.get("kind") or "").strip(),
+                    params=params,
+                    priority=_as_optional_int(item.get("priority")) or 100,
+                )
+            )
+        return tuple(effects)
+
+    triggers_raw = payload.get("objective_triggers")
+    objective_triggers: list[ObjectiveTriggerSpec] = []
+    if isinstance(triggers_raw, list):
+        for trigger in triggers_raw:
+            if not isinstance(trigger, dict):
+                continue
+            predicates_raw = trigger.get("predicates")
+            predicates: list[PredicateSpec] = []
+            if isinstance(predicates_raw, list):
+                for pred in predicates_raw:
+                    if not isinstance(pred, dict):
+                        continue
+                    predicates.append(
+                        PredicateSpec(
+                            predicate_id=str(pred.get("predicate_id") or "").strip(),
+                            kind=str(pred.get("kind") or "").strip(),
+                            action_types=_as_string_tuple(pred.get("action_types")),
+                            target_ids=_as_string_tuple(pred.get("target_ids")),
+                            target_id_contains=_as_string_tuple(pred.get("target_id_contains")),
+                            target_names=_as_string_tuple(pred.get("target_names")),
+                            target_name_contains=_as_string_tuple(pred.get("target_name_contains")),
+                            target_kinds=_as_string_tuple(pred.get("target_kinds")),
+                            target_roles=_as_string_tuple(pred.get("target_roles")),
+                            event_codes=_as_string_tuple(pred.get("event_codes")),
+                            event_code_prefixes=_as_string_tuple(pred.get("event_code_prefixes")),
+                            event_severities=_as_string_tuple(pred.get("event_severities")),
+                            event_message_contains=_as_string_tuple(pred.get("event_message_contains")),
+                            inventory_item_def_ids=_as_string_tuple(pred.get("inventory_item_def_ids")),
+                            inventory_item_ids=_as_string_tuple(pred.get("inventory_item_ids")),
+                            inventory_item_names=_as_string_tuple(pred.get("inventory_item_names")),
+                            inventory_item_name_contains=_as_string_tuple(pred.get("inventory_item_name_contains")),
+                            inventory_categories=_as_string_tuple(pred.get("inventory_categories")),
+                            inventory_min_quantity=_as_optional_int(pred.get("inventory_min_quantity")),
+                            inventory_delta_kind=str(pred.get("inventory_delta_kind") or "").strip() or None,
+                            relationship_npc_ids=_as_string_tuple(pred.get("relationship_npc_ids")),
+                            relationship_npc_names=_as_string_tuple(pred.get("relationship_npc_names")),
+                            relationship_delta_sign=str(pred.get("relationship_delta_sign") or "").strip() or None,
+                            relationship_min_delta=_as_optional_int(pred.get("relationship_min_delta")),
+                            relationship_max_delta=_as_optional_int(pred.get("relationship_max_delta")),
+                            flag_name=str(pred.get("flag_name") or "").strip() or None,
+                            expected_bool=_as_bool(pred.get("expected_bool"), default=True),
+                        )
+                    )
+            objective_triggers.append(
+                ObjectiveTriggerSpec(
+                    trigger_id=str(trigger.get("trigger_id") or "").strip(),
+                    objective_id=str(trigger.get("objective_id") or "").strip(),
+                    predicates=tuple(predicates),
+                    require_all_predicates=_as_bool(trigger.get("require_all_predicates"), default=True),
+                    requires_objectives_completed=_as_string_tuple(trigger.get("requires_objectives_completed")),
+                    requires_story_flags_true=_as_string_tuple(trigger.get("requires_story_flags_true")),
+                    set_status=str(trigger.get("set_status") or "completed").strip() or "completed",
+                    set_hint=str(trigger.get("set_hint") or "").strip() or None,
+                    effects=_parse_effects(trigger.get("effects")),
+                    priority=_as_optional_int(trigger.get("priority")) or 100,
+                    only_if_objective_status_in=_as_string_tuple(trigger.get("only_if_objective_status_in"))
+                    or ("pending", "active"),
+                )
+            )
+
+    transitions_raw = payload.get("transitions")
+    transitions: list[TransitionSpec] = []
+    if isinstance(transitions_raw, list):
+        for transition in transitions_raw:
+            if not isinstance(transition, dict):
+                continue
+            objective_hint_updates: list[tuple[str, str]] = []
+            raw_updates = transition.get("objective_hint_updates")
+            if isinstance(raw_updates, list):
+                for update in raw_updates:
+                    if isinstance(update, (list, tuple)) and len(update) >= 2:
+                        objective_id = str(update[0] or "").strip()
+                        hint = str(update[1] or "").strip()
+                        objective_hint_updates.append((objective_id, hint))
+                    elif isinstance(update, dict):
+                        objective_id = str(update.get("objective_id") or "").strip()
+                        hint = str(update.get("hint") or "").strip()
+                        if objective_id:
+                            objective_hint_updates.append((objective_id, hint))
+            transitions.append(
+                TransitionSpec(
+                    transition_id=str(transition.get("transition_id") or "").strip(),
+                    to_stage=str(transition.get("to_stage") or "").strip(),
+                    to_status=str(transition.get("to_status") or "active").strip() or "active",
+                    requires_all_objectives_completed=_as_bool(
+                        transition.get("requires_all_objectives_completed"),
+                        default=False,
+                    ),
+                    requires_objectives_completed=_as_string_tuple(transition.get("requires_objectives_completed")),
+                    requires_story_flags_true=_as_string_tuple(transition.get("requires_story_flags_true")),
+                    objective_hint_updates=tuple(objective_hint_updates),
+                    effects=_parse_effects(transition.get("effects")),
+                    priority=_as_optional_int(transition.get("priority")) or 100,
+                )
+            )
+
+    return QuestSpec(
+        quest_id=str(payload.get("quest_id") or "").strip(),
+        title=str(payload.get("title") or "").strip(),
+        description=str(payload.get("description") or "").strip(),
+        initial_stage=str(payload.get("initial_stage") or "").strip(),
+        tags=_as_string_tuple(payload.get("tags")),
+        objectives=tuple(objective_specs),
+        objective_triggers=tuple(objective_triggers),
+        transitions=tuple(transitions),
+    )
 
 
 def compile_quest_spec_to_world_state(spec: QuestSpec, *, now: datetime | None = None) -> WorldQuestState:
