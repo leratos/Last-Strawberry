@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,12 @@ import json
 from apps.game_api.app.services.quest_authoring import (
     build_npc_dialog_hints_for_context,
     build_npc_dialog_topics_for_context,
+)
+from apps.game_api.app.services.quest_specs import (
+    build_effect_schema_document,
+    build_predicate_schema_document,
+    parse_quest_spec_from_dict,
+    validate_quest_specs_for_activation,
 )
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
@@ -58,6 +65,11 @@ class DevSpawnNpcRequest(BaseModel):
     npc_id: str | None = Field(default=None, max_length=120)
     standing_for_player: int | None = Field(default=None, ge=-100, le=100)
     revealed_to_player: bool = True
+
+
+class QuestSpecsValidateRequest(BaseModel):
+    specs: list[dict[str, Any]] = Field(default_factory=list)
+    existing_quest_ids: list[str] = Field(default_factory=list)
 
 
 engine = RulesEngine()
@@ -204,6 +216,37 @@ def health() -> dict[str, str]:
         "openrouter_narrator_model": llm_status.narrator_model,
         "openrouter_json_repair_attempts": str(settings.openrouter_json_repair_attempts),
     }
+
+
+@app.get("/v1/quest-specs/effects/schema")
+def get_effect_schema() -> dict[str, object]:
+    return build_effect_schema_document()
+
+
+@app.get("/v1/quest-specs/predicates/schema")
+def get_predicate_schema() -> dict[str, object]:
+    return build_predicate_schema_document()
+
+
+@app.post("/v1/quest-specs/validate")
+def validate_quest_specs(request: QuestSpecsValidateRequest) -> dict[str, object]:
+    parse_errors: list[str] = []
+    parsed_specs = []
+    for index, raw_spec in enumerate(request.specs):
+        if not isinstance(raw_spec, dict):
+            parse_errors.append(f"parse_error:{index}:spec_not_object")
+            continue
+        try:
+            parsed_specs.append(parse_quest_spec_from_dict(raw_spec))
+        except Exception as exc:  # pragma: no cover - defensive parse guard
+            parse_errors.append(f"parse_error:{index}:{type(exc).__name__}")
+    if parse_errors:
+        return {"ok": False, "errors": parse_errors, "parsed_count": len(parsed_specs)}
+    result = validate_quest_specs_for_activation(
+        parsed_specs,
+        existing_quest_ids={quest_id.strip() for quest_id in request.existing_quest_ids if quest_id.strip()},
+    )
+    return {"ok": result.ok, "errors": list(result.errors), "parsed_count": len(parsed_specs)}
 
 
 @app.get("/v1/worlds/{world_id}/context", response_model=GameContextResponse)

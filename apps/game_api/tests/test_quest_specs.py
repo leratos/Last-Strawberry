@@ -22,7 +22,10 @@ from apps.game_api.app.services.quest_specs import (
     apply_effect_specs,
     apply_objective_trigger_specs_to_quest_state,
     apply_transition_specs_to_quest_state,
+    build_effect_schema_document,
+    build_predicate_schema_document,
     compile_quest_spec_to_world_state,
+    parse_quest_spec_from_dict,
     validate_quest_spec,
     validate_quest_specs_for_activation,
 )
@@ -81,6 +84,48 @@ class TestQuestSpecs(unittest.TestCase):
         self.assertEqual(len(quest_state.objectives), 3)
         self.assertEqual(quest_state.updated_at, now)
         self.assertTrue(all(obj.status == "pending" for obj in quest_state.objectives))
+
+    def test_schema_documents_expose_effect_and_predicate_kinds(self):
+        effect_schema = build_effect_schema_document()
+        predicate_schema = build_predicate_schema_document()
+        self.assertEqual(effect_schema["schema_version"], "1.0.0")
+        self.assertEqual(predicate_schema["schema_version"], "1.0.0")
+        effect_kinds = {entry["kind"] for entry in effect_schema["effect_kinds"]}
+        predicate_kinds = {entry["kind"] for entry in predicate_schema["predicate_kinds"]}
+        self.assertIn("set_story_flag", effect_kinds)
+        self.assertIn("emit_system_event", effect_kinds)
+        self.assertIn("action_seen", predicate_kinds)
+        self.assertIn("inventory_item_present", predicate_kinds)
+
+    def test_parse_quest_spec_from_dict_supports_basic_payload(self):
+        payload = {
+            "quest_id": "quest-parse-smoke",
+            "title": "Parse Smoke",
+            "description": "A test quest.",
+            "initial_stage": "start",
+            "tags": ["test", "smoke"],
+            "objectives": [{"objective_id": "obj-a", "title": "A", "hint": "h"}],
+            "objective_triggers": [
+                {
+                    "trigger_id": "trig-a",
+                    "objective_id": "obj-a",
+                    "predicates": [{"predicate_id": "pred-a", "kind": "action_seen", "action_types": ["TALK"]}],
+                }
+            ],
+            "transitions": [
+                {
+                    "transition_id": "done",
+                    "to_stage": "completed",
+                    "to_status": "completed",
+                    "requires_all_objectives_completed": True,
+                }
+            ],
+        }
+        spec = parse_quest_spec_from_dict(payload)
+        self.assertEqual(spec.quest_id, "quest-parse-smoke")
+        self.assertEqual(len(spec.objectives), 1)
+        self.assertEqual(len(spec.objective_triggers), 1)
+        self.assertEqual(len(spec.transitions), 1)
 
     def test_validate_authored_quest_specs_is_ok(self):
         ok, errors = validate_authored_quest_specs()
