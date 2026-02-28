@@ -30,9 +30,9 @@ Legacy-Pfade (`backend_v2`, `backend_server`) sind weiterhin vorhanden, aber fue
 Im Repo-Root ausfuehren:
 
 ```powershell
-cd C:\Dev\last-strawberry\Last-Strawberry
-python -m venv .venv-v2
-.\.venv-v2\Scripts\Activate.ps1
+cd <repo-root>
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r backend_v2/requirements.txt
 pip install -r backend_server/requirements.txt
@@ -64,8 +64,8 @@ $env:LS_GREENFIELD_DB_PATH = "apps/game_api/data/greenfield_game.db"
 ### Terminal 1: Game API starten
 
 ```powershell
-cd C:\Dev\last-strawberry\Last-Strawberry
-.\.venv-v2\Scripts\Activate.ps1
+cd <repo-root>
+.\.venv\Scripts\Activate.ps1
 $env:PYTHONPATH = "$PWD;$PWD\packages\shared_schemas;$PWD\packages\rules_engine"
 python -m uvicorn apps.game_api.app.main:app --reload --host 127.0.0.1 --port 8010
 ```
@@ -73,7 +73,7 @@ python -m uvicorn apps.game_api.app.main:app --reload --host 127.0.0.1 --port 80
 ### Terminal 2: Web-Client starten
 
 ```powershell
-cd C:\Dev\last-strawberry\Last-Strawberry
+cd <repo-root>
 npm --prefix apps/web_client run dev -- --host 127.0.0.1 --port 3001
 ```
 
@@ -109,8 +109,8 @@ Invoke-RestMethod `
 ### 6.3 Turn-Loop Quickcheck
 
 ```powershell
-cd C:\Dev\last-strawberry\Last-Strawberry
-.\.venv-v2\Scripts\Activate.ps1
+cd <repo-root>
+.\.venv\Scripts\Activate.ps1
 $env:PYTHONPATH = "$PWD;$PWD\packages\shared_schemas;$PWD\packages\rules_engine"
 python apps/game_api/scripts/check_greenfield_turn_loop.py --base-url http://127.0.0.1:8010
 ```
@@ -201,4 +201,3 @@ Falls ein alter Client ueber den Bridge-Stack getestet werden soll:
 Details:
 - `README.md` (Root, Abschnitt Quick Start)
 - `docs/backend_server_v2_bridge.md`
-
