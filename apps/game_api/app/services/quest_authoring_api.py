@@ -333,6 +333,137 @@ def quest_spec_payload_to_spec(payload: QuestSpecPayload) -> QuestSpec:
     )
 
 
+def _effect_spec_to_payload(effect: EffectSpec) -> dict[str, Any]:
+    return {
+        "effect_id": effect.effect_id,
+        "kind": effect.kind,
+        "params": dict(effect.params or {}),
+        "priority": int(effect.priority),
+    }
+
+
+def _predicate_spec_to_payload(predicate: PredicateSpec) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "predicate_id": predicate.predicate_id,
+        "kind": predicate.kind,
+    }
+    if predicate.kind == "action_seen":
+        payload["action_types"] = list(predicate.action_types)
+        if predicate.target_ids:
+            payload["target_ids"] = list(predicate.target_ids)
+        if predicate.target_id_contains:
+            payload["target_id_contains"] = list(predicate.target_id_contains)
+        if predicate.target_names:
+            payload["target_names"] = list(predicate.target_names)
+        if predicate.target_name_contains:
+            payload["target_name_contains"] = list(predicate.target_name_contains)
+        if predicate.target_kinds:
+            payload["target_kinds"] = list(predicate.target_kinds)
+        if predicate.target_roles:
+            payload["target_roles"] = list(predicate.target_roles)
+    elif predicate.kind == "story_flag_true":
+        payload["flag_name"] = str(predicate.flag_name or "")
+        payload["expected_bool"] = bool(predicate.expected_bool)
+    elif predicate.kind == "system_event_seen":
+        if predicate.event_codes:
+            payload["event_codes"] = list(predicate.event_codes)
+        if predicate.event_code_prefixes:
+            payload["event_code_prefixes"] = list(predicate.event_code_prefixes)
+        if predicate.event_severities:
+            payload["event_severities"] = list(predicate.event_severities)
+        if predicate.event_message_contains:
+            payload["event_message_contains"] = list(predicate.event_message_contains)
+    elif predicate.kind == "inventory_item_present":
+        if predicate.inventory_item_def_ids:
+            payload["inventory_item_def_ids"] = list(predicate.inventory_item_def_ids)
+        if predicate.inventory_item_ids:
+            payload["inventory_item_ids"] = list(predicate.inventory_item_ids)
+        if predicate.inventory_item_names:
+            payload["inventory_item_names"] = list(predicate.inventory_item_names)
+        if predicate.inventory_item_name_contains:
+            payload["inventory_item_name_contains"] = list(predicate.inventory_item_name_contains)
+        if predicate.inventory_categories:
+            payload["inventory_categories"] = list(predicate.inventory_categories)
+        if predicate.inventory_min_quantity is not None:
+            payload["inventory_min_quantity"] = int(predicate.inventory_min_quantity)
+    elif predicate.kind == "inventory_delta_seen":
+        payload["inventory_delta_kind"] = str(predicate.inventory_delta_kind or "")
+        if predicate.inventory_item_def_ids:
+            payload["inventory_item_def_ids"] = list(predicate.inventory_item_def_ids)
+        if predicate.inventory_item_ids:
+            payload["inventory_item_ids"] = list(predicate.inventory_item_ids)
+        if predicate.inventory_item_names:
+            payload["inventory_item_names"] = list(predicate.inventory_item_names)
+        if predicate.inventory_item_name_contains:
+            payload["inventory_item_name_contains"] = list(predicate.inventory_item_name_contains)
+        if predicate.inventory_min_quantity is not None:
+            payload["inventory_min_quantity"] = int(predicate.inventory_min_quantity)
+    elif predicate.kind == "relationship_change_seen":
+        if predicate.relationship_npc_ids:
+            payload["relationship_npc_ids"] = list(predicate.relationship_npc_ids)
+        if predicate.relationship_npc_names:
+            payload["relationship_npc_names"] = list(predicate.relationship_npc_names)
+        if predicate.relationship_delta_sign:
+            payload["relationship_delta_sign"] = predicate.relationship_delta_sign
+        if predicate.relationship_min_delta is not None:
+            payload["relationship_min_delta"] = int(predicate.relationship_min_delta)
+        if predicate.relationship_max_delta is not None:
+            payload["relationship_max_delta"] = int(predicate.relationship_max_delta)
+    return payload
+
+
+def quest_spec_to_authoring_payload(spec: QuestSpec) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "quest_id": spec.quest_id,
+        "title": spec.title,
+        "description": spec.description,
+        "initial_stage": spec.initial_stage,
+        "tags": list(spec.tags),
+        "objectives": [
+            {
+                "objective_id": objective.objective_id,
+                "title": objective.title,
+                "hint": objective.hint,
+            }
+            for objective in spec.objectives
+        ],
+        "objective_triggers": [
+            {
+                "trigger_id": trigger.trigger_id,
+                "objective_id": trigger.objective_id,
+                "predicates": [_predicate_spec_to_payload(predicate) for predicate in trigger.predicates],
+                "require_all_predicates": bool(trigger.require_all_predicates),
+                "requires_objectives_completed": list(trigger.requires_objectives_completed),
+                "requires_story_flags_true": list(trigger.requires_story_flags_true),
+                "set_status": trigger.set_status,
+                "set_hint": trigger.set_hint,
+                "effects": [_effect_spec_to_payload(effect) for effect in trigger.effects],
+                "priority": int(trigger.priority),
+                "only_if_objective_status_in": list(trigger.only_if_objective_status_in),
+            }
+            for trigger in spec.objective_triggers
+        ],
+        "transitions": [
+            {
+                "transition_id": transition.transition_id,
+                "to_stage": transition.to_stage,
+                "to_status": transition.to_status,
+                "requires_all_objectives_completed": bool(transition.requires_all_objectives_completed),
+                "requires_objectives_completed": list(transition.requires_objectives_completed),
+                "requires_story_flags_true": list(transition.requires_story_flags_true),
+                "objective_hint_updates": [
+                    {"objective_id": objective_id, "hint": hint}
+                    for objective_id, hint in transition.objective_hint_updates
+                ],
+                "effects": [_effect_spec_to_payload(effect) for effect in transition.effects],
+                "priority": int(transition.priority),
+            }
+            for transition in spec.transitions
+        ],
+    }
+    return payload
+
+
 def format_authoring_schema_errors(exc: ValidationError) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     for item in exc.errors():

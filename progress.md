@@ -562,3 +562,35 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build` (success)
 - Hinweis/Tradeoff:
   - `apply` nutzt absichtlich 409-Konflikt aus Persistenzpfad fuer bereits vorhandene Quest-IDs (nicht 400 Domain-Fehler), damit Konflikte API-seitig klar als State-Konflikt erkennbar sind.
+- G1800-G1899 Draft (gestartet): Quest-Pack-Versionierung als dateibasiertes Authoring-Format (`world_packs/<pack>/...`) + Validator-CLI + CI-Authoring-Gate fuer PRs mit Quest-Content-/Schema-Aenderungen.
+- G1800-G1899 abgeschlossen: Dateibasierte Quest-Pack-Versionierung + Import/Export-Flow + CI-Authoring-Gate umgesetzt.
+- Weltpack-Dateiformat:
+  - neues Verzeichnis `world_packs/urban_occult_v1/`
+  - `manifest.json` (Pack-Metadaten + Quest-Dateireferenzen)
+  - `CHANGELOG.md`
+  - `quest_specs/*.json` (strict authoring-kompatible QuestSpecs)
+- Neue Service-Schicht:
+  - `apps/game_api/app/services/world_pack_files.py`
+    - Manifest laden/validieren
+    - Quest-Spec-Dateien laden und gegen strict Authoring-Schema pruefen
+    - Batch-Validierung mit `validate_quest_specs_for_activation`
+- Neue Skripte:
+  - `apps/game_api/scripts/export_world_pack_quests.py` (in-code Urban-Occult-Specs -> file-based pack)
+  - `apps/game_api/scripts/validate_world_packs.py` (alle Packs unter `world_packs/` validieren)
+  - `apps/game_api/scripts/apply_world_pack.py` (Pack-QuestSpecs via `/v1/quest-specs/apply` in eine Welt uebernehmen)
+- Serializer fuer Export:
+  - `quest_spec_to_authoring_payload(...)` in `quest_authoring_api.py` erzeugt strict-kompatible JSON-Payloads aus internen `QuestSpec`-Objekten.
+- Tests/CI:
+  - neuer Test `apps/game_api/tests/test_world_pack_files.py`
+  - neuer Workflow `.github/workflows/game_api_authoring_gate.yml`:
+    - triggert bei PR-Aenderungen an World-Pack-/Authoring-relevanten Dateien
+    - validiert Weltpacks
+    - fuehrt authoring-relevante API-Tests aus
+- README erweitert:
+  - neuer Abschnitt `Quest Pack Authoring (Versioned)` inkl. Validate/Export/Apply-Kommandos und CI-Gate-Hinweis.
+- Validierung:
+  - `python apps/game_api/scripts/validate_world_packs.py` (PASS)
+  - `pytest apps/game_api/tests -q` mit gesetztem `PYTHONPATH` (136 passed)
+  - `npm.cmd --prefix apps/web_client run build` (success)
+- Hinweis:
+  - Runtime nutzt weiterhin die bestehenden authored Runtimepfade; das file-based Pack-Format ist jetzt produktionsreif fuer Authoring/Review/Import und CI-Absicherung, ohne die laufende Quest-Progression zu destabilisieren.
