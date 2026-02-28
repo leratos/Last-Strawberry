@@ -71,6 +71,39 @@ python backend_v2/scripts/ops_phase5_report.py `
   --require-prometheus-families
 ```
 
+## Quest Pack Authoring (Versioned)
+- File-based quest packs live under `world_packs/<pack>/`.
+- Current baseline pack: `world_packs/urban_occult_v1/`.
+- Pack layout:
+  - `manifest.json` (pack metadata + quest file index)
+  - `CHANGELOG.md` (pack history)
+  - `quest_specs/*.json` (strict authoring payload format)
+
+### Validate all world packs
+```powershell
+python apps/game_api/scripts/validate_world_packs.py
+```
+
+### Export current in-code Urban Occult specs to files
+```powershell
+python apps/game_api/scripts/export_world_pack_quests.py
+```
+
+### Apply a world pack to an existing world (via API)
+```powershell
+python apps/game_api/scripts/apply_world_pack.py `
+  --base-url http://127.0.0.1:8010 `
+  --world-id <world-id> `
+  --pack-dir world_packs/urban_occult_v1
+```
+
+### CI gate
+- Workflow: `.github/workflows/game_api_authoring_gate.yml`
+- Trigger: PRs that change world pack files or quest authoring schema/validation files.
+- Checks:
+  - world pack manifest/spec validation
+  - authoring-focused API tests
+
 ## Testing
 ```powershell
 python -m pytest backend_v2/tests backend_server/tests -q

@@ -1,0 +1,237 @@
+{
+  "quest_id": "quest-urban-occult-market-ritual-leads",
+  "title": "Spuren des fehlgeschlagenen Rituals",
+  "description": "Finde heraus, was am Marktplatz schiefgelaufen ist: sprich mit Kael, untersuche die Vorratskiste und gleiche deine Erkenntnisse mit Mira ab.",
+  "initial_stage": "investigate_scene",
+  "tags": [
+    "urban_occult",
+    "starter",
+    "investigation"
+  ],
+  "objectives": [
+    {
+      "objective_id": "speak_with_kael",
+      "title": "Mit Kael sprechen",
+      "hint": "Kael wirkt angespannt am Brunnenplatz und weiss vermutlich mehr ueber das Ritual."
+    },
+    {
+      "objective_id": "inspect_supply_crate",
+      "title": "Vorratskiste untersuchen",
+      "hint": "Am Marktplatz gibt es eine Vorratskiste mit moeglichen Hinweisen oder Materialspuren."
+    },
+    {
+      "objective_id": "report_to_mira",
+      "title": "Mit Mira die Funde abgleichen",
+      "hint": "Mira beobachtet die Lage ruhig und kann Hinweise einordnen."
+    }
+  ],
+  "objective_triggers": [
+    {
+      "trigger_id": "starter_objective_speak_with_kael_by_name",
+      "objective_id": "speak_with_kael",
+      "predicates": [
+        {
+          "predicate_id": "talk_kael",
+          "kind": "action_seen",
+          "action_types": [
+            "TALK"
+          ],
+          "target_names": [
+            "kael"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Kael hat ein Gespraech gefuehrt; seine Aussagen koennen mit Funden abgeglichen werden.",
+      "effects": [],
+      "priority": 10,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "starter_objective_inspect_supply_crate_by_ref",
+      "objective_id": "inspect_supply_crate",
+      "predicates": [
+        {
+          "predicate_id": "inspect_supply_crate_ref",
+          "kind": "action_seen",
+          "action_types": [
+            "INSPECT",
+            "OPEN",
+            "SEARCH"
+          ],
+          "target_id_contains": [
+            "supply-crate"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Die Vorratskiste wurde untersucht; die Funde sollten mit Mira oder Kael abgeglichen werden.",
+      "effects": [],
+      "priority": 20,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "starter_objective_inspect_supply_crate_by_name",
+      "objective_id": "inspect_supply_crate",
+      "predicates": [
+        {
+          "predicate_id": "inspect_supply_crate_name",
+          "kind": "action_seen",
+          "action_types": [
+            "INSPECT",
+            "OPEN",
+            "SEARCH"
+          ],
+          "target_names": [
+            "vorratskiste"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Die Vorratskiste wurde untersucht; die Funde sollten mit Mira oder Kael abgeglichen werden.",
+      "effects": [],
+      "priority": 21,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "starter_objective_report_to_mira",
+      "objective_id": "report_to_mira",
+      "predicates": [
+        {
+          "predicate_id": "talk_mira",
+          "kind": "action_seen",
+          "action_types": [
+            "TALK"
+          ],
+          "target_names": [
+            "mira"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [
+        "speak_with_kael",
+        "inspect_supply_crate"
+      ],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Mira hat die Funde eingeordnet und neue Ermittlungsansaetze angedeutet.",
+      "effects": [],
+      "priority": 30,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "transition_id": "starter_complete",
+      "to_stage": "completed",
+      "to_status": "completed",
+      "requires_all_objectives_completed": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [],
+      "effects": [
+        {
+          "effect_id": "starter_complete_flag",
+          "kind": "set_story_flag",
+          "params": {
+            "flag_name": "quest_urban_occult_market_ritual_completed",
+            "value": true
+          },
+          "priority": 5
+        },
+        {
+          "effect_id": "starter_complete_event",
+          "kind": "emit_system_event",
+          "params": {
+            "code": "quest_stage_shifted",
+            "message": "Die Untersuchung am Marktplatz ist abgeschlossen; eine weitere Spur wird frei.",
+            "severity": "info"
+          },
+          "priority": 10
+        }
+      ],
+      "priority": 10
+    },
+    {
+      "transition_id": "starter_report_to_mira_stage",
+      "to_stage": "report_to_mira",
+      "to_status": "active",
+      "requires_all_objectives_completed": false,
+      "requires_objectives_completed": [
+        "speak_with_kael",
+        "inspect_supply_crate"
+      ],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [
+        {
+          "objective_id": "report_to_mira",
+          "hint": "Sprich mit Mira ueber Kaels Aussagen und die Funde aus der Vorratskiste."
+        }
+      ],
+      "effects": [
+        {
+          "effect_id": "starter_report_objective_active",
+          "kind": "set_objective_status",
+          "params": {
+            "objective_id": "report_to_mira",
+            "status": "active"
+          },
+          "priority": 5
+        },
+        {
+          "effect_id": "starter_report_flag",
+          "kind": "set_story_flag",
+          "params": {
+            "flag_name": "quest_report_to_mira_ready",
+            "value": true
+          },
+          "priority": 8
+        },
+        {
+          "effect_id": "starter_report_stage_event",
+          "kind": "emit_system_event",
+          "params": {
+            "code": "quest_stage_shifted",
+            "message": "Neue Prioritaet: Berichte Mira von den gesammelten Hinweisen.",
+            "severity": "info"
+          },
+          "priority": 10
+        }
+      ],
+      "priority": 20
+    },
+    {
+      "transition_id": "starter_default_investigate_scene",
+      "to_stage": "investigate_scene",
+      "to_status": "active",
+      "requires_all_objectives_completed": false,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [],
+      "effects": [],
+      "priority": 999
+    }
+  ]
+}

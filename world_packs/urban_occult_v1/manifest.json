@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "pack_id": "worldpack-urban-occult-fuyora-market-v1",
+  "version": "1.0.0",
+  "display_name": "Fuyora Marktplatz - Ritualspuren (Urban Occult)",
+  "genre": "urban_occult_investigation",
+  "changelog": "CHANGELOG.md",
+  "quest_specs": [
+    {
+      "quest_id": "quest-urban-occult-market-ritual-leads",
+      "file": "quest_specs/quest-urban-occult-market-ritual-leads.json"
+    },
+    {
+      "quest_id": "quest-urban-occult-resonance-followup",
+      "file": "quest_specs/quest-urban-occult-resonance-followup.json"
+    }
+  ]
+}
