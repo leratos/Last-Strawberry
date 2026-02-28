@@ -424,4 +424,4 @@ def save_example():
 
 if __name__ == '__main__':
     initialize_services()
-    app.run(debug=True, port=5000)
+    app.run(port=5000)
