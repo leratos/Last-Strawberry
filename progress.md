@@ -488,3 +488,27 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build`
   - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` (344 passed, 1 warning)
 - Tech Debt (bewusst): Param-Schema ist aktuell regelbasiert in Python-Validatorlogik kodiert. Naechster Schritt fuer KI-Authoring waere ein explizites, serialisierbares Schema-Format (z. B. JSON-Schema-Export pro Effect-Kind) fuer externe Spec-Generatoren/Editoren.
+- G1600-G1699 Draft (gestartet): (1) strikt typisiertes Quest-Authoring-Request-Schema via Pydantic-Models (no tolerant dict parsing), (2) feldgenaue Fehlercodes fuer Tooling/Editoren, (3) Dry-Run-Preview-Endpoint fuer QuestSpecs auf bestehendem World-Context ohne Persistenz.
+- G1600-G1699 abgeschlossen: Strict Authoring Schema + Feldfehler + Dry-Run-Preview fuer QuestSpecs umgesetzt.
+- `apps/game_api/app/services/quest_authoring_api.py` neu:
+  - strikt typisierte Authoring-Payloads (`extra="forbid"`) fuer Effects, Predicates, Triggers, Transitions und Spec-Requests
+  - Discriminated Unions pro `kind` fuer robuste/erkennbare Schemafehler
+  - Konverter von Payload-Modellen auf interne `QuestSpec`-Dataclasses
+  - feldbezogene Fehlerformatierung (`schema_invalid_*`, `field`, `message`) fuer Editor-/Tooling-Integration
+- `apps/game_api/app/services/quest_specs.py` erweitert:
+  - serialisierbare Schema-Dokumente fuer Effect-/Predicate-Katalog (`build_effect_schema_document`, `build_predicate_schema_document`)
+- `apps/game_api/app/main.py` erweitert:
+  - `GET /v1/quest-specs/effects/schema`
+  - `GET /v1/quest-specs/predicates/schema`
+  - `POST /v1/quest-specs/validate` (strict parse + feldgenaue 422-Schemafehler + fachliche Validierungsfehler)
+  - `POST /v1/quest-specs/preview/dry-run` (Validation + Compile-Preview auf realem World-Context, ohne Persistenz)
+- `apps/game_api/tests/test_preview_routes.py` erweitert:
+  - Endpunkt-Tests fuer beide Schema-Routen
+  - Test fuer feldgenaue Strict-Schemafehler
+  - Test fuer fachliche Domain-Validierungsfehler
+  - Dry-Run-Test fuer Compile-Preview ohne Persistenz
+  - Dry-Run-Test fuer Konflikt mit vorhandener World-Quest-ID
+- Validierung:
+  - `pytest apps/game_api/tests/test_preview_routes.py -q` (45 passed)
+  - `pytest apps/game_api/tests -q` mit gesetztem `PYTHONPATH` auf Repo + `packages/shared_schemas` + `packages/rules_engine` (131 passed)
+- Tech Debt (bewusst): Domain-Validierungsfehler kommen weiterhin als Stringcodes; fuer Editor-UX waere spaeter ein strukturierter Fehlerkatalog (`code`, `path`, `hint`) auf derselben Ebene wie die Schemafehler sinnvoll.

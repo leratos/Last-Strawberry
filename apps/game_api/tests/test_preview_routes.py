@@ -42,6 +42,137 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("narration_provider", payload)
         self.assertIn("hybrid_intent_llm_for_complex_inputs", payload)
 
+    def test_g1600_quest_effect_schema_endpoint(self):
+        response = self.client.get("/v1/quest-specs/effects/schema")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "1.0.0")
+        self.assertGreater(payload["effect_kind_count"], 0)
+        kinds = {entry["kind"]: entry for entry in payload["effect_kinds"]}
+        self.assertIn("set_story_flag", kinds)
+        self.assertIn("flag_name", kinds["set_story_flag"]["required_params"])
+
+    def test_g1600_quest_predicate_schema_endpoint(self):
+        response = self.client.get("/v1/quest-specs/predicates/schema")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "1.0.0")
+        self.assertGreater(payload["predicate_kind_count"], 0)
+        kinds = {entry["kind"]: entry for entry in payload["predicate_kinds"]}
+        self.assertIn("action_seen", kinds)
+        self.assertIn("action_types", kinds["action_seen"]["required_fields"])
+
+    def test_g1600_validate_returns_field_level_schema_errors(self):
+        response = self.client.post(
+            "/v1/quest-specs/validate",
+            json={"specs": [], "extra_field_not_allowed": True},
+        )
+        self.assertEqual(response.status_code, 422)
+        payload = response.json()
+        self.assertEqual(payload["detail"]["code"], "authoring_schema_validation_failed")
+        self.assertGreaterEqual(len(payload["detail"]["errors"]), 1)
+        first_error = payload["detail"]["errors"][0]
+        self.assertTrue(str(first_error["code"]).startswith("schema_invalid_"))
+        self.assertEqual(first_error["field"], "extra_field_not_allowed")
+
+    def test_g1600_validate_returns_domain_errors_for_invalid_spec(self):
+        response = self.client.post(
+            "/v1/quest-specs/validate",
+            json={
+                "specs": [
+                    {
+                        "quest_id": "quest-invalid-domain",
+                        "title": "Invalid Domain Quest",
+                        "description": "Should fail quest domain validation.",
+                        "initial_stage": "draft",
+                        "objectives": [],
+                    }
+                ]
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertGreater(payload["error_count"], 0)
+        self.assertIn("missing_objectives", payload["errors"])
+
+    def test_g1600_dry_run_compiles_specs_without_persisting(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1600-dryrun",
+                "world_description": "Eine Hafenstadt mit geheimer Magie und politischen Spannungen.",
+                "character_description": "Ein Ermittler mit Fokus auf Spuren und Zeugenaussagen.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spec_payload = {
+            "quest_id": "quest-g1600-preview",
+            "title": "Preview Quest",
+            "description": "Dry-run only.",
+            "initial_stage": "stage_start",
+            "objectives": [
+                {"objective_id": "inspect_square", "title": "Platz untersuchen", "hint": "Untersuche den Platz."}
+            ],
+        }
+        dry_run = self.client.post(
+            "/v1/quest-specs/preview/dry-run",
+            json={"world_id": world_id, "specs": [spec_payload]},
+        )
+        self.assertEqual(dry_run.status_code, 200)
+        dry_payload = dry_run.json()
+        self.assertTrue(dry_payload["ok"])
+        self.assertEqual(dry_payload["compiled_preview"]["quest_count"], 1)
+        self.assertEqual(dry_payload["compiled_preview"]["quests"][0]["quest_id"], "quest-g1600-preview")
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        self.assertNotIn(
+            "quest-g1600-preview",
+            [quest["quest_id"] for quest in context_payload["quests"]],
+        )
+
+    def test_g1600_dry_run_uses_world_context_existing_quest_ids(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1600-dryrun-dup",
+                "world_description": "Eine Stadt mit Ritualresten und rivalisierenden Fraktionen.",
+                "character_description": "Ein Beobachter, der Hinweise am Marktplatz sammelt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        existing_quest_id = context_response.json()["quests"][0]["quest_id"]
+
+        dry_run = self.client.post(
+            "/v1/quest-specs/preview/dry-run",
+            json={
+                "world_id": world_id,
+                "specs": [
+                    {
+                        "quest_id": existing_quest_id,
+                        "title": "Duplicate Quest Id",
+                        "description": "Should fail due to existing world quest id.",
+                        "initial_stage": "stage_start",
+                        "objectives": [
+                            {"objective_id": "o1", "title": "Obj", "hint": "Hint"}
+                        ],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(dry_run.status_code, 200)
+        payload = dry_run.json()
+        self.assertFalse(payload["ok"])
+        self.assertIn(f"quest_id_already_exists:{existing_quest_id}", payload["validation"]["errors"])
+
     def test_world_bootstrap_preview(self):
         response = self.client.post(
             "/v1/worlds/bootstrap/preview",

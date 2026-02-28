@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, UTC
+import json
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from apps.game_api.app.config import settings
 from apps.game_api.app.persistence import WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.llm_runtime import build_llm_runtime
-import json
-
 from apps.game_api.app.services.quest_authoring import (
     build_npc_dialog_hints_for_context,
     build_npc_dialog_topics_for_context,
+)
+from apps.game_api.app.services.quest_authoring_api import (
+    format_authoring_schema_errors,
+    parse_dry_run_request_payload,
+    parse_validate_request_payload,
+    quest_spec_payload_to_spec,
+)
+from apps.game_api.app.services.quest_specs import (
+    build_effect_schema_document,
+    build_predicate_schema_document,
+    compile_quest_spec_to_world_state,
+    validate_quest_specs_for_activation,
 )
 from ls_rules_engine import RulesEngine
 from ls_shared_schemas.character import CharacterState
@@ -203,6 +216,92 @@ def health() -> dict[str, str]:
         "openrouter_intent_model": llm_status.intent_model,
         "openrouter_narrator_model": llm_status.narrator_model,
         "openrouter_json_repair_attempts": str(settings.openrouter_json_repair_attempts),
+    }
+
+
+@app.get("/v1/quest-specs/effects/schema")
+def get_quest_effect_schema() -> dict[str, object]:
+    return build_effect_schema_document()
+
+
+@app.get("/v1/quest-specs/predicates/schema")
+def get_quest_predicate_schema() -> dict[str, object]:
+    return build_predicate_schema_document()
+
+
+@app.post("/v1/quest-specs/validate")
+def validate_quest_specs(raw_payload: dict[str, Any]) -> dict[str, object]:
+    try:
+        payload = parse_validate_request_payload(raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "authoring_schema_validation_failed",
+                "errors": format_authoring_schema_errors(exc),
+            },
+        ) from exc
+
+    specs = [quest_spec_payload_to_spec(spec) for spec in payload.specs]
+    result = validate_quest_specs_for_activation(
+        specs,
+        existing_quest_ids=set(payload.existing_quest_ids),
+    )
+    return {
+        "ok": result.ok,
+        "spec_count": len(specs),
+        "error_count": len(result.errors),
+        "errors": list(result.errors),
+    }
+
+
+@app.post("/v1/quest-specs/preview/dry-run")
+def dry_run_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -> dict[str, object]:
+    try:
+        payload = parse_dry_run_request_payload(raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "authoring_schema_validation_failed",
+                "errors": format_authoring_schema_errors(exc),
+            },
+        ) from exc
+
+    repository = _get_world_repository(fastapi_request)
+    context = _assemble_context_for_world(
+        repository=repository,
+        world_id=payload.world_id,
+        journal_limit=10,
+        turn_limit=10,
+        memory_per_npc=3,
+    )
+    specs = [quest_spec_payload_to_spec(spec) for spec in payload.specs]
+    existing_quest_ids = set(payload.existing_quest_ids)
+    existing_quest_ids.update(quest.quest_id for quest in context.quests)
+
+    validation = validate_quest_specs_for_activation(specs, existing_quest_ids=existing_quest_ids)
+    compiled_preview = [compile_quest_spec_to_world_state(spec).model_dump(mode="json") for spec in specs]
+    return {
+        "ok": validation.ok,
+        "world_id": payload.world_id,
+        "validated_at_utc": datetime.now(UTC).isoformat(),
+        "spec_count": len(specs),
+        "validation": {
+            "ok": validation.ok,
+            "error_count": len(validation.errors),
+            "errors": list(validation.errors),
+        },
+        "world_context": {
+            "quest_count": len(context.quests),
+            "quest_ids": [quest.quest_id for quest in context.quests],
+            "story_flag_count": len(context.story_flags),
+            "story_flags": dict(context.story_flags),
+        },
+        "compiled_preview": {
+            "quest_count": len(compiled_preview),
+            "quests": compiled_preview,
+        },
     }
 
 
