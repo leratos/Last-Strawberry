@@ -243,6 +243,14 @@ class QuestSpecsDryRunRequestPayload(StrictModel):
     existing_quest_ids: list[str] = Field(default_factory=list)
 
 
+class QuestSpecsApplyRequestPayload(StrictModel):
+    world_id: str
+    specs: list[QuestSpecPayload] = Field(default_factory=list)
+    existing_quest_ids: list[str] = Field(default_factory=list)
+    requested_by: str | None = None
+    source: str | None = None
+
+
 def _effect_payload_to_spec(effect: AuthoringEffectPayload) -> EffectSpec:
     return EffectSpec(
         effect_id=effect.effect_id,
@@ -348,3 +356,7 @@ def parse_validate_request_payload(raw_payload: dict[str, Any]) -> QuestSpecsVal
 
 def parse_dry_run_request_payload(raw_payload: dict[str, Any]) -> QuestSpecsDryRunRequestPayload:
     return QuestSpecsDryRunRequestPayload.model_validate(raw_payload)
+
+
+def parse_apply_request_payload(raw_payload: dict[str, Any]) -> QuestSpecsApplyRequestPayload:
+    return QuestSpecsApplyRequestPayload.model_validate(raw_payload)
