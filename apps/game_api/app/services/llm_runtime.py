@@ -549,8 +549,13 @@ class LlmRuntime:
     ) -> NarrativeEnvelope:
         fallback_narrative = build_narrative_from_resolution(resolution)
         system_prompt = (
-            "You are a German RPG narrator. Return strict JSON with keys: narrative, actionable_options, story_beats. "
-            "Narrative must reflect the provided deterministic resolution and stay consistent with story beats."
+            "You are a German RPG narrator for an interactive turn-based game. "
+            "Return strict JSON with keys: narrative, actionable_options, story_beats. "
+            "Narrative must reflect the provided deterministic resolution and stay consistent with story beats. "
+            "Write in flowing scene prose, not as a report and not as bullet-style enumeration. "
+            "Avoid rigid recap patterns like 'Anschliessend ... Danach ...'. "
+            "Blend action outcomes into one coherent scene paragraph with natural transitions. "
+            "Do not invent state changes that are not present in the resolution."
         )
         context_hint = ""
         if context_before is not None:
@@ -565,6 +570,10 @@ class LlmRuntime:
             f"resolution={resolution.model_dump_json()}\n"
             f"story_beats={json.dumps(fallback_narrative.story_beats, ensure_ascii=False)}\n"
             f"context_before={context_hint}\n"
+            "Style goals:\n"
+            "- no list-like recaps\n"
+            "- no developer/debug wording\n"
+            "- concise but atmospheric scene continuity\n"
             "Return JSON only in German narrative."
         )
         payload = self._request_openrouter_json(

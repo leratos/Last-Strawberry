@@ -629,3 +629,22 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `PYTHONPATH=.;packages/shared_schemas;packages/rules_engine pytest apps/game_api/tests/test_preview_routes.py -q` -> 50 passed
   - `PYTHONPATH=.;packages/shared_schemas;packages/rules_engine pytest apps/game_api/tests -q` -> 142 passed
 - Hinweis (Tech Debt): `errors_structured` ist bewusst ein leichtgewichtiges API-Format. Fuer spaeteres Editor-UX kann ein versionierter Error-Katalog (mit stabilen `code` + `path` + `hint`) daruebergelegt werden.
+- G2000-G2099 Draft (gestartet): Player-Mode fuer die Web-UI (Debug-/Authoring-Overload ausblendbar) und Narration-Qualitaets-Basis verbessern (weniger reporthaft, mehr Szenenfluss) fuer spielerorientierte interne Alpha-Runden.
+- G2000-G2099 abgeschlossen: Punkt 1 + 2 umgesetzt (Player-Mode + Narration-Basis).
+- Punkt 1 (Spieler-Modus Web-UI):
+  - `apps/web_client/src/App.tsx`: globaler Toggle `Spieler-Modus: AN/AUS (Dev)` mit LocalStorage-Persistenz (`ls_web_player_mode_v1`).
+  - Debug-/Authoring-Overload in Player-Mode ausgeblendet: API-Subtitle, Provider-/Bootstrap-Trace, Analyse-Notizen, Story-Flags, Quest-Authoring-Panel, Ziel-Referenzen/Interaktionspunkte-Detailbereiche.
+  - Spielerfreundlichere Darstellung: Journal-Labels (`Erzaehlung`, `Deine Aktion`, `Szenenstart`), reduzierte Event-Badges, versteckte IDs/Scores in Inventar/NPC-Memory.
+  - `apps/web_client/src/styles.css`: `mode-toggle-btn` fuer stabile Header-UI.
+- Punkt 2 (Narration-Qualitaets-Basis):
+  - `apps/game_api/app/services/narration_preview.py`: Preview-Narration von Reportstil auf szenischen Fluss umgestellt (Opening nach Aktionstyp, natürliche Uebergaenge, Reaktionssatz, Inventar-/Zustandsintegration, Abschlussfrage).
+  - `apps/game_api/app/services/llm_runtime.py`: OpenRouter-Narrationsprompt um verbindliche Stilregeln erweitert (keine Listen/Recap-Form, kohärenter Szenenfluss, keine erfundenen State-Changes).
+  - Tests angepasst/erweitert:
+    - `apps/game_api/tests/test_narration_preview.py`
+    - `apps/game_api/tests/test_llm_runtime.py` (Prompt-Guardrail-Assertion)
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_narration_preview.py -q` -> 2 passed
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 14 passed
+  - `python -m pytest apps/game_api/tests -q` -> 142 passed
+  - `npm.cmd --prefix apps/web_client run build` -> OK
+- Hinweis (bewusst offen): Narration wirkt nun weniger reporthaft, bleibt aber weiterhin regelzustandsnah/kompakt. Tiefere Stil- und Dramaturgieoptimierung bleibt im bestehenden Narration-Quality-Debt-Track.

@@ -34,13 +34,15 @@ class TestNarrationPreview(unittest.TestCase):
 
         envelope = build_narrative_from_resolution(resolution)
 
+        self.assertIn("Marktplatz", envelope.narrative)
         self.assertIn("Du naeherst dich Mira an.", envelope.narrative)
-        self.assertIn("Reaktion: Mira reagiert freundlich", envelope.narrative)
+        self.assertIn("Die Reaktion darauf: Mira reagiert freundlich", envelope.narrative)
+        self.assertIn("Was tust du als naechstes?", envelope.narrative)
         self.assertGreaterEqual(len(envelope.story_beats), 3)
         self.assertTrue(any(beat.startswith("scene:") for beat in envelope.story_beats))
         self.assertTrue(any("npc_reaction:" in beat for beat in envelope.story_beats))
 
-    def test_container_loot_event_is_highlighted_in_narrative(self):
+    def test_container_loot_and_state_delta_are_integrated_into_scene_flow(self):
         resolution = TurnResolution(
             world_id="world-1",
             world_character_id="wc-1",
@@ -49,7 +51,15 @@ class TestNarrationPreview(unittest.TestCase):
                 name="Ari",
                 location_name="Marktplatz",
             ),
-            state_delta=StateDelta(),
+            state_delta=StateDelta(
+                inventory_gained=[
+                    {
+                        "inventory_item_id": "inv-verbandsset",
+                        "name": "Verbandsset",
+                        "quantity": 1,
+                    }
+                ]
+            ),
             system_events=[
                 TurnSystemEvent(code="search_focus_success", message="Du durchsuchst die Vorratskiste."),
                 TurnSystemEvent(code="container_opened", message="Du oeffnest die Vorratskiste."),
@@ -59,7 +69,9 @@ class TestNarrationPreview(unittest.TestCase):
 
         envelope = build_narrative_from_resolution(resolution)
 
-        self.assertIn("Fund: Du findest in der Vorratskiste: Verbandspaket.", envelope.narrative)
+        self.assertIn("Du sicherst Verbandsset x1.", envelope.narrative)
+        self.assertIn("Du wirkst weiterhin handlungsfaehig (HP: 10).", envelope.narrative)
+        self.assertTrue(envelope.narrative.startswith("Die Szene in Marktplatz entwickelt sich weiter."))
         self.assertTrue(any("container_loot_found" in beat for beat in envelope.story_beats))
 
 

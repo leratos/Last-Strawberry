@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   applyQuestSpecs,
   createWorldBootstrap,
@@ -83,6 +83,7 @@ type ScenePointFilter = "all" | "container" | "scene_object" | "scene_point" | "
 type ScenePointSort = "name" | "detail" | "zone";
 
 const QUEUE_MACROS_STORAGE_KEY = "ls_web_queue_macros_v1";
+const PLAYER_MODE_STORAGE_KEY = "ls_web_player_mode_v1";
 
 const DEFAULT_BOOTSTRAP: BootstrapForm = {
   userId: "local-dev-user",
@@ -168,6 +169,24 @@ function saveQueueMacrosToStorage(macros: QueueMacro[]): void {
     return;
   }
   window.localStorage.setItem(QUEUE_MACROS_STORAGE_KEY, JSON.stringify(macros));
+}
+
+function loadPlayerModeFromStorage(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  const raw = window.localStorage.getItem(PLAYER_MODE_STORAGE_KEY);
+  if (raw === null) {
+    return true;
+  }
+  return raw !== "false";
+}
+
+function savePlayerModeToStorage(enabled: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(PLAYER_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
 function parseDialogTopicOptions(rawValue: unknown): DialogTopicOption[] {
@@ -643,6 +662,23 @@ function clarifyCandidateSubtitle(candidate: ClarifyCandidate): string {
   return parts.join(" | ");
 }
 
+function journalEntryTypeLabel(entryType: string): string {
+  const normalized = (entryType || "").trim().toLowerCase();
+  if (normalized === "narrative") {
+    return "Erzaehlung";
+  }
+  if (normalized === "player_input") {
+    return "Deine Aktion";
+  }
+  if (normalized === "system_world_bootstrap") {
+    return "Szenenstart";
+  }
+  if (normalized === "system") {
+    return "System";
+  }
+  return entryType;
+}
+
 function getStructuredTargets(
   context: GameContextResponse,
   composerActionKind: StructuredActionKind,
@@ -709,6 +745,7 @@ export function App() {
   const [composerTargetRef, setComposerTargetRef] = useState<string>("");
   const [structuredQueue, setStructuredQueue] = useState<QueuedStructuredAction[]>([]);
   const [queueMacros, setQueueMacros] = useState<QueueMacro[]>(() => loadQueueMacrosFromStorage());
+  const [playerMode, setPlayerMode] = useState<boolean>(() => loadPlayerModeFromStorage());
   const [queueMacroName, setQueueMacroName] = useState<string>("");
   const [scenePointFilter, setScenePointFilter] = useState<ScenePointFilter>("all");
   const [scenePointSort, setScenePointSort] = useState<ScenePointSort>("name");
@@ -798,6 +835,10 @@ export function App() {
     });
     return sorted;
   }, [context, scenePointFilter, scenePointSort]);
+
+  useEffect(() => {
+    savePlayerModeToStorage(playerMode);
+  }, [playerMode]);
 
   async function loadContext(targetWorldId: string, retrievalHint?: string): Promise<void> {
     setIsReloading(true);
@@ -1290,9 +1331,16 @@ export function App() {
         <div>
           <p className="eyebrow">Last Strawberry / G4</p>
           <h1>Web-Spiel MVP (Greenfield)</h1>
-          <p className="subtitle">API: {GAME_API_BASE_URL}</p>
+          {!playerMode ? <p className="subtitle">API: {GAME_API_BASE_URL}</p> : null}
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className={playerMode ? "primary-btn mode-toggle-btn" : "secondary-btn mode-toggle-btn"}
+            onClick={() => setPlayerMode((current) => !current)}
+          >
+            {playerMode ? "Spieler-Modus: AN" : "Spieler-Modus: AUS (Dev)"}
+          </button>
           <label className="compact-label">
             Welt-ID
             <input
@@ -1367,18 +1415,22 @@ export function App() {
                   <span>Ort: {context.world.character_state.location_name}</span>
                   <span>Zone: {context.world.character_state.scene_zone_name}</span>
                   <span>Turns: {context.recent_turns.length}</span>
-                  <span>Refs: {context.target_catalog.npcs.length}/{context.target_catalog.items.length}/{context.target_catalog.locations.length}</span>
+                  {!playerMode ? (
+                    <span>
+                      Refs: {context.target_catalog.npcs.length}/{context.target_catalog.items.length}/{context.target_catalog.locations.length}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="story-text">{latestNarrative}</p>
-                {analysisNotes.length > 0 ? (
+                {!playerMode && analysisNotes.length > 0 ? (
                   <p className="list-subtle analysis-notes">
                     Analyse-Kontext: {analysisNotes.join(" | ")}
                   </p>
                 ) : null}
-                {providerTraceSummary ? (
+                {!playerMode && providerTraceSummary ? (
                   <p className="list-subtle analysis-notes">Provider-Trace: {providerTraceSummary}</p>
                 ) : null}
-                {bootstrapTraceSummary ? (
+                {!playerMode && bootstrapTraceSummary ? (
                   <p className="list-subtle analysis-notes">Bootstrap-Trace: {bootstrapTraceSummary}</p>
                 ) : null}
                 {context.quests.length > 0 ? (
@@ -1412,57 +1464,59 @@ export function App() {
                 ) : null}
               </section>
 
-              <section className="subpanel authoring-panel">
-                <div className="panel-header">
-                  <h3>Quest-Authoring (MVP)</h3>
-                  <span className="chip">{context.world.world_id}</span>
-                </div>
-                <p className="list-subtle">
-                  {"JSON-basierter Authoring-Flow: Validate -> Dry-Run -> Apply."}
-                </p>
-                <label>
-                  Quest-Specs JSON
-                  <textarea
-                    rows={12}
-                    value={authoringSpecsJson}
-                    onChange={(event) => setAuthoringSpecsJson(event.target.value)}
-                    spellCheck={false}
-                  />
-                </label>
-                <div className="turn-actions">
-                  <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringValidate()}>
-                    {isAuthoringWorking ? "Pruefe..." : "Validate"}
-                  </button>
-                  <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringDryRun()}>
-                    {isAuthoringWorking ? "Pruefe..." : "Dry-Run"}
-                  </button>
-                  <button type="button" className="primary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringApply()}>
-                    {isAuthoringWorking ? "Wende an..." : "Apply"}
-                  </button>
-                </div>
-                {authoringMessage ? <p className="info-text">{authoringMessage}</p> : null}
-                {authoringError ? <p className="error-text">{authoringError}</p> : null}
-                <div className="authoring-results-grid">
-                  <div className="authoring-result-card">
-                    <p className="list-title">Validate Result</p>
-                    <pre className="authoring-json-preview">
-                      {authoringValidateResult ? JSON.stringify(authoringValidateResult, null, 2) : "Noch kein Ergebnis."}
-                    </pre>
+              {!playerMode ? (
+                <section className="subpanel authoring-panel">
+                  <div className="panel-header">
+                    <h3>Quest-Authoring (MVP)</h3>
+                    <span className="chip">{context.world.world_id}</span>
                   </div>
-                  <div className="authoring-result-card">
-                    <p className="list-title">Dry-Run Result</p>
-                    <pre className="authoring-json-preview">
-                      {authoringDryRunResult ? JSON.stringify(authoringDryRunResult, null, 2) : "Noch kein Ergebnis."}
-                    </pre>
+                  <p className="list-subtle">
+                    {"JSON-basierter Authoring-Flow: Validate -> Dry-Run -> Apply."}
+                  </p>
+                  <label>
+                    Quest-Specs JSON
+                    <textarea
+                      rows={12}
+                      value={authoringSpecsJson}
+                      onChange={(event) => setAuthoringSpecsJson(event.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <div className="turn-actions">
+                    <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringValidate()}>
+                      {isAuthoringWorking ? "Pruefe..." : "Validate"}
+                    </button>
+                    <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringDryRun()}>
+                      {isAuthoringWorking ? "Pruefe..." : "Dry-Run"}
+                    </button>
+                    <button type="button" className="primary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringApply()}>
+                      {isAuthoringWorking ? "Wende an..." : "Apply"}
+                    </button>
                   </div>
-                  <div className="authoring-result-card">
-                    <p className="list-title">Apply Result</p>
-                    <pre className="authoring-json-preview">
-                      {authoringApplyResult ? JSON.stringify(authoringApplyResult, null, 2) : "Noch kein Ergebnis."}
-                    </pre>
+                  {authoringMessage ? <p className="info-text">{authoringMessage}</p> : null}
+                  {authoringError ? <p className="error-text">{authoringError}</p> : null}
+                  <div className="authoring-results-grid">
+                    <div className="authoring-result-card">
+                      <p className="list-title">Validate Result</p>
+                      <pre className="authoring-json-preview">
+                        {authoringValidateResult ? JSON.stringify(authoringValidateResult, null, 2) : "Noch kein Ergebnis."}
+                      </pre>
+                    </div>
+                    <div className="authoring-result-card">
+                      <p className="list-title">Dry-Run Result</p>
+                      <pre className="authoring-json-preview">
+                        {authoringDryRunResult ? JSON.stringify(authoringDryRunResult, null, 2) : "Noch kein Ergebnis."}
+                      </pre>
+                    </div>
+                    <div className="authoring-result-card">
+                      <p className="list-title">Apply Result</p>
+                      <pre className="authoring-json-preview">
+                        {authoringApplyResult ? JSON.stringify(authoringApplyResult, null, 2) : "Noch kein Ergebnis."}
+                      </pre>
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              ) : null}
 
               {activeClarify ? (
                 <section className="subpanel clarify-panel">
@@ -1582,7 +1636,7 @@ export function App() {
               </form>
 
               <section className="subpanel">
-                <h3>Struktur-Aktion (G10)</h3>
+                <h3>{playerMode ? "Struktur-Aktion" : "Struktur-Aktion (G10)"}</h3>
                 <div className="turn-actions">
                   <label className="compact-label">
                     Aktion
@@ -1630,7 +1684,7 @@ export function App() {
                       </option>
                       {composerTargets.map((target) => (
                         <option key={target.refId} value={target.refId}>
-                          {target.name} [{target.refId}]
+                          {playerMode ? target.name : `${target.name} [${target.refId}]`}
                         </option>
                       ))}
                     </select>
@@ -1798,11 +1852,15 @@ export function App() {
                           ) : (
                             <div className="event-list">
                                   {turn.resolution.system_events.map((event, index) => (
-                                <div key={`${turn.turn_id}-${event.code}-${index}`} className="event-row">
-                                  <span className={`event-group-badge ${eventGroupClass(event.code)}`}>
-                                    {eventGroupLabel(event.code)}
-                                  </span>
-                                  <span className={`event-badge event-${event.severity}`}>{event.code}</span>
+                              <div key={`${turn.turn_id}-${event.code}-${index}`} className="event-row">
+                                  {!playerMode ? (
+                                    <span className={`event-group-badge ${eventGroupClass(event.code)}`}>
+                                      {eventGroupLabel(event.code)}
+                                    </span>
+                                  ) : null}
+                                  {!playerMode ? (
+                                    <span className={`event-badge event-${event.severity}`}>{event.code}</span>
+                                  ) : null}
                                   {(() => {
                                     const skillCheckSummary = getSkillCheckEventSummary(event);
                                     if (!skillCheckSummary) {
@@ -1822,7 +1880,9 @@ export function App() {
                                           <span className="skillcheck-badge">Total {skillCheckSummary.total}</span>
                                         </div>
                                         <span className="event-message">
-                                          Probe {skillCheckSummary.label} ({skillCheckSummary.attribute} {skillCheckSummary.attributeScore})
+                                          {playerMode
+                                            ? `Probe ${skillCheckSummary.label}`
+                                            : `Probe ${skillCheckSummary.label} (${skillCheckSummary.attribute} ${skillCheckSummary.attributeScore})`}
                                         </span>
                                       </div>
                                     );
@@ -1924,7 +1984,9 @@ export function App() {
                       .reverse()
                       .map((entry) => (
                         <li key={entry.journal_entry_id}>
-                          <p className="list-title">{entry.entry_type}</p>
+                          <p className="list-title">
+                            {playerMode ? journalEntryTypeLabel(entry.entry_type) : entry.entry_type}
+                          </p>
                           <p className="list-subtle">{entry.text}</p>
                         </li>
                       ))}
@@ -1994,7 +2056,7 @@ export function App() {
                   </ul>
                 </>
               ) : null}
-              {context.story_flags && Object.keys(context.story_flags).length > 0 ? (
+              {!playerMode && context.story_flags && Object.keys(context.story_flags).length > 0 ? (
                 <>
                   <h3>Story-Flags (MVP)</h3>
                   <ul className="list list-tight">
@@ -2025,7 +2087,10 @@ export function App() {
                     <span className="list-title">
                       {item.name} x{item.quantity}
                     </span>
-                    <span className="list-subtle">{item.use_modes.join(", ")} | {item.inventory_item_id}</span>
+                    <span className="list-subtle">
+                      {item.use_modes.join(", ")}
+                      {!playerMode ? ` | ${item.inventory_item_id}` : ""}
+                    </span>
                     <div className="turn-actions">
                       <button
                         type="button"
@@ -2065,7 +2130,7 @@ export function App() {
               </ul>
 
               <h3>NPC Memory (Retrieval)</h3>
-              {context.retrieval_notes.length > 0 ? (
+              {!playerMode && context.retrieval_notes.length > 0 ? (
                 <p className="list-subtle">{context.retrieval_notes.join(" | ")}</p>
               ) : null}
               <ul className="list">
@@ -2094,8 +2159,8 @@ export function App() {
                           {entry.bundle.profile.name} ({entry.bundle.profile.role})
                         </p>
                         <p className="list-subtle">
-                          ID: {entry.bundle.profile.npc_id} |{" "}
-                          Score: {entry.relevance_score.toFixed(2)}
+                          {!playerMode ? `ID: ${entry.bundle.profile.npc_id} | ` : ""}
+                          {!playerMode ? `Score: ${entry.relevance_score.toFixed(2)}` : "Bekannter Kontakt"}
                           {entry.bundle.relationship ? ` | Standing: ${entry.bundle.relationship.standing}` : ""}
                           {entry.bundle.profile.faction ? ` | Fraktion: ${entry.bundle.profile.faction}` : ""}
                         </p>
@@ -2162,7 +2227,7 @@ export function App() {
                             ))}
                           </div>
                         ) : null}
-                        {dialogTopicOptions.length > 0 ? (
+                        {!playerMode && dialogTopicOptions.length > 0 ? (
                           <div className="list-subtle">
                             {dialogTopicOptions.map((topic) => (
                               <div key={`${entry.bundle.profile.npc_id}:${topic.topic_id}:meta`}>
@@ -2280,6 +2345,8 @@ export function App() {
                 ))}
               </ul>
 
+              {!playerMode ? (
+                <>
               <h3>Ziel-Referenzen</h3>
               <ul className="list list-tight">
                 {context.target_catalog.locations.slice(0, 5).map((location) => (
@@ -2555,6 +2622,8 @@ export function App() {
                   </li>
                 ))}
               </ul>
+                </>
+              ) : null}
             </>
           )}
         </article>

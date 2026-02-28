@@ -357,6 +357,9 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertIn("Kaels Reaktion", narrative.narrative)
         self.assertGreaterEqual(len(narrative.story_beats), 2)
         self.assertTrue(narrative.story_beats[0].startswith("scene:"))
+        narration_call_kwargs = fake_client.chat_completion.call_args.kwargs
+        self.assertIn("flowing scene prose", narration_call_kwargs["system_prompt"])
+        self.assertIn("no list-like recaps", narration_call_kwargs["user_prompt"])
 
     def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
         runtime = LlmRuntime(
