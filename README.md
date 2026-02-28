@@ -117,6 +117,7 @@ CI coverage gate for `backend_v2` is enforced in GitHub Actions + Codecov.
 - For metrics endpoint hardening, use `LS_METRICS_API_KEY` (+ optional header override).
 
 ## Key Docs
+- Inbetriebnahme (Operator Guide): `docs/inbetriebnahme_guide.md`
 - V2 roadmap and milestones: `docs/roadmap_v2_execution.md`
 - M4 cutover DoD: `docs/m4_definition_of_done.md`
 - M4 cutover runbook: `docs/phase4_cutover_runbook.md`

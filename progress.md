@@ -670,3 +670,20 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests/test_narration_preview.py -q` -> 3 passed
   - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 14 passed
   - `python -m pytest apps/game_api/tests -q` -> 143 passed
+- G2200-G2299 Draft (gestartet): Betriebsdoku fuer Erst-Inbetriebnahme erstellen (Windows-first), inklusive Setup, Startreihenfolge, Health-/Smoke-Checks, LLM-Modi (preview/hybrid) und Troubleshooting fuer haeufige Stolpersteine.
+- G2200-G2299 abgeschlossen: Operator-Inbetriebnahmeanleitung fuer den Greenfield-Produktpfad erstellt.
+- Neue Doku:
+  - `docs/inbetriebnahme_guide.md` mit:
+    - Voraussetzungen
+    - Erstsetup (`.venv-v2`, Python-Pakete, Web-Client npm install)
+    - Laufzeit-Env (`PYTHONPATH`, optionale DB- und LLM-Variablen)
+    - Startreihenfolge (API `8010`, Web `3001`)
+    - Health-/Quickchecks (inkl. PowerShell-sicherer `Invoke-RestMethod`-Beispiele)
+    - preview/hybrid Betriebsmodus
+    - Stop/Restart
+    - Troubleshooting (Importfehler, Host-Binding, JSON-Quoting, Portkonflikte, DB-Reset)
+    - optionaler Legacy-Bridge-Hinweis
+- README aktualisiert:
+  - `README.md` unter `Key Docs` um Link auf `docs/inbetriebnahme_guide.md` erweitert.
+- Validierung:
+  - Doku-Only-Block, kein Codepfad geaendert, daher keine Testausfuehrung erforderlich.
