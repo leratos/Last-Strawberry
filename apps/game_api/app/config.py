@@ -26,6 +26,7 @@ class Settings:
         "http://localhost:3001",
         "http://127.0.0.1:3001",
     )
+    cors_allow_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +41,10 @@ class Settings:
             os.getenv("LS_GREENFIELD_OPENROUTER_JSON_REPAIR_ATTEMPTS") or "1"
         ).strip()
         cors_raw = (os.getenv("LS_GREENFIELD_CORS_ORIGINS") or "").strip()
+        cors_regex_raw = (
+            os.getenv("LS_GREENFIELD_CORS_ALLOW_ORIGIN_REGEX")
+            or r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        ).strip()
         cors_allowed_origins: tuple[str, ...]
         if cors_raw:
             cors_allowed_origins = tuple(origin.strip() for origin in cors_raw.split(",") if origin.strip())
@@ -75,6 +80,7 @@ class Settings:
             ).strip()
             or "meta-llama/llama-3.3-70b-instruct",
             cors_allowed_origins=cors_allowed_origins,
+            cors_allow_origin_regex=cors_regex_raw,
         )
 
 

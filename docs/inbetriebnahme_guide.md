@@ -171,6 +171,14 @@ Host-Binding explizit setzen:
 npm --prefix apps/web_client run dev -- --host 127.0.0.1 --port 3001
 ```
 
+Falls in der Browser-Konsole CORS-Fehler fuer `OPTIONS /v1/...` erscheinen (z. B. weil Vite auf `3002` statt `3001` laeuft):
+
+```powershell
+$env:LS_GREENFIELD_CORS_ALLOW_ORIGIN_REGEX = "^https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?$"
+```
+
+Danach API neu starten.
+
 ### JSON-Fehler bei `curl` in PowerShell
 
 PowerShell escaped `curl`-JSON haeufig unguenstig. Nutze stattdessen `Invoke-RestMethod` mit `ConvertTo-Json` (siehe Abschnitt 6.2).
