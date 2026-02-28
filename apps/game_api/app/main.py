@@ -19,6 +19,7 @@ from apps.game_api.app.services.quest_authoring import (
     build_npc_dialog_topics_for_context,
 )
 from apps.game_api.app.services.quest_authoring_api import (
+    format_authoring_domain_errors,
     format_authoring_schema_errors,
     parse_apply_request_payload,
     parse_dry_run_request_payload,
@@ -392,6 +393,7 @@ def validate_quest_specs(raw_payload: dict[str, Any]) -> dict[str, object]:
         "spec_count": len(specs),
         "error_count": len(result.errors),
         "errors": list(result.errors),
+        "errors_structured": format_authoring_domain_errors(result.errors),
     }
 
 
@@ -432,6 +434,7 @@ def dry_run_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -
             "ok": validation.ok,
             "error_count": len(validation.errors),
             "errors": list(validation.errors),
+            "errors_structured": format_authoring_domain_errors(validation.errors),
         },
         "world_context": {
             "quest_count": len(context.quests),
@@ -491,6 +494,7 @@ def apply_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -> 
                 "code": "authoring_domain_validation_failed",
                 "audit_id": audit_id,
                 "errors": list(validation.errors),
+                "errors_structured": format_authoring_domain_errors(validation.errors),
             },
         )
 

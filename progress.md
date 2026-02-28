@@ -610,3 +610,22 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build` -> OK
   - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 347 passed, 1 warning
 - Hinweis (Tech Debt): Story-Beats sind jetzt strukturiert verfuegbar, aber Narration-Qualitaet bleibt bewusst nur grundlegend verbessert; tieferer Stil-/Flow-Ausbau bleibt im dokumentierten Narration-Debt-Track.
+- G1900-G1999 Draft (gestartet): Strukturierte Domain-Fehler fuer Quest-Authoring-Endpoints (`validate`, `preview/dry-run`, `apply`) einfuehren, damit UI/Tooling nicht nur rohe Fehlerstrings verarbeiten muss. Fokus: stabile API-Fehlerstruktur ohne Bruch der bisherigen `errors`-Felder.
+- G1900-G1999 abgeschlossen: strukturierte Domain-Fehler fuer Quest-Authoring-Endpoints umgesetzt.
+- Backend:
+  - `apps/game_api/app/services/quest_authoring_api.py` erweitert um `format_authoring_domain_errors(...)`:
+    - wandelt rohe Domain-Fehlercodes in strukturierte Objekte (`code`, `scope`, optional `source_id`, `args`, `raw`)
+    - erkennt verschachtelte Trigger-/Transition-/Effect-Fehler (`trigger_error`, `transition_error`, `trigger_effect_error`, `transition_effect_error`)
+  - `apps/game_api/app/main.py` erweitert:
+    - `POST /v1/quest-specs/validate`: neue Antwort `errors_structured`
+    - `POST /v1/quest-specs/preview/dry-run`: neue Antwort `validation.errors_structured`
+    - `POST /v1/quest-specs/apply` (Domain-Validierungsfehlerpfad): neue Antwort `detail.errors_structured`
+- Tests:
+  - `apps/game_api/tests/test_preview_routes.py` erweitert:
+    - Validate-Domain-Fehler prueft `errors_structured`
+    - Dry-Run-Quest-ID-Konflikt prueft strukturierte Fehler inkl. Args
+    - neuer Test fuer `apply`-Domain-Fehler mit `errors_structured`
+- Validierung:
+  - `PYTHONPATH=.;packages/shared_schemas;packages/rules_engine pytest apps/game_api/tests/test_preview_routes.py -q` -> 50 passed
+  - `PYTHONPATH=.;packages/shared_schemas;packages/rules_engine pytest apps/game_api/tests -q` -> 142 passed
+- Hinweis (Tech Debt): `errors_structured` ist bewusst ein leichtgewichtiges API-Format. Fuer spaeteres Editor-UX kann ein versionierter Error-Katalog (mit stabilen `code` + `path` + `hint`) daruebergelegt werden.

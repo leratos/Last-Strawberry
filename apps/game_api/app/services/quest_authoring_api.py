@@ -481,6 +481,39 @@ def format_authoring_schema_errors(exc: ValidationError) -> list[dict[str, str]]
     return errors
 
 
+def format_authoring_domain_errors(raw_errors: list[str] | tuple[str, ...]) -> list[dict[str, object]]:
+    """Normalize quest domain validation errors for UI/tooling usage."""
+
+    structured: list[dict[str, object]] = []
+    nested_scope_map = {
+        "trigger_error": "trigger",
+        "transition_error": "transition",
+        "trigger_effect_error": "trigger_effect",
+        "transition_effect_error": "transition_effect",
+    }
+    for raw in raw_errors:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        parts = [part.strip() for part in text.split(":")]
+        category = parts[0]
+        entry: dict[str, object] = {
+            "raw": text,
+            "code": category,
+            "scope": "validation",
+        }
+        if category in nested_scope_map and len(parts) >= 3:
+            entry["scope"] = nested_scope_map[category]
+            entry["source_id"] = parts[1]
+            entry["code"] = parts[2]
+            if len(parts) > 3:
+                entry["args"] = parts[3:]
+        elif len(parts) > 1:
+            entry["args"] = parts[1:]
+        structured.append(entry)
+    return structured
+
+
 def parse_validate_request_payload(raw_payload: dict[str, Any]) -> QuestSpecsValidateRequestPayload:
     return QuestSpecsValidateRequestPayload.model_validate(raw_payload)
 

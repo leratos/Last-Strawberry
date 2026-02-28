@@ -95,6 +95,8 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertGreater(payload["error_count"], 0)
         self.assertIn("missing_objectives", payload["errors"])
+        self.assertIn("errors_structured", payload)
+        self.assertTrue(any(item["code"] == "missing_objectives" for item in payload["errors_structured"]))
 
     def test_g1600_dry_run_compiles_specs_without_persisting(self):
         create_response = self.client.post(
@@ -172,6 +174,14 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         payload = dry_run.json()
         self.assertFalse(payload["ok"])
         self.assertIn(f"quest_id_already_exists:{existing_quest_id}", payload["validation"]["errors"])
+        self.assertIn("errors_structured", payload["validation"])
+        self.assertTrue(
+            any(
+                item["code"] == "quest_id_already_exists"
+                and existing_quest_id in [str(arg) for arg in item.get("args", [])]
+                for item in payload["validation"]["errors_structured"]
+            )
+        )
 
     def test_g1700_dry_run_diff_includes_flags_objectives_and_events(self):
         create_response = self.client.post(
@@ -325,6 +335,39 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             ).fetchall()
         self.assertGreaterEqual(len(rows), 2)
         self.assertTrue(any(row["status"] == "failed" and row["error_code"] == "quest_id_conflict" for row in rows))
+
+    def test_g1900_apply_returns_structured_domain_errors(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1900-apply-invalid",
+                "world_description": "Eine Stadt mit fehlerhaftem Authoringtest.",
+                "character_description": "Ein Charakter fuer Domain-Fehler-Test.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        apply_response = self.client.post(
+            "/v1/quest-specs/apply",
+            json={
+                "world_id": world_id,
+                "specs": [
+                    {
+                        "quest_id": "quest-g1900-invalid",
+                        "title": "Invalid Quest",
+                        "description": "Soll Domain-Validierung triggern.",
+                        "initial_stage": "start",
+                        "objectives": [],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(apply_response.status_code, 400)
+        detail = apply_response.json()["detail"]
+        self.assertEqual(detail["code"], "authoring_domain_validation_failed")
+        self.assertIn("missing_objectives", detail["errors"])
+        self.assertTrue(any(item["code"] == "missing_objectives" for item in detail["errors_structured"]))
 
     def test_world_bootstrap_preview(self):
         response = self.client.post(
