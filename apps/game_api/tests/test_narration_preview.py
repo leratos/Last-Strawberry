@@ -36,6 +36,9 @@ class TestNarrationPreview(unittest.TestCase):
 
         self.assertIn("Du naeherst dich Mira an.", envelope.narrative)
         self.assertIn("Reaktion: Mira reagiert freundlich", envelope.narrative)
+        self.assertGreaterEqual(len(envelope.story_beats), 3)
+        self.assertTrue(any(beat.startswith("scene:") for beat in envelope.story_beats))
+        self.assertTrue(any("npc_reaction:" in beat for beat in envelope.story_beats))
 
     def test_container_loot_event_is_highlighted_in_narrative(self):
         resolution = TurnResolution(
@@ -57,6 +60,7 @@ class TestNarrationPreview(unittest.TestCase):
         envelope = build_narrative_from_resolution(resolution)
 
         self.assertIn("Fund: Du findest in der Vorratskiste: Verbandspaket.", envelope.narrative)
+        self.assertTrue(any("container_loot_found" in beat for beat in envelope.story_beats))
 
 
 if __name__ == "__main__":

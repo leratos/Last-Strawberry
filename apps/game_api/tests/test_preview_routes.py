@@ -342,6 +342,16 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertIn("bootstrap_trace", payload)
         self.assertEqual(payload["bootstrap_trace"]["capability"], "bootstrap")
 
+    def test_effect_schema_endpoint_exposes_effect_kinds(self):
+        response = self.client.get("/v1/quest-specs/effects/schema")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "1.0.0")
+        kinds = {entry["kind"]: entry for entry in payload["effect_kinds"]}
+        self.assertIn("set_story_flag", kinds)
+        self.assertIn("set_objective_status", kinds)
+        self.assertIn("emit_system_event", kinds)
+
     def test_g23_world_bootstrap_preview_uses_ip_safe_urban_occult_preset(self):
         response = self.client.post(
             "/v1/worlds/bootstrap/preview",
@@ -535,8 +545,12 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         context_payload = context_response.json()
         self.assertGreaterEqual(len(context_payload["quests"]), 1)
         self.assertEqual(context_payload["world_pack"]["genre"], "urban_occult_investigation")
+        self.assertIn("quest_chain_ids_csv", context_payload["world_pack"])
+        self.assertIn("quest_entry_rule", context_payload["world_pack"])
+        self.assertIn("quest_reentry_rule", context_payload["world_pack"])
         self.assertIn("kael_interviewed", context_payload["story_flags"])
         self.assertFalse(context_payload["story_flags"]["kael_interviewed"])
+        self.assertEqual(context_payload["story_flags"].get("urban_occult_chain_stage"), "starter_active")
         quest = context_payload["quests"][0]
         self.assertEqual(quest["current_stage"], "investigate_scene")
         kael_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Kael")
@@ -613,6 +627,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(quest_after_crate["current_stage"], "report_to_mira")
         self.assertTrue(ctx_after_crate["story_flags"]["supply_crate_inspected"])
         self.assertFalse(ctx_after_crate["story_flags"]["mira_report_completed"])
+        self.assertEqual(ctx_after_crate["story_flags"].get("urban_occult_chain_stage"), "starter_active")
 
         mira_ref_after = next(entry for entry in ctx_after_crate["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
         self.assertEqual(mira_ref_after.get("discovery_state", {}).get("dialog_state"), "quest_report")
@@ -650,6 +665,7 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         final_flags = talk_mira_payload["context_after_turn"]["story_flags"]
         self.assertTrue(final_flags["mira_report_completed"])
         self.assertTrue(final_flags["ritual_leads_quest_completed"])
+        self.assertTrue(final_flags.get("urban_occult_followup_entry_open"))
 
     def test_g350_followup_quest_unlocks_and_kael_crosscheck_stage_updates_dialog_hints(self):
         create_response = self.client.post(

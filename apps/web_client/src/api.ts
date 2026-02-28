@@ -68,7 +68,7 @@ export type GameContextResponse = {
   recent_turns: Array<{
     turn_id: string;
     raw_player_input: string;
-    narrative: { narrative: string };
+    narrative: { narrative: string; story_beats?: string[] };
     resolution: {
       system_events: Array<{
         code: string;

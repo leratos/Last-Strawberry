@@ -111,6 +111,7 @@ class NarrativeEnvelope(LSBaseModel):
     world_id: str = Field(min_length=1, max_length=120)
     world_character_id: str = Field(min_length=1, max_length=120)
     narrative: str = Field(min_length=1, max_length=8000)
+    story_beats: list[str] = Field(default_factory=list)
     actionable_options: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
 

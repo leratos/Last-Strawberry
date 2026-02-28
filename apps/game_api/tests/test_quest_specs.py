@@ -127,6 +127,20 @@ class TestQuestSpecs(unittest.TestCase):
         self.assertEqual(len(spec.objective_triggers), 1)
         self.assertEqual(len(spec.transitions), 1)
 
+    def test_build_effect_schema_document_contains_known_effects(self):
+        schema = build_effect_schema_document()
+        self.assertEqual(schema["schema_version"], "1.0.0")
+        self.assertGreaterEqual(int(schema["effect_kind_count"]), 6)
+        kinds = {entry["kind"]: entry for entry in schema["effect_kinds"]}
+        self.assertIn("set_story_flag", kinds)
+        self.assertIn("emit_system_event", kinds)
+        set_story_flag = kinds["set_story_flag"]
+        self.assertIn("flag_name", set_story_flag["required_params"])
+        self.assertIn("value", set_story_flag["allowed_params"])
+        emit_system_event = kinds["emit_system_event"]
+        self.assertIn("code", emit_system_event["required_params"])
+        self.assertIn("metadata", emit_system_event["allowed_params"])
+
     def test_validate_authored_quest_specs_is_ok(self):
         ok, errors = validate_authored_quest_specs()
         self.assertTrue(ok)

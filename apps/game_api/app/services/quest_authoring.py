@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, UTC
-import hashlib
 
 from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import ActionType, TurnIntent, TurnResolution, TurnSystemEvent
@@ -18,6 +17,12 @@ from apps.game_api.app.services.quest_specs import (
     apply_transition_specs_to_quest_state,
     compile_quest_spec_to_world_state,
     validate_quest_specs_for_activation,
+)
+from apps.game_api.app.services.skillchecks import (
+    SkillCheckResult,
+    SkillCheckSpec,
+    build_skill_check_system_event,
+    run_deterministic_skill_check,
 )
 
 
@@ -379,45 +384,40 @@ class DialogTopicApplyResult:
     system_events: list[TurnSystemEvent]
 
 
-def _dialog_topic_skillcheck_spec(topic_id: str) -> dict[str, str | int] | None:
-    specs: dict[str, dict[str, str | int]] = {
-        "kael_ritual_overview": {
-            "attribute": "intelligence",
-            "label": "Ritualanalyse",
-            "dc": 12,
-        },
-        "kael_witness_pattern": {
-            "attribute": "charisma",
-            "label": "Nachbohren",
-            "dc": 11,
-        },
-        "mira_next_lead": {
-            "attribute": "intelligence",
-            "label": "Spurlogik",
-            "dc": 10,
-        },
-        "mira_scene_control": {
-            "attribute": "dexterity",
-            "label": "Sichern ohne Spuren zu stoeren",
-            "dc": 12,
-        },
-        "kael_sabotage_hypothesis": {
-            "attribute": "charisma",
-            "label": "Konfrontation",
-            "dc": 13,
-        },
+def _dialog_topic_skillcheck_spec(topic_id: str) -> SkillCheckSpec | None:
+    specs: dict[str, SkillCheckSpec] = {
+        "kael_ritual_overview": SkillCheckSpec(
+            check_id="dialog.kael_ritual_overview",
+            attribute="intelligence",
+            label="Ritualanalyse",
+            dc=12,
+        ),
+        "kael_witness_pattern": SkillCheckSpec(
+            check_id="dialog.kael_witness_pattern",
+            attribute="charisma",
+            label="Nachbohren",
+            dc=11,
+        ),
+        "mira_next_lead": SkillCheckSpec(
+            check_id="dialog.mira_next_lead",
+            attribute="intelligence",
+            label="Spurlogik",
+            dc=10,
+        ),
+        "mira_scene_control": SkillCheckSpec(
+            check_id="dialog.mira_scene_control",
+            attribute="dexterity",
+            label="Sichern ohne Spuren zu stoeren",
+            dc=12,
+        ),
+        "kael_sabotage_hypothesis": SkillCheckSpec(
+            check_id="dialog.kael_sabotage_hypothesis",
+            attribute="charisma",
+            label="Konfrontation",
+            dc=13,
+        ),
     }
     return specs.get(topic_id)
-
-
-def _attribute_modifier(attribute_score: int) -> int:
-    return (int(attribute_score) - 10) // 2
-
-
-def _deterministic_d20_roll(*parts: str) -> int:
-    seed = "|".join(parts).encode("utf-8", errors="ignore")
-    digest = hashlib.sha256(seed).digest()
-    return (digest[0] % 20) + 1
 
 
 def derive_story_flags_from_quests(
@@ -440,6 +440,8 @@ def derive_story_flags_from_quests(
 
     starter_quest = next((q for q in quests if q.quest_id == URBAN_OCCULT_QUEST_ID), None)
     followup_quest = next((q for q in quests if q.quest_id == URBAN_OCCULT_FOLLOWUP_QUEST_ID), None)
+    starter_status = (starter_quest.status if starter_quest is not None else "").strip().lower()
+    followup_status = (followup_quest.status if followup_quest is not None else "").strip().lower()
 
     if starter_quest is not None:
         kael_interviewed = _objective_completed(starter_quest, "speak_with_kael")
@@ -471,6 +473,21 @@ def derive_story_flags_from_quests(
 
         if any((rune_traces_inspected, sealed_case_opened, kael_followup_crosschecked, followup_completed)):
             next_flags["ritual_scene_known"] = True
+
+    chain_stage = "idle"
+    if starter_quest is not None and starter_status != "completed":
+        chain_stage = "starter_active"
+    elif starter_quest is not None and starter_status == "completed" and followup_quest is None:
+        chain_stage = "followup_entry_ready"
+    elif followup_quest is not None and followup_status != "completed":
+        chain_stage = "followup_active"
+    elif followup_quest is not None and followup_status == "completed":
+        chain_stage = "reentry_ready"
+
+    next_flags["urban_occult_chain_stage"] = chain_stage
+    next_flags["urban_occult_followup_entry_open"] = bool(starter_quest is not None and starter_status == "completed")
+    next_flags["urban_occult_followup_exit_open"] = bool(followup_quest is not None and followup_status == "completed")
+    next_flags["urban_occult_reentry_enabled"] = bool(followup_quest is not None and followup_status == "completed")
 
     return next_flags
 
@@ -652,35 +669,24 @@ def apply_authored_dialog_topics_for_turn(
         except (TypeError, ValueError):
             target_standing = 0
         skill_spec = _dialog_topic_skillcheck_spec(topic_id)
-        skill_check_result: dict[str, str | int | bool] | None = None
+        skill_check_result: SkillCheckResult | None = None
         if skill_spec is not None:
-            attr_name = str(skill_spec["attribute"])
+            attr_name = str(skill_spec.attribute)
             attr_value = int(getattr(resolution.resulting_character_state.attributes, attr_name, 10))
-            dc_value = int(skill_spec["dc"])
-            roll_value = _deterministic_d20_roll(
-                resolution.world_character_id,
-                topic_id,
-                target_ref or target_name.lower(),
-                resolution.resulting_character_state.location_name,
-                resolution.resulting_character_state.scene_zone_id,
+            skill_check_result = run_deterministic_skill_check(
+                spec=skill_spec,
+                attribute_score=attr_value,
+                seed_parts=(
+                    resolution.world_character_id,
+                    topic_id,
+                    target_ref or target_name.lower(),
+                    resolution.resulting_character_state.location_name,
+                    resolution.resulting_character_state.scene_zone_id,
+                ),
             )
-            modifier_value = _attribute_modifier(attr_value)
-            total_value = roll_value + modifier_value
-            success_value = total_value >= dc_value
-            skill_check_result = {
-                "topic_id": topic_id,
-                "attribute": attr_name,
-                "label": str(skill_spec.get("label") or attr_name),
-                "attribute_score": attr_value,
-                "modifier": modifier_value,
-                "dc": dc_value,
-                "roll": roll_value,
-                "total": total_value,
-                "success": success_value,
-            }
             updated_flags[f"dialog_skillcheck_used_{topic_id}"] = True
-            updated_flags[f"dialog_skillcheck_passed_{topic_id}"] = success_value
-            updated_flags[f"dialog_skillcheck_total_{topic_id}"] = total_value
+            updated_flags[f"dialog_skillcheck_passed_{topic_id}"] = bool(skill_check_result.success)
+            updated_flags[f"dialog_skillcheck_total_{topic_id}"] = int(skill_check_result.total)
 
         response_text = ""
         if topic_id == "kael_ritual_overview":
@@ -695,7 +701,7 @@ def apply_authored_dialog_topics_for_turn(
             response_text = (
                 "Kael skizziert den Ablauf des Binder-Rituals und betont, dass der Bruch genau im Umschaltmoment der Energiezufuhr einsetzte."
             )
-            if bool(skill_check_result and bool(skill_check_result.get("success"))):
+            if bool(skill_check_result and skill_check_result.success):
                 updated_flags["kael_ritual_analysis_success"] = True
                 response_text = (
                     "Waehrend Kael den Ablauf des Binder-Rituals erklaert, erkennst du das stoerende Muster im Umschaltmoment der Energiezufuhr und kannst den Bruch zeitlich enger eingrenzen."
@@ -735,7 +741,7 @@ def apply_authored_dialog_topics_for_turn(
             updated_flags[flag_key] = True
             updated_flags["mira_next_lead_requested"] = True
             updated_flags["followup_route_briefed"] = True
-            if bool(skill_check_result and bool(skill_check_result.get("success"))):
+            if bool(skill_check_result and skill_check_result.success):
                 updated_flags["mira_next_lead_analysis_success"] = True
                 updated_flags["followup_route_briefed_precise"] = True
                 response_text = (
@@ -748,7 +754,7 @@ def apply_authored_dialog_topics_for_turn(
             updated_flags[flag_key] = True
             updated_flags["mira_scene_control_plan"] = True
             updated_flags["scene_control_protocol_active"] = True
-            if bool(skill_check_result and bool(skill_check_result.get("success"))):
+            if bool(skill_check_result and skill_check_result.success):
                 updated_flags["scene_control_precision"] = True
                 response_text = (
                     "Mira nickt zu deinem vorsichtigen Vorgehen und legt eine praezise Reihenfolge fest: Spuren markieren, Bereich sichern, dann den Koffer kontrolliert in Deckung oeffnen."
@@ -771,7 +777,7 @@ def apply_authored_dialog_topics_for_turn(
                 except (TypeError, ValueError):
                     heat = 1
                 updated_flags["occult_heat_level"] = min(5, heat + 1)
-            if bool(skill_check_result and bool(skill_check_result.get("success"))):
+            if bool(skill_check_result and skill_check_result.success):
                 updated_flags["kael_sabotage_hypothesis_pressure_success"] = True
                 if followup_quest is not None:
                     _update_objective_hint(
@@ -852,35 +858,12 @@ def apply_authored_dialog_topics_for_turn(
             )
         )
         if skill_check_result is not None:
-            success = bool(skill_check_result["success"])
-            label = str(skill_check_result["label"])
-            attr_name = str(skill_check_result["attribute"])
-            total_value = int(skill_check_result["total"])
-            dc_value = int(skill_check_result["dc"])
-            roll_value = int(skill_check_result["roll"])
-            mod_value = int(skill_check_result["modifier"])
-            attr_score = int(skill_check_result["attribute_score"])
-            outcome_label = "Erfolg" if success else "Misserfolg"
             events.append(
-                TurnSystemEvent(
-                    code="dialog_topic_skill_check",
-                    message=(
-                        f"Probe {label} ({attr_name} {attr_score} / Mod {'+' if mod_value >= 0 else '-'}{abs(mod_value)}) -> {outcome_label}: "
-                        f"W20 {roll_value} {'+' if mod_value >= 0 else '-'} {abs(mod_value)} = {total_value} gegen DC {dc_value}."
-                    ),
-                    severity="info" if success else "warning",
-                    metadata={
-                        "topic_id": topic_id,
-                        "target_name": target_name,
-                        "check_label": label,
-                        "check_attribute": attr_name,
-                        "attribute_score": attr_score,
-                        "modifier": mod_value,
-                        "roll": roll_value,
-                        "total": total_value,
-                        "dc": dc_value,
-                        "success": success,
-                    },
+                build_skill_check_system_event(
+                    event_code="dialog_topic_skill_check",
+                    topic_id=topic_id,
+                    target_name=target_name,
+                    result=skill_check_result,
                 )
             )
         events.append(

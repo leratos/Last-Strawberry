@@ -594,3 +594,19 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `npm.cmd --prefix apps/web_client run build` (success)
 - Hinweis:
   - Runtime nutzt weiterhin die bestehenden authored Runtimepfade; das file-based Pack-Format ist jetzt produktionsreif fuer Authoring/Review/Import und CI-Absicherung, ohne die laufende Quest-Progression zu destabilisieren.
+- G1400-G1499 Draft (gestartet): Umsetzung Schritte 2-5 als Produktblock: (2) exportierbares Effect-Schema, (3) World-Pack-Authoring fuer Urban-Occult mit Folgequest-Kette/Entry-Exit/Re-Entry-Regeln, (4) generalisierte Skillcheck-Pipeline, (5) Narration-Grundprinzip via strukturierte Story-Beats zwischen Rules/Persistenz und Narrator.
+- G1400-G1499 abgeschlossen: Schritte 2-5 umgesetzt.
+- (2) Effect-Schema-Export: `build_effect_schema_document()` in `apps/game_api/app/services/quest_specs.py` + API-Route `GET /v1/quest-specs/effects/schema` in `apps/game_api/app/main.py`.
+- (3) World-Pack-Authoring erweitert: Quest-Chain/Entry-Exit-Reentry-Regeln in `AuthoredWorldPack` (`apps/game_api/app/services/world_pack_authoring.py`), Context-Export via `world_pack` (`quest_chain_ids_csv/json`, `quest_entry_rule`, `quest_exit_rule`, `quest_reentry_rule`, `discovery_entry_rule`). Urban-Occult-Chain-Flags in Starter-Flags + Ableitung in `derive_story_flags_from_quests` (`urban_occult_chain_stage`, `urban_occult_followup_entry_open`, `urban_occult_followup_exit_open`, `urban_occult_reentry_enabled`).
+- (4) Generalisierte Skillcheck-Pipeline: neues Modul `apps/game_api/app/services/skillchecks.py` (`SkillCheckSpec`, `SkillCheckResult`, deterministic roll/modifier, Event-Builder). `quest_authoring.py` nutzt die Pipeline fuer Dialogtopic-Checks statt Inline-Berechnung.
+- (5) Story-Beats-Grundprinzip: neues Modul `apps/game_api/app/services/story_beats.py`; `build_narrative_from_resolution` erzeugt strukturierte Beats; `NarrativeEnvelope` erweitert um `story_beats`; LLM-Narration nutzt Story-Beats im Prompt und uebernimmt optionale `story_beats` aus LLM-JSON mit Fallback.
+- Tests/Build:
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_quest_specs.py -q` -> 21 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_narration_preview.py -q` -> 2 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_effect_schema_endpoint_exposes_effect_kinds -q` -> passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g260_urban_occult_starter_quest_progresses_via_kael_crate_mira -q` -> passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 14 passed
+  - `.venv-v2\\Scripts\\python.exe -m pytest apps/game_api/tests -q` -> 128 passed
+  - `npm.cmd --prefix apps/web_client run build` -> OK
+  - `.venv-v2\\Scripts\\python.exe -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 347 passed, 1 warning
+- Hinweis (Tech Debt): Story-Beats sind jetzt strukturiert verfuegbar, aber Narration-Qualitaet bleibt bewusst nur grundlegend verbessert; tieferer Stil-/Flow-Ausbau bleibt im dokumentierten Narration-Debt-Track.

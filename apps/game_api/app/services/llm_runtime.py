@@ -547,9 +547,10 @@ class LlmRuntime:
         resolution: TurnResolution,
         context_before: GameContextResponse | None,
     ) -> NarrativeEnvelope:
+        fallback_narrative = build_narrative_from_resolution(resolution)
         system_prompt = (
-            "You are a German RPG narrator. Return strict JSON with keys: narrative, actionable_options. "
-            "Narrative must reflect the provided deterministic resolution."
+            "You are a German RPG narrator. Return strict JSON with keys: narrative, actionable_options, story_beats. "
+            "Narrative must reflect the provided deterministic resolution and stay consistent with story beats."
         )
         context_hint = ""
         if context_before is not None:
@@ -562,6 +563,7 @@ class LlmRuntime:
             )
         user_prompt = (
             f"resolution={resolution.model_dump_json()}\n"
+            f"story_beats={json.dumps(fallback_narrative.story_beats, ensure_ascii=False)}\n"
             f"context_before={context_hint}\n"
             "Return JSON only in German narrative."
         )
@@ -572,7 +574,6 @@ class LlmRuntime:
             purpose="narration",
             response_format_candidates=[{"type": "json_object"}],
         )
-        fallback_narrative = build_narrative_from_resolution(resolution)
         narrative_text = str(payload.get("narrative") or "").strip()
         if not narrative_text:
             narrative_text = fallback_narrative.narrative
@@ -580,6 +581,7 @@ class LlmRuntime:
             world_id=resolution.world_id,
             world_character_id=resolution.world_character_id,
             narrative=narrative_text,
+            story_beats=self._normalize_story_beats(payload.get("story_beats"), fallback_narrative.story_beats),
             actionable_options=self._normalize_actionable_options(payload.get("actionable_options")),
         )
 
@@ -734,6 +736,21 @@ class LlmRuntime:
             normalized.append(text)
             if len(normalized) >= 5:
                 break
+        return normalized
+
+    def _normalize_story_beats(self, raw_beats: Any, fallback_beats: list[str]) -> list[str]:
+        if not isinstance(raw_beats, list):
+            return list(fallback_beats[:8])
+        normalized: list[str] = []
+        for item in raw_beats:
+            text = str(item).strip()
+            if not text:
+                continue
+            normalized.append(text)
+            if len(normalized) >= 8:
+                break
+        if not normalized:
+            return list(fallback_beats[:8])
         return normalized
 
     def _safe_text(self, value: Any, *, max_len: int) -> str:
