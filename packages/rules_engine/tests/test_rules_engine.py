@@ -100,6 +100,8 @@ class TestRulesEngine(unittest.TestCase):
                     parameters={
                         "target_id": "npc-mira",
                         "target_name": "Mira",
+                        "target_role": "heiler",
+                        "target_standing": 4,
                         "target_location_name": "Marktplatz",
                         "target_zone_id": "zone-market-stalls",
                         "target_zone_name": "Marktstaende",
@@ -117,6 +119,41 @@ class TestRulesEngine(unittest.TestCase):
         codes = [event.code for event in result.system_events]
         self.assertIn("auto_approach_for_talk", codes)
         self.assertIn("talk_success", codes)
+        self.assertIn("npc_dialogue_line", codes)
+        dialogue_event = next(event for event in result.system_events if event.code == "npc_dialogue_line")
+        self.assertIn('Mira sagt:', dialogue_event.message)
+        self.assertIn("Wunden versorgen", dialogue_event.message)
+
+    def test_talk_with_negative_standing_uses_reserved_dialogue_line(self):
+        engine = RulesEngine()
+        state = CharacterState(
+            world_character_id="wc-1",
+            name="Ari",
+            location_name="Marktplatz",
+            attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+            resources=CharacterResources(hp=10, max_hp=10, stamina=5, max_stamina=10),
+        )
+        intent = TurnIntent(
+            world_id="world-1",
+            world_character_id="wc-1",
+            raw_player_input="Ich rede mit Kael.",
+            actions=[
+                TurnIntentAction(
+                    action_type=ActionType.talk,
+                    target_ref="npc-kael",
+                    parameters={
+                        "target_id": "npc-kael",
+                        "target_name": "Kael",
+                        "target_standing": -5,
+                    },
+                )
+            ],
+        )
+
+        result = engine.resolve(intent=intent, character_state=state, inventory=[])
+
+        dialogue_event = next(event for event in result.system_events if event.code == "npc_dialogue_line")
+        self.assertIn("Ich rede nur knapp mit dir", dialogue_event.message)
 
     def test_attack_auto_approaches_when_target_is_near_or_far(self):
         engine = RulesEngine()

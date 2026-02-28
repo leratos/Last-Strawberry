@@ -356,6 +356,9 @@ function formatCapabilityTraceSummary(trace: LlmCapabilityTraceView): string {
 }
 
 function eventGroupLabel(eventCode: string): string {
+  if (eventCode === "npc_dialogue_line") {
+    return "Dialog";
+  }
   if (eventCode.startsWith("npc_reacts_")) {
     return "Reaktion";
   }
@@ -379,6 +382,9 @@ function eventGroupLabel(eventCode: string): string {
 }
 
 function eventGroupClass(eventCode: string): string {
+  if (eventCode === "npc_dialogue_line") {
+    return "event-group-dialog";
+  }
   if (eventCode.startsWith("npc_reacts_")) {
     return "event-group-reaction";
   }

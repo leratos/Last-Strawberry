@@ -703,3 +703,20 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
 - Validierung:
   - `python -m pytest apps/game_api/tests/test_config.py -q` -> 2 passed
   - `python -m pytest apps/game_api/tests -q` -> 145 passed
+- G2400-G2499 Draft (gestartet): TALK-UX verbessern, damit NPCs im Turn konkrete Antworten liefern (statt nur `talk_success`). Ziel: zusaetzliches, deterministisches NPC-Dialog-Event fuer bessere Lesbarkeit im Turn-Verlauf, ohne LLM-Abhaengigkeit.
+- G2400-G2499 abgeschlossen: TALK-UX fuer NPC-Dialogzeilen umgesetzt (deterministisch, ohne LLM-Zwang).
+- Rules Engine:
+  - `packages/rules_engine/ls_rules_engine/engine.py`
+    - `TALK` emittiert zusaetzlich `npc_dialogue_line` mit sprecherbezogener Zeile (`<NPC> sagt: "..."`).
+    - neue helper-Logik `_build_talk_dialogue_line(...)` nutzt `target_role` und `target_standing` fuer tonale Varianten (freundlich/neutral/reserviert).
+- API-Testabdeckung:
+  - `apps/game_api/tests/test_preview_routes.py`
+    - neuer Test `test_g2400_talk_emits_npc_dialogue_line_event`
+    - validiert, dass `turn.resolution.system_events` neben `talk_success` auch `npc_dialogue_line` enthaelt.
+- Web-UI:
+  - `apps/web_client/src/App.tsx`
+    - `npc_dialogue_line` wird in der Event-Gruppierung als `Dialog` (statt `System`) klassifiziert.
+- Validierung:
+  - `python -m pytest packages/rules_engine/tests/test_rules_engine.py -q` -> 21 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g2400_talk_emits_npc_dialogue_line_event -q` -> 1 passed
+  - `npm --prefix apps/web_client run build` -> OK
