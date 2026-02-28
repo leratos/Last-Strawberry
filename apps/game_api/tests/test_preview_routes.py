@@ -2535,6 +2535,57 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
             mira_current = next(entry for entry in ctx_next["target_catalog"]["npcs"] if entry["ref_id"] == mira_ref["ref_id"])
             self.assertEqual(mira_current["distance_band_to_player"], expected)
 
+    def test_g2400_talk_emits_npc_dialogue_line_event(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g2400-1",
+                "world_description": "Ein Marktplatz mit aufmerksamen Beobachtern.",
+                "character_description": "Ein Ermittler, der Aussagen aus Gespraechen sichern will.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        context_payload = context_response.json()
+        target_ref = next(entry for entry in context_payload["target_catalog"]["npcs"] if entry["name"] == "Mira")
+
+        run_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={
+                "player_input": "UI: Spreche mit Mira",
+                "actions_override": [
+                    {
+                        "action_type": "TALK",
+                        "target_ref": target_ref["ref_id"],
+                        "target_kind": "npc",
+                        "parameters": {
+                            "intent": "talk",
+                            "target_id": target_ref["ref_id"],
+                            "target_name": target_ref["name"],
+                            "target_role": target_ref.get("role"),
+                            "target_standing": target_ref.get("standing_for_player"),
+                            "target_location_name": target_ref.get("location_name"),
+                            "target_zone_id": target_ref.get("scene_zone_id"),
+                            "target_zone_name": target_ref.get("scene_zone_name"),
+                            "target_distance_band": target_ref.get("distance_band_to_player"),
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(run_response.status_code, 200)
+        payload = run_response.json()
+        events = payload["turn"]["resolution"]["system_events"]
+        event_codes = [event["code"] for event in events]
+        self.assertIn("talk_success", event_codes)
+        self.assertIn("npc_dialogue_line", event_codes)
+
+        dialogue_event = next(event for event in events if event["code"] == "npc_dialogue_line")
+        self.assertTrue(str(dialogue_event["message"]).startswith('Mira sagt: "'))
+
 
 if __name__ == "__main__":
     unittest.main()

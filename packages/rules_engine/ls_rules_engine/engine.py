@@ -503,7 +503,41 @@ class RulesEngine:
             relationship_change["npc_id"] = target_id
         delta.relationship_changes.append(relationship_change)
         events.append(TurnSystemEvent(code="talk_success", message=f"Gespraech mit {target_display} gefuehrt."))
+        events.append(
+            TurnSystemEvent(
+                code="npc_dialogue_line",
+                message=f'{target_display} sagt: "{self._build_talk_dialogue_line(action=action)}"',
+            )
+        )
         return True
+
+    @staticmethod
+    def _build_talk_dialogue_line(*, action: TurnIntentAction) -> str:
+        target_role = str(action.parameters.get("target_role") or "").strip().lower()
+        try:
+            standing = int(action.parameters.get("target_standing"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            standing = 0
+
+        if standing <= -4:
+            return "Ich rede nur knapp mit dir. Zeig zuerst, dass ich dir trauen kann."
+        if standing >= 3:
+            if target_role in {"healer", "heiler"}:
+                return "Wenn du Hilfe brauchst, sag es direkt. Ich kann Wunden versorgen."
+            if target_role in {"merchant", "haendler"}:
+                return "Fuer dich reserviere ich die besseren Hinweise - frag konkret nach."
+            return "Gut, dass du da bist. Wir koennen offen sprechen."
+
+        if target_role in {"summoner", "beschwoerer", "beschwörer", "mage", "magier"}:
+            return "Die arkanen Muster sind unruhig. Achte auf jede kleine Abweichung."
+        if target_role in {"warrior", "krieger", "tank", "guard"}:
+            return "Bleib wachsam. Wenn es kippt, musst du schnell reagieren."
+        if target_role in {"healer", "heiler"}:
+            return "Halte dich bereit. Ich beobachte zuerst deinen Zustand."
+        if target_role in {"merchant", "haendler"}:
+            return "Ich tausche Informationen gegen verlaessliche Funde."
+
+        return "Ich habe etwas beobachtet. Wenn du genauer fragst, teile ich mehr."
 
     def _apply_attack(
         self,
