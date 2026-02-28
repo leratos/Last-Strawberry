@@ -1,13 +1,19 @@
 import { FormEvent, useMemo, useState } from "react";
 import {
+  applyQuestSpecs,
   createWorldBootstrap,
+  dryRunQuestSpecs,
   GAME_API_BASE_URL,
   GameContextResponse,
   getWorldContext,
   LlmCapabilityTraceView,
+  QuestAuthoringApplyResponse,
+  QuestAuthoringDryRunResponse,
+  QuestAuthoringValidateResponse,
   runTurn,
   StructuredTurnAction,
   TurnRunResponse,
+  validateQuestSpecs,
 } from "./api";
 
 type BootstrapForm = {
@@ -85,6 +91,50 @@ const DEFAULT_BOOTSTRAP: BootstrapForm = {
   characterDescription:
     "Eine ehemalige Kartografin, die ihre verschollene Schwester sucht und dafuer mit Informationen handelt.",
 };
+
+const DEFAULT_AUTHORING_SPECS_JSON = JSON.stringify(
+  [
+    {
+      quest_id: "quest-custom-investigation",
+      title: "Neue Spur am Marktplatz",
+      description: "Ein optionaler Testauftrag fuer lokales Authoring.",
+      initial_stage: "start",
+      tags: ["authoring", "test"],
+      objectives: [
+        {
+          objective_id: "talk_witness",
+          title: "Mit einem Zeugen sprechen",
+          hint: "Sprich mit einem Zeugen am Marktplatz.",
+        },
+      ],
+      objective_triggers: [
+        {
+          trigger_id: "trigger-talk-witness",
+          objective_id: "talk_witness",
+          predicates: [
+            {
+              predicate_id: "pred-talk-action",
+              kind: "action_seen",
+              action_types: ["TALK"],
+            },
+          ],
+          effects: [
+            {
+              effect_id: "eff-flag",
+              kind: "set_story_flag",
+              params: {
+                flag_name: "custom_witness_interviewed",
+                value: true,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  null,
+  2,
+);
 
 function loadQueueMacrosFromStorage(): QueueMacro[] {
   if (typeof window === "undefined") {
@@ -662,6 +712,13 @@ export function App() {
   const [queueMacroName, setQueueMacroName] = useState<string>("");
   const [scenePointFilter, setScenePointFilter] = useState<ScenePointFilter>("all");
   const [scenePointSort, setScenePointSort] = useState<ScenePointSort>("name");
+  const [authoringSpecsJson, setAuthoringSpecsJson] = useState<string>(DEFAULT_AUTHORING_SPECS_JSON);
+  const [isAuthoringWorking, setIsAuthoringWorking] = useState<boolean>(false);
+  const [authoringMessage, setAuthoringMessage] = useState<string>("");
+  const [authoringError, setAuthoringError] = useState<string>("");
+  const [authoringValidateResult, setAuthoringValidateResult] = useState<QuestAuthoringValidateResponse | null>(null);
+  const [authoringDryRunResult, setAuthoringDryRunResult] = useState<QuestAuthoringDryRunResponse | null>(null);
+  const [authoringApplyResult, setAuthoringApplyResult] = useState<QuestAuthoringApplyResponse | null>(null);
 
   const latestNarrative = useMemo(() => {
     if (!context) {
@@ -1138,6 +1195,95 @@ export function App() {
     );
   }
 
+  function parseAuthoringSpecsInput(): Array<Record<string, unknown>> {
+    const raw = authoringSpecsJson.trim();
+    if (!raw) {
+      throw new Error("Bitte Quest-Spec-JSON eingeben (Array oder Objekt mit Feld 'specs').");
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("Quest-Spec-JSON ist ungueltig.");
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.filter((entry) => entry && typeof entry === "object") as Array<Record<string, unknown>>;
+    }
+    if (parsed && typeof parsed === "object" && Array.isArray((parsed as { specs?: unknown }).specs)) {
+      return ((parsed as { specs: unknown[] }).specs || []).filter((entry) => entry && typeof entry === "object") as Array<
+        Record<string, unknown>
+      >;
+    }
+    throw new Error("Erwartet wird ein JSON-Array von Specs oder ein Objekt mit 'specs: [...]'.");
+  }
+
+  async function handleAuthoringValidate(): Promise<void> {
+    setAuthoringError("");
+    setAuthoringMessage("");
+    setAuthoringDryRunResult(null);
+    setAuthoringApplyResult(null);
+    setIsAuthoringWorking(true);
+    try {
+      const specs = parseAuthoringSpecsInput();
+      const result = await validateQuestSpecs({ specs });
+      setAuthoringValidateResult(result);
+      setAuthoringMessage(`Validate abgeschlossen: ${result.error_count} Fehler.`);
+    } catch (validationError) {
+      setAuthoringError(validationError instanceof Error ? validationError.message : "Validate fehlgeschlagen.");
+    } finally {
+      setIsAuthoringWorking(false);
+    }
+  }
+
+  async function handleAuthoringDryRun(): Promise<void> {
+    if (!worldId.trim()) {
+      setAuthoringError("Bitte zuerst eine Welt laden/erstellen.");
+      return;
+    }
+    setAuthoringError("");
+    setAuthoringMessage("");
+    setAuthoringApplyResult(null);
+    setIsAuthoringWorking(true);
+    try {
+      const specs = parseAuthoringSpecsInput();
+      const result = await dryRunQuestSpecs({ world_id: worldId.trim(), specs });
+      setAuthoringDryRunResult(result);
+      setAuthoringMessage(
+        `Dry-Run abgeschlossen: ${result.validation.error_count} Validierungsfehler, ${result.diff.quests_added.length} neue Quest(s).`,
+      );
+    } catch (dryRunError) {
+      setAuthoringError(dryRunError instanceof Error ? dryRunError.message : "Dry-Run fehlgeschlagen.");
+    } finally {
+      setIsAuthoringWorking(false);
+    }
+  }
+
+  async function handleAuthoringApply(): Promise<void> {
+    if (!worldId.trim()) {
+      setAuthoringError("Bitte zuerst eine Welt laden/erstellen.");
+      return;
+    }
+    setAuthoringError("");
+    setAuthoringMessage("");
+    setIsAuthoringWorking(true);
+    try {
+      const specs = parseAuthoringSpecsInput();
+      const result = await applyQuestSpecs({
+        world_id: worldId.trim(),
+        specs,
+        requested_by: "web_client_mvp",
+        source: "authoring_panel",
+      });
+      setAuthoringApplyResult(result);
+      setAuthoringMessage(`Apply erfolgreich: ${result.applied_count} Quest(s) uebernommen. Audit: ${result.audit_id}`);
+      await loadContext(worldId.trim());
+    } catch (applyError) {
+      setAuthoringError(applyError instanceof Error ? applyError.message : "Apply fehlgeschlagen.");
+    } finally {
+      setIsAuthoringWorking(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="top-bar">
@@ -1264,6 +1410,58 @@ export function App() {
                     </button>
                   </div>
                 ) : null}
+              </section>
+
+              <section className="subpanel authoring-panel">
+                <div className="panel-header">
+                  <h3>Quest-Authoring (MVP)</h3>
+                  <span className="chip">{context.world.world_id}</span>
+                </div>
+                <p className="list-subtle">
+                  {"JSON-basierter Authoring-Flow: Validate -> Dry-Run -> Apply."}
+                </p>
+                <label>
+                  Quest-Specs JSON
+                  <textarea
+                    rows={12}
+                    value={authoringSpecsJson}
+                    onChange={(event) => setAuthoringSpecsJson(event.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="turn-actions">
+                  <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringValidate()}>
+                    {isAuthoringWorking ? "Pruefe..." : "Validate"}
+                  </button>
+                  <button type="button" className="secondary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringDryRun()}>
+                    {isAuthoringWorking ? "Pruefe..." : "Dry-Run"}
+                  </button>
+                  <button type="button" className="primary-btn" disabled={isAuthoringWorking} onClick={() => void handleAuthoringApply()}>
+                    {isAuthoringWorking ? "Wende an..." : "Apply"}
+                  </button>
+                </div>
+                {authoringMessage ? <p className="info-text">{authoringMessage}</p> : null}
+                {authoringError ? <p className="error-text">{authoringError}</p> : null}
+                <div className="authoring-results-grid">
+                  <div className="authoring-result-card">
+                    <p className="list-title">Validate Result</p>
+                    <pre className="authoring-json-preview">
+                      {authoringValidateResult ? JSON.stringify(authoringValidateResult, null, 2) : "Noch kein Ergebnis."}
+                    </pre>
+                  </div>
+                  <div className="authoring-result-card">
+                    <p className="list-title">Dry-Run Result</p>
+                    <pre className="authoring-json-preview">
+                      {authoringDryRunResult ? JSON.stringify(authoringDryRunResult, null, 2) : "Noch kein Ergebnis."}
+                    </pre>
+                  </div>
+                  <div className="authoring-result-card">
+                    <p className="list-title">Apply Result</p>
+                    <pre className="authoring-json-preview">
+                      {authoringApplyResult ? JSON.stringify(authoringApplyResult, null, 2) : "Noch kein Ergebnis."}
+                    </pre>
+                  </div>
+                </div>
               </section>
 
               {activeClarify ? (

@@ -237,6 +237,50 @@ export type WorldBootstrapCreateResponse = {
   bootstrap_trace?: LlmCapabilityTraceView | null;
 };
 
+export type QuestAuthoringValidateResponse = {
+  ok: boolean;
+  spec_count: number;
+  error_count: number;
+  errors: string[];
+};
+
+export type QuestAuthoringDryRunResponse = {
+  ok: boolean;
+  world_id: string;
+  validated_at_utc: string;
+  spec_count: number;
+  validation: {
+    ok: boolean;
+    error_count: number;
+    errors: string[];
+  };
+  world_context: {
+    quest_count: number;
+    quest_ids: string[];
+    story_flag_count: number;
+    story_flags: Record<string, string | number | boolean>;
+  };
+  compiled_preview: {
+    quest_count: number;
+    quests: Array<Record<string, unknown>>;
+  };
+  diff: {
+    quests_added: string[];
+    flags_changed: Array<Record<string, string | null>>;
+    objectives_changed: Array<Record<string, string>>;
+    events_expected: Array<Record<string, string | null>>;
+  };
+};
+
+export type QuestAuthoringApplyResponse = {
+  ok: boolean;
+  world_id: string;
+  audit_id: string;
+  applied_count: number;
+  applied_quest_ids: string[];
+  world_character_id: string;
+};
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${GAME_API_BASE_URL}${path}`, {
     ...init,
@@ -286,5 +330,39 @@ export async function runTurn(
       include_context_after_turn: true,
       actions_override: options?.actionsOverride || [],
     }),
+  });
+}
+
+export async function validateQuestSpecs(payload: {
+  specs: Array<Record<string, unknown>>;
+  existing_quest_ids?: string[];
+}): Promise<QuestAuthoringValidateResponse> {
+  return apiFetch<QuestAuthoringValidateResponse>("/v1/quest-specs/validate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function dryRunQuestSpecs(payload: {
+  world_id: string;
+  specs: Array<Record<string, unknown>>;
+  existing_quest_ids?: string[];
+}): Promise<QuestAuthoringDryRunResponse> {
+  return apiFetch<QuestAuthoringDryRunResponse>("/v1/quest-specs/preview/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function applyQuestSpecs(payload: {
+  world_id: string;
+  specs: Array<Record<string, unknown>>;
+  existing_quest_ids?: string[];
+  requested_by?: string;
+  source?: string;
+}): Promise<QuestAuthoringApplyResponse> {
+  return apiFetch<QuestAuthoringApplyResponse>("/v1/quest-specs/apply", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
