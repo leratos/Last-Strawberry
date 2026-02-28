@@ -687,3 +687,19 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `README.md` unter `Key Docs` um Link auf `docs/inbetriebnahme_guide.md` erweitert.
 - Validierung:
   - Doku-Only-Block, kein Codepfad geaendert, daher keine Testausfuehrung erforderlich.
+- G2300-G2399 Draft (gestartet): CORS-Dev-Fix fuer Greenfield-API, damit lokale Frontend-Ports (`localhost`/`127.0.0.1` inkl. dynamischem Vite-Port wie 3002) Preflight-Requests nicht mehr mit 400 blocken.
+- G2300-G2399 abgeschlossen: CORS-Dev-Fix fuer dynamische lokale Frontend-Ports umgesetzt.
+- Backend:
+  - `apps/game_api/app/config.py`
+    - neue Setting-Option `cors_allow_origin_regex`
+    - neuer Env-Override `LS_GREENFIELD_CORS_ALLOW_ORIGIN_REGEX`
+    - Default fuer lokale Entwicklung: `^https?://(localhost|127\.0\.0\.1)(:\d+)?$`
+  - `apps/game_api/app/main.py`
+    - `CORSMiddleware` nutzt jetzt zusaetzlich `allow_origin_regex=settings.cors_allow_origin_regex`
+- Doku:
+  - `docs/inbetriebnahme_guide.md` um CORS-Preflight-Workaround/Restart-Hinweis erweitert.
+- Tests:
+  - neue Datei `apps/game_api/tests/test_config.py` (Default + Override fuer `cors_allow_origin_regex`)
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_config.py -q` -> 2 passed
+  - `python -m pytest apps/game_api/tests -q` -> 145 passed
