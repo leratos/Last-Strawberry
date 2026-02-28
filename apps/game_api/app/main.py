@@ -520,8 +520,6 @@ def apply_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -> 
         "applied_quest_ids": result["applied_quest_ids"],
         "world_character_id": result["world_character_id"],
     }
-
-
 @app.get("/v1/worlds/{world_id}/context", response_model=GameContextResponse)
 def get_world_context(
     world_id: str,

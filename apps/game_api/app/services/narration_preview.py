@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from apps.game_api.app.services.story_beats import build_story_beats_from_resolution
 from ls_shared_schemas.turns import NarrativeEnvelope, TurnResolution
 
 
 def build_narrative_from_resolution(resolution: TurnResolution) -> NarrativeEnvelope:
+    story_beats = build_story_beats_from_resolution(resolution)
     primary_events = [
         event.message for event in resolution.system_events if not event.code.startswith("npc_reacts_")
     ]
@@ -41,6 +43,7 @@ def build_narrative_from_resolution(resolution: TurnResolution) -> NarrativeEnve
         world_id=resolution.world_id,
         world_character_id=resolution.world_character_id,
         narrative=narrative,
+        story_beats=story_beats,
         actionable_options=[
             "Umsehen und Hinweise sammeln",
             "Mit einer Person sprechen",

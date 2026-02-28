@@ -324,6 +324,39 @@ class TestLlmRuntime(unittest.TestCase):
         )
         narrative = runtime.narrate(resolution=resolution, context_before=None)
         self.assertIn("Taverne", narrative.narrative)
+        self.assertGreaterEqual(len(narrative.story_beats), 1)
+
+    def test_openrouter_narration_accepts_story_beats_payload(self):
+        runtime = LlmRuntime(self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=False, openrouter_api_key="x"))
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "narrative": "Du trittst vorsichtig naeher und beobachtest Kaels Reaktion.",
+                "actionable_options": ["Weiterfragen", "Umsehen"],
+                "story_beats": [
+                    "scene: Ort=Marktplatz; Zone=Brunnenplatz",
+                    "action: talk_success | Gespraech mit Kael gefuehrt.",
+                ],
+            }
+        )
+        runtime._openrouter_client = fake_client
+        resolution = TurnResolution(
+            world_id="w1",
+            world_character_id="wc1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc1",
+                name="Ari",
+                location_name="Marktplatz",
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=9, max_stamina=10, focus=3, max_focus=3),
+            ),
+            resulting_inventory=[],
+            system_events=[TurnSystemEvent(code="talk_success", message="Gespraech mit Kael gefuehrt.")],
+        )
+        narrative = runtime.narrate(resolution=resolution, context_before=None)
+        self.assertIn("Kaels Reaktion", narrative.narrative)
+        self.assertGreaterEqual(len(narrative.story_beats), 2)
+        self.assertTrue(narrative.story_beats[0].startswith("scene:"))
 
     def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
         runtime = LlmRuntime(
