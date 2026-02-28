@@ -173,6 +173,159 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn(f"quest_id_already_exists:{existing_quest_id}", payload["validation"]["errors"])
 
+    def test_g1700_dry_run_diff_includes_flags_objectives_and_events(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1700-diff",
+                "world_description": "Eine Stadt mit Ritualspuren und politischer Spannung.",
+                "character_description": "Ein Ermittler, der Folgen von Hinweisen dokumentiert.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        dry_run = self.client.post(
+            "/v1/quest-specs/preview/dry-run",
+            json={
+                "world_id": world_id,
+                "specs": [
+                    {
+                        "quest_id": "quest-g1700-diff",
+                        "title": "Diff Quest",
+                        "description": "Testet Diff-Ausgabe.",
+                        "initial_stage": "investigate",
+                        "objectives": [
+                            {"objective_id": "talk_kael", "title": "Mit Kael sprechen", "hint": "Rede mit Kael."}
+                        ],
+                        "objective_triggers": [
+                            {
+                                "trigger_id": "trg-kael-talk",
+                                "objective_id": "talk_kael",
+                                "predicates": [
+                                    {"predicate_id": "pred-talk", "kind": "action_seen", "action_types": ["TALK"]}
+                                ],
+                                "effects": [
+                                    {
+                                        "effect_id": "eff-flag",
+                                        "kind": "set_story_flag",
+                                        "params": {"flag_name": "kael_interviewed", "value": True},
+                                    },
+                                    {
+                                        "effect_id": "eff-event",
+                                        "kind": "emit_system_event",
+                                        "params": {"code": "quest_stage_shifted", "message": "Quest stage changed."},
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(dry_run.status_code, 200)
+        payload = dry_run.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("diff", payload)
+        self.assertIn("quest-g1700-diff", payload["diff"]["quests_added"])
+        self.assertTrue(any(entry["flag_name"] == "kael_interviewed" for entry in payload["diff"]["flags_changed"]))
+        self.assertTrue(any(entry["objective_id"] == "talk_kael" for entry in payload["diff"]["objectives_changed"]))
+        self.assertTrue(any(entry["code"] == "quest_stage_shifted" for entry in payload["diff"]["events_expected"]))
+
+    def test_g1700_apply_adds_quest_and_writes_success_audit_log(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1700-apply",
+                "world_description": "Eine Stadt mit geheimer Magie und neuen Questreihen.",
+                "character_description": "Ein Ermittler, der neue Auftraege annimmt.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        apply_response = self.client.post(
+            "/v1/quest-specs/apply",
+            json={
+                "world_id": world_id,
+                "requested_by": "test-suite",
+                "source": "preview-routes",
+                "specs": [
+                    {
+                        "quest_id": "quest-g1700-apply",
+                        "title": "Apply Quest",
+                        "description": "Wird in die Welt eingefuegt.",
+                        "initial_stage": "start",
+                        "objectives": [
+                            {"objective_id": "obj-start", "title": "Start", "hint": "Beginne die Quest."}
+                        ],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(apply_response.status_code, 200)
+        apply_payload = apply_response.json()
+        self.assertTrue(apply_payload["ok"])
+        self.assertIn("audit_id", apply_payload)
+        self.assertIn("quest-g1700-apply", apply_payload["applied_quest_ids"])
+
+        context_response = self.client.get(f"/v1/worlds/{world_id}/context")
+        self.assertEqual(context_response.status_code, 200)
+        quest_ids = [quest["quest_id"] for quest in context_response.json()["quests"]]
+        self.assertIn("quest-g1700-apply", quest_ids)
+
+        repository = app.state.world_repository
+        with repository._connect() as conn:
+            row = conn.execute(
+                "SELECT status, action FROM world_authoring_audit_log WHERE audit_id = ?",
+                (apply_payload["audit_id"],),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["status"], "success")
+        self.assertEqual(row["action"], "quest_specs_apply")
+
+    def test_g1700_apply_conflict_returns_409_and_failed_audit_log(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g1700-conflict",
+                "world_description": "Eine Stadt mit wiederkehrenden Auftraegen.",
+                "character_description": "Ein Charakter, der dieselbe Quest nicht doppelt haben soll.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        spec_payload = {
+            "quest_id": "quest-g1700-conflict",
+            "title": "Conflict Quest",
+            "description": "Soll Konflikt beim zweiten Apply ausloesen.",
+            "initial_stage": "start",
+            "objectives": [{"objective_id": "obj-1", "title": "Obj", "hint": "Hint"}],
+        }
+        first_apply = self.client.post("/v1/quest-specs/apply", json={"world_id": world_id, "specs": [spec_payload]})
+        self.assertEqual(first_apply.status_code, 200)
+
+        second_apply = self.client.post("/v1/quest-specs/apply", json={"world_id": world_id, "specs": [spec_payload]})
+        self.assertEqual(second_apply.status_code, 409)
+        detail = second_apply.json()["detail"]
+        self.assertEqual(detail["code"], "quest_id_conflict")
+
+        repository = app.state.world_repository
+        with repository._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT status, error_code
+                FROM world_authoring_audit_log
+                WHERE world_id = ? AND action = 'quest_specs_apply'
+                ORDER BY created_at DESC
+                LIMIT 5
+                """,
+                (world_id,),
+            ).fetchall()
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertTrue(any(row["status"] == "failed" and row["error_code"] == "quest_id_conflict" for row in rows))
+
     def test_world_bootstrap_preview(self):
         response = self.client.post(
             "/v1/worlds/bootstrap/preview",

@@ -512,3 +512,32 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `pytest apps/game_api/tests/test_preview_routes.py -q` (45 passed)
   - `pytest apps/game_api/tests -q` mit gesetztem `PYTHONPATH` auf Repo + `packages/shared_schemas` + `packages/rules_engine` (131 passed)
 - Tech Debt (bewusst): Domain-Validierungsfehler kommen weiterhin als Stringcodes; fuer Editor-UX waere spaeter ein strukturierter Fehlerkatalog (`code`, `path`, `hint`) auf derselben Ebene wie die Schemafehler sinnvoll.
+- G1700-G1799 Draft (gestartet): (1) transaktionaler Apply-Endpoint fuer QuestSpecs mit Audit-Log und klaren Fehlercodes, (2) Dry-Run um strukturierte Diff-Zusammenfassung erweitern (quests_added/flags_changed/objectives_changed/events_expected), (3) Authoring-UI-MVP im Web-Client mit Validate/Dry-Run/Apply.
+- G1700-G1799 abgeschlossen: Apply-Flow + Dry-Run-Diff + Authoring-UI-MVP umgesetzt.
+- Backend/API:
+  - neuer Endpoint `POST /v1/quest-specs/apply` (strict schema parse, Domain-Validierung, transaktionales Apply, klare Fehlercodes)
+  - `POST /v1/quest-specs/preview/dry-run` liefert jetzt zusaetzlich `diff`:
+    - `quests_added`
+    - `flags_changed`
+    - `objectives_changed`
+    - `events_expected`
+- Persistenz:
+  - Migration `009_g1700_world_authoring_audit_log.sql` mit Tabelle `world_authoring_audit_log`
+  - `WorldRepository.apply_authored_quest_specs(...)`:
+    - atomare Quest-Uebernahme in `world_quest_states`
+    - Konfliktbehandlung (`quest_id_conflict`)
+    - Audit-Eintrag fuer Erfolg/Fehler
+  - `WorldRepository.record_authoring_audit_log(...)` fuer valide Fehlerpfade vor Apply-Transaktion
+- Strict-Authoring-Modelle:
+  - `QuestSpecsApplyRequestPayload` + `parse_apply_request_payload(...)` in `quest_authoring_api.py`
+- Web-Client (MVP):
+  - neues Quest-Authoring-Panel im Spielscreen
+  - JSON-Eingabe fuer QuestSpecs
+  - Buttons: `Validate`, `Dry-Run`, `Apply`
+  - Ergebnisfenster fuer Validate-/Dry-Run-/Apply-Responses
+- Tests/Build:
+  - `pytest apps/game_api/tests/test_preview_routes.py -q` (48 passed)
+  - `pytest apps/game_api/tests -q` mit gesetztem `PYTHONPATH` (134 passed)
+  - `npm.cmd --prefix apps/web_client run build` (success)
+- Hinweis/Tradeoff:
+  - `apply` nutzt absichtlich 409-Konflikt aus Persistenzpfad fuer bereits vorhandene Quest-IDs (nicht 400 Domain-Fehler), damit Konflikte API-seitig klar als State-Konflikt erkennbar sind.

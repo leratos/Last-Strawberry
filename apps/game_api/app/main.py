@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
 from apps.game_api.app.config import settings
-from apps.game_api.app.persistence import WorldRepository
+from apps.game_api.app.persistence import QuestSpecApplyRepositoryError, WorldRepository
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview
 from apps.game_api.app.services.context_assembly import assemble_game_context
 from apps.game_api.app.services.llm_runtime import build_llm_runtime
@@ -20,11 +20,13 @@ from apps.game_api.app.services.quest_authoring import (
 )
 from apps.game_api.app.services.quest_authoring_api import (
     format_authoring_schema_errors,
+    parse_apply_request_payload,
     parse_dry_run_request_payload,
     parse_validate_request_payload,
     quest_spec_payload_to_spec,
 )
 from apps.game_api.app.services.quest_specs import (
+    QuestSpec,
     build_effect_schema_document,
     build_predicate_schema_document,
     compile_quest_spec_to_world_state,
@@ -197,6 +199,144 @@ def _build_bootstrap_result_with_llm(
     return llm_runtime.enrich_world_bootstrap_preview_with_trace(request=request, preview=preview)
 
 
+def _target_quest_id_for_effect(*, effect_params: dict[str, object], default_quest_id: str) -> str:
+    target_quest = str(effect_params.get("quest_id") or "").strip()
+    return target_quest or default_quest_id
+
+
+def _build_dry_run_diff(*, specs: list[QuestSpec], existing_quest_ids: set[str]) -> dict[str, object]:
+    quests_added = sorted(spec.quest_id for spec in specs if spec.quest_id not in existing_quest_ids)
+    flags_index: dict[tuple[str, str, str], dict[str, str | None]] = {}
+    objectives_index: dict[tuple[str, str, str], dict[str, str]] = {}
+    events_index: dict[tuple[str, str, str], dict[str, str | None]] = {}
+
+    def add_flag(*, quest_id: str, flag_name: str, mode: str, source: str) -> None:
+        key = (quest_id, flag_name, mode)
+        if key in flags_index:
+            return
+        flags_index[key] = {
+            "quest_id": quest_id,
+            "flag_name": flag_name,
+            "mode": mode,
+            "source": source,
+        }
+
+    def add_objective(*, quest_id: str, objective_id: str, change: str, source: str) -> None:
+        key = (quest_id, objective_id, change)
+        if key in objectives_index:
+            return
+        objectives_index[key] = {
+            "quest_id": quest_id,
+            "objective_id": objective_id,
+            "change": change,
+            "source": source,
+        }
+
+    def add_event(*, code: str, severity: str | None, source: str) -> None:
+        safe_severity = str(severity or "").strip() or "info"
+        key = (code, safe_severity, source)
+        if key in events_index:
+            return
+        events_index[key] = {
+            "code": code,
+            "severity": safe_severity,
+            "source": source,
+        }
+
+    for spec in specs:
+        for trigger in spec.objective_triggers:
+            add_objective(
+                quest_id=spec.quest_id,
+                objective_id=trigger.objective_id,
+                change=f"set_status:{trigger.set_status}",
+                source=f"trigger:{trigger.trigger_id}",
+            )
+            if trigger.set_hint:
+                add_objective(
+                    quest_id=spec.quest_id,
+                    objective_id=trigger.objective_id,
+                    change="set_hint",
+                    source=f"trigger:{trigger.trigger_id}",
+                )
+            for effect in trigger.effects:
+                effect_params = dict(effect.params or {})
+                target_quest_id = _target_quest_id_for_effect(effect_params=effect_params, default_quest_id=spec.quest_id)
+                source = f"trigger_effect:{trigger.trigger_id}:{effect.effect_id}"
+                if effect.kind == "set_story_flag":
+                    flag_name = str(effect_params.get("flag_name") or "").strip()
+                    if flag_name:
+                        add_flag(quest_id=target_quest_id, flag_name=flag_name, mode="set", source=source)
+                elif effect.kind == "increment_story_flag":
+                    flag_name = str(effect_params.get("flag_name") or "").strip()
+                    if flag_name:
+                        add_flag(quest_id=target_quest_id, flag_name=flag_name, mode="increment", source=source)
+                elif effect.kind in {"set_objective_hint", "set_objective_status"}:
+                    objective_id = str(effect_params.get("objective_id") or "").strip()
+                    if objective_id:
+                        change = "set_hint" if effect.kind == "set_objective_hint" else f"set_status:{effect_params.get('status')}"
+                        add_objective(
+                            quest_id=target_quest_id,
+                            objective_id=objective_id,
+                            change=change,
+                            source=source,
+                        )
+                elif effect.kind == "emit_system_event":
+                    code = str(effect_params.get("code") or "").strip()
+                    if code:
+                        add_event(code=code, severity=str(effect_params.get("severity") or "info"), source=source)
+
+        for transition in spec.transitions:
+            for objective_id, _hint in transition.objective_hint_updates:
+                add_objective(
+                    quest_id=spec.quest_id,
+                    objective_id=objective_id,
+                    change="set_hint",
+                    source=f"transition:{transition.transition_id}",
+                )
+            for effect in transition.effects:
+                effect_params = dict(effect.params or {})
+                target_quest_id = _target_quest_id_for_effect(effect_params=effect_params, default_quest_id=spec.quest_id)
+                source = f"transition_effect:{transition.transition_id}:{effect.effect_id}"
+                if effect.kind == "set_story_flag":
+                    flag_name = str(effect_params.get("flag_name") or "").strip()
+                    if flag_name:
+                        add_flag(quest_id=target_quest_id, flag_name=flag_name, mode="set", source=source)
+                elif effect.kind == "increment_story_flag":
+                    flag_name = str(effect_params.get("flag_name") or "").strip()
+                    if flag_name:
+                        add_flag(quest_id=target_quest_id, flag_name=flag_name, mode="increment", source=source)
+                elif effect.kind in {"set_objective_hint", "set_objective_status"}:
+                    objective_id = str(effect_params.get("objective_id") or "").strip()
+                    if objective_id:
+                        change = "set_hint" if effect.kind == "set_objective_hint" else f"set_status:{effect_params.get('status')}"
+                        add_objective(
+                            quest_id=target_quest_id,
+                            objective_id=objective_id,
+                            change=change,
+                            source=source,
+                        )
+                elif effect.kind == "emit_system_event":
+                    code = str(effect_params.get("code") or "").strip()
+                    if code:
+                        add_event(code=code, severity=str(effect_params.get("severity") or "info"), source=source)
+
+    return {
+        "quests_added": quests_added,
+        "flags_changed": [
+            flags_index[key]
+            for key in sorted(flags_index.keys(), key=lambda item: (item[0], item[1], item[2]))
+        ],
+        "objectives_changed": [
+            objectives_index[key]
+            for key in sorted(objectives_index.keys(), key=lambda item: (item[0], item[1], item[2]))
+        ],
+        "events_expected": [
+            events_index[key]
+            for key in sorted(events_index.keys(), key=lambda item: (item[0], item[1], item[2]))
+        ],
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     llm_status = llm_runtime.status()
@@ -282,6 +422,7 @@ def dry_run_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -
 
     validation = validate_quest_specs_for_activation(specs, existing_quest_ids=existing_quest_ids)
     compiled_preview = [compile_quest_spec_to_world_state(spec).model_dump(mode="json") for spec in specs]
+    diff_summary = _build_dry_run_diff(specs=specs, existing_quest_ids=existing_quest_ids)
     return {
         "ok": validation.ok,
         "world_id": payload.world_id,
@@ -302,6 +443,82 @@ def dry_run_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -
             "quest_count": len(compiled_preview),
             "quests": compiled_preview,
         },
+        "diff": diff_summary,
+    }
+
+
+@app.post("/v1/quest-specs/apply")
+def apply_quest_specs(raw_payload: dict[str, Any], fastapi_request: Request) -> dict[str, object]:
+    try:
+        payload = parse_apply_request_payload(raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "authoring_schema_validation_failed",
+                "errors": format_authoring_schema_errors(exc),
+            },
+        ) from exc
+
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(payload.world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail={"code": "world_not_found", "message": "World session not found."})
+
+    specs = [quest_spec_payload_to_spec(spec) for spec in payload.specs]
+    existing_quest_ids = set(payload.existing_quest_ids)
+
+    validation = validate_quest_specs_for_activation(specs, existing_quest_ids=existing_quest_ids)
+    if not validation.ok:
+        audit_id = repository.record_authoring_audit_log(
+            world_id=payload.world_id,
+            world_character_id=session.character_state.world_character_id,
+            action="quest_specs_apply",
+            status="failed",
+            request_payload={
+                "world_id": payload.world_id,
+                "spec_count": len(specs),
+                "quest_ids": [spec.quest_id for spec in specs],
+            },
+            result_payload={"ok": False, "errors": list(validation.errors)},
+            error_code="authoring_domain_validation_failed",
+            requested_by=payload.requested_by,
+            source=payload.source,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "authoring_domain_validation_failed",
+                "audit_id": audit_id,
+                "errors": list(validation.errors),
+            },
+        )
+
+    try:
+        result = repository.apply_authored_quest_specs(
+            world_id=payload.world_id,
+            specs=specs,
+            requested_by=payload.requested_by,
+            source=payload.source,
+        )
+    except QuestSpecApplyRepositoryError as exc:
+        status_code = 500
+        if exc.code == "world_not_found":
+            status_code = 404
+        elif exc.code == "quest_id_conflict":
+            status_code = 409
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+    return {
+        "ok": True,
+        "world_id": payload.world_id,
+        "audit_id": result["audit_id"],
+        "applied_count": result["applied_count"],
+        "applied_quest_ids": result["applied_quest_ids"],
+        "world_character_id": result["world_character_id"],
     }
 
 

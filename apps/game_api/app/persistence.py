@@ -18,6 +18,7 @@ from apps.game_api.app.services.quest_authoring import (
 from apps.game_api.app.services.scene_point_catalog import build_scene_point_targets_for_location
 from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
 from apps.game_api.app.services.world_pack_authoring import initial_story_flags_for_world_seed
+from apps.game_api.app.services.quest_specs import QuestSpec, compile_quest_spec_to_world_state
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
 from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCProfile, NPCRelationship
@@ -36,6 +37,12 @@ from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, W
 
 def _utc_iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+class QuestSpecApplyRepositoryError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 class WorldRepository:
@@ -432,6 +439,174 @@ class WorldRepository:
                 world_id=world_id,
                 world_character_id=world_character_id,
             )
+
+    def record_authoring_audit_log(
+        self,
+        *,
+        world_id: str,
+        world_character_id: str | None,
+        action: str,
+        status: str,
+        request_payload: dict[str, object],
+        result_payload: dict[str, object] | None = None,
+        error_code: str | None = None,
+        requested_by: str | None = None,
+        source: str | None = None,
+    ) -> str:
+        audit_id = f"audit-{uuid4().hex[:12]}"
+        timestamp = _utc_iso_now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO world_authoring_audit_log (
+                    audit_id, world_id, world_character_id, action, status,
+                    requested_by, source, request_json, result_json, error_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    audit_id,
+                    world_id,
+                    world_character_id,
+                    action,
+                    status,
+                    requested_by,
+                    source,
+                    json.dumps(request_payload, ensure_ascii=True, default=str),
+                    json.dumps(result_payload, ensure_ascii=True, default=str) if result_payload is not None else None,
+                    error_code,
+                    timestamp,
+                ),
+            )
+            conn.commit()
+        return audit_id
+
+    def apply_authored_quest_specs(
+        self,
+        *,
+        world_id: str,
+        specs: list[QuestSpec],
+        requested_by: str | None = None,
+        source: str | None = None,
+    ) -> dict[str, object]:
+        request_summary = {
+            "world_id": world_id,
+            "spec_count": len(specs),
+            "quest_ids": [spec.quest_id for spec in specs],
+        }
+        created_at = _utc_iso_now()
+        world_character_id: str | None = None
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN")
+                world_row = conn.execute("SELECT world_id FROM worlds WHERE world_id = ?", (world_id,)).fetchone()
+                if world_row is None:
+                    raise QuestSpecApplyRepositoryError("world_not_found", "World session not found.")
+
+                character_row = self._get_primary_character_row(conn, world_id)
+                if character_row is None:
+                    raise QuestSpecApplyRepositoryError("world_character_not_found", "World character not found.")
+                world_character_id = str(character_row["world_character_id"])
+
+                existing_quests = self._list_world_quest_states_conn(
+                    conn=conn,
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                )
+                existing_ids = {quest.quest_id for quest in existing_quests}
+                incoming_ids = [spec.quest_id for spec in specs]
+                conflicts = sorted(existing_ids.intersection(incoming_ids))
+                if conflicts:
+                    raise QuestSpecApplyRepositoryError(
+                        "quest_id_conflict",
+                        f"Quest id already exists in world: {', '.join(conflicts)}",
+                    )
+
+                compile_now = datetime.fromisoformat(created_at)
+                compiled_quests = [compile_quest_spec_to_world_state(spec, now=compile_now) for spec in specs]
+                for quest in compiled_quests:
+                    conn.execute(
+                        """
+                        INSERT INTO world_quest_states (
+                            world_id, world_character_id, quest_id, quest_state_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            world_id,
+                            world_character_id,
+                            quest.quest_id,
+                            quest.model_dump_json(),
+                            created_at,
+                            created_at,
+                        ),
+                    )
+
+                audit_id = f"audit-{uuid4().hex[:12]}"
+                result_payload = {
+                    "ok": True,
+                    "world_id": world_id,
+                    "world_character_id": world_character_id,
+                    "applied_quest_ids": [quest.quest_id for quest in compiled_quests],
+                    "applied_count": len(compiled_quests),
+                }
+                conn.execute(
+                    """
+                    INSERT INTO world_authoring_audit_log (
+                        audit_id, world_id, world_character_id, action, status,
+                        requested_by, source, request_json, result_json, error_code, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        audit_id,
+                        world_id,
+                        world_character_id,
+                        "quest_specs_apply",
+                        "success",
+                        requested_by,
+                        source,
+                        json.dumps(request_summary, ensure_ascii=True, default=str),
+                        json.dumps(result_payload, ensure_ascii=True, default=str),
+                        None,
+                        created_at,
+                    ),
+                )
+                conn.commit()
+                return {"audit_id": audit_id, **result_payload}
+        except QuestSpecApplyRepositoryError as exc:
+            try:
+                self.record_authoring_audit_log(
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                    action="quest_specs_apply",
+                    status="failed",
+                    request_payload=request_summary,
+                    result_payload={"ok": False, "message": str(exc)},
+                    error_code=exc.code,
+                    requested_by=requested_by,
+                    source=source,
+                )
+            except Exception:
+                pass
+            raise
+        except Exception as exc:
+            unknown_error = QuestSpecApplyRepositoryError(
+                "apply_transaction_failed",
+                "Quest spec apply transaction failed.",
+            )
+            try:
+                self.record_authoring_audit_log(
+                    world_id=world_id,
+                    world_character_id=world_character_id,
+                    action="quest_specs_apply",
+                    status="failed",
+                    request_payload=request_summary,
+                    result_payload={"ok": False, "message": str(exc)},
+                    error_code=unknown_error.code,
+                    requested_by=requested_by,
+                    source=source,
+                )
+            except Exception:
+                pass
+            raise unknown_error from exc
 
     def get_world_context(self, world_id: str) -> tuple[WorldSessionResponse | None, CharacterState | None, list[InventoryItemInstance]]:
         session = self.get_world_session(world_id)
