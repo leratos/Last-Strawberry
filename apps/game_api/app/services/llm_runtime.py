@@ -555,6 +555,8 @@ class LlmRuntime:
             "Write in flowing scene prose, not as a report and not as bullet-style enumeration. "
             "Avoid rigid recap patterns like 'Anschliessend ... Danach ...'. "
             "Blend action outcomes into one coherent scene paragraph with natural transitions. "
+            "Avoid event-log phrasing like 'Du hast X getan, dann Y getan'. "
+            "Only mention status values when they matter for the immediate next decision. "
             "Do not invent state changes that are not present in the resolution."
         )
         context_hint = ""

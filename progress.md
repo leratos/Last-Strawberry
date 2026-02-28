@@ -648,3 +648,25 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests -q` -> 142 passed
   - `npm.cmd --prefix apps/web_client run build` -> OK
 - Hinweis (bewusst offen): Narration wirkt nun weniger reporthaft, bleibt aber weiterhin regelzustandsnah/kompakt. Tiefere Stil- und Dramaturgieoptimierung bleibt im bestehenden Narration-Quality-Debt-Track.
+- G2100-G2199 Draft (gestartet): Narrations-Quality-Pass 2 fuer Preview/Hybrid. Fokus: weniger statische Statussaetze, bessere Ereignis-Verknuepfung (Aktion -> Reaktion -> Konsequenz), expliziter Umgang mit Partial-Parse-Hinweisen und striktere OpenRouter-Stil-Guardrails gegen Event-Log-Output.
+- G2100-G2199 abgeschlossen: Narrations-Quality-Pass 2 fuer Preview/Hybrid umgesetzt.
+- Preview-Narration (`apps/game_api/app/services/narration_preview.py`):
+  - klarere Szenen-Oeffnung nach Ereigniskontext (`move/talk/discovery/attack`), statt statischem Default-Satz.
+  - bessere Verknuepfung von Aktion + Konsequenz (`Dabei ...`) und NPC-Reaktion (`Daraufhin ...`) fuer weniger reporthafte Abfolge.
+  - Quest-Fortschritt wird narrativ eingebettet (`Fuer deinen Auftrag zaehlt dabei ...`) statt nur als Technik-Event.
+  - Partial-Parse-Hinweis (`partial_multiaction_parse`/`partial_multiclause_parse`) wird transparent erzaehlt, ohne unerledigte Aktionen als erledigt darzustellen.
+  - Statussatz wird nur noch bei relevanter Zustandsaenderung oder kritischem HP-Zustand ausgegeben (reduziert Wiederholungen).
+- OpenRouter-Narrations-Guardrails (`apps/game_api/app/services/llm_runtime.py`) verstaerkt:
+  - explizites Verbot von Event-Log-Formulierungen (`Du hast X ... dann Y ...`).
+  - Statusnennung nur bei Entscheidungsrelevanz.
+- Tests aktualisiert/erweitert:
+  - `apps/game_api/tests/test_narration_preview.py`:
+    - Reaktionsfluss-Assertion
+    - Inventory/Discovery ohne statische HP-Wiederholung
+    - neuer Test fuer Partial-Parse + Ressourcen-Deltas
+  - `apps/game_api/tests/test_llm_runtime.py`:
+    - Prompt-Guardrail-Assertion fuer statusrelevante Nennung
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_narration_preview.py -q` -> 3 passed
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 14 passed
+  - `python -m pytest apps/game_api/tests -q` -> 143 passed

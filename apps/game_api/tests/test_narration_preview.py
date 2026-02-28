@@ -36,7 +36,7 @@ class TestNarrationPreview(unittest.TestCase):
 
         self.assertIn("Marktplatz", envelope.narrative)
         self.assertIn("Du naeherst dich Mira an.", envelope.narrative)
-        self.assertIn("Die Reaktion darauf: Mira reagiert freundlich", envelope.narrative)
+        self.assertIn("daraufhin mira reagiert freundlich", envelope.narrative.lower())
         self.assertIn("Was tust du als naechstes?", envelope.narrative)
         self.assertGreaterEqual(len(envelope.story_beats), 3)
         self.assertTrue(any(beat.startswith("scene:") for beat in envelope.story_beats))
@@ -69,10 +69,35 @@ class TestNarrationPreview(unittest.TestCase):
 
         envelope = build_narrative_from_resolution(resolution)
 
-        self.assertIn("Du sicherst Verbandsset x1.", envelope.narrative)
-        self.assertIn("Du wirkst weiterhin handlungsfaehig (HP: 10).", envelope.narrative)
-        self.assertTrue(envelope.narrative.startswith("Die Szene in Marktplatz entwickelt sich weiter."))
+        self.assertIn("Zwischen den Spuren sicherst du Verbandsset x1.", envelope.narrative)
+        self.assertTrue(envelope.narrative.startswith("In Marktplatz gehst du den naechsten Spuren aufmerksam nach."))
+        self.assertNotIn("HP: 10", envelope.narrative)
         self.assertTrue(any("container_loot_found" in beat for beat in envelope.story_beats))
+
+    def test_partial_parse_hint_and_changed_resources_are_narrated(self):
+        resolution = TurnResolution(
+            world_id="world-1",
+            world_character_id="wc-1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc-1",
+                name="Ari",
+                location_name="Marktplatz",
+            ),
+            state_delta=StateDelta(hp_delta=-2, stamina_delta=-1),
+            system_events=[
+                TurnSystemEvent(code="attack_resolved", message="Du triffst den Gegner mit einem schnellen Hieb."),
+                TurnSystemEvent(
+                    code="partial_multiclause_parse",
+                    message="Mehrteilige Eingabe wurde nur teilweise verarbeitet.",
+                ),
+            ],
+        )
+
+        envelope = build_narrative_from_resolution(resolution)
+
+        self.assertIn("Nicht jede Teilaktion wurde bereits vollstaendig aufgeloest", envelope.narrative)
+        self.assertIn("HP -2", envelope.narrative)
+        self.assertIn("Ausdauer -1", envelope.narrative)
 
 
 if __name__ == "__main__":
