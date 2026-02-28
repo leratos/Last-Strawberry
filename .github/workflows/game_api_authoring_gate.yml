@@ -1,0 +1,51 @@
+name: Game API Authoring Gate
+
+on:
+  pull_request:
+    paths:
+      - "world_packs/**"
+      - "apps/game_api/app/services/quest_authoring_api.py"
+      - "apps/game_api/app/services/quest_specs.py"
+      - "apps/game_api/app/services/world_pack_files.py"
+      - "apps/game_api/scripts/validate_world_packs.py"
+      - "apps/game_api/scripts/export_world_pack_quests.py"
+      - "apps/game_api/scripts/apply_world_pack.py"
+      - "apps/game_api/tests/test_world_pack_files.py"
+      - "apps/game_api/tests/test_preview_routes.py"
+      - ".github/workflows/game_api_authoring_gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authoring_gate:
+    name: authoring_gate
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/packages/shared_schemas:${{ github.workspace }}/packages/rules_engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend_v2/requirements.txt"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend_v2/requirements.txt
+
+      - name: Validate world packs
+        run: |
+          python apps/game_api/scripts/validate_world_packs.py
+
+      - name: Run authoring tests
+        run: |
+          python -m pytest apps/game_api/tests/test_world_pack_files.py -q
+          python -m pytest apps/game_api/tests/test_preview_routes.py -q

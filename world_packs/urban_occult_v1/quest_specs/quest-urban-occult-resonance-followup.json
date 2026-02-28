@@ -1,0 +1,232 @@
+{
+  "quest_id": "quest-urban-occult-resonance-followup",
+  "title": "Resonanzspur am Rand der Gasse",
+  "description": "Verfolge die zweite Spur des fehlgeschlagenen Rituals: untersuche die verkohlten Runenspuren, oeffne den versiegelten Instrumentenkoffer und gleiche die Hinweise mit Kael ab.",
+  "initial_stage": "trace_residue",
+  "tags": [
+    "urban_occult",
+    "followup",
+    "investigation"
+  ],
+  "objectives": [
+    {
+      "objective_id": "inspect_rune_traces",
+      "title": "Runenspuren untersuchen",
+      "hint": "Am Brunnenplatz liegen verkohlte Runenspuren, die zur Stoerung des Rituals passen koennten."
+    },
+    {
+      "objective_id": "open_sealed_case",
+      "title": "Versiegelten Instrumentenkoffer oeffnen",
+      "hint": "In der Randgasse liegt ein versiegelter Koffer, moeglicherweise mit Ritualwerkzeug."
+    },
+    {
+      "objective_id": "crosscheck_with_kael",
+      "title": "Mit Kael die zweite Spur abgleichen",
+      "hint": "Kael kann Runenspuren und Fundstuecke aus dem Koffer einordnen."
+    }
+  ],
+  "objective_triggers": [
+    {
+      "trigger_id": "followup_objective_inspect_rune_traces_by_ref",
+      "objective_id": "inspect_rune_traces",
+      "predicates": [
+        {
+          "predicate_id": "inspect_rune_ref",
+          "kind": "action_seen",
+          "action_types": [
+            "INSPECT"
+          ],
+          "target_ids": [
+            "poi-marktplatz-runenspuren"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Die Runenspuren wurden gesichert; ihr Verlauf laesst sich nun mit Werkzeug- oder Kofferspuren vergleichen.",
+      "effects": [],
+      "priority": 10,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "followup_objective_inspect_rune_traces_by_name",
+      "objective_id": "inspect_rune_traces",
+      "predicates": [
+        {
+          "predicate_id": "inspect_rune_name",
+          "kind": "action_seen",
+          "action_types": [
+            "INSPECT"
+          ],
+          "target_name_contains": [
+            "runenspuren"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Die Runenspuren wurden gesichert; ihr Verlauf laesst sich nun mit Werkzeug- oder Kofferspuren vergleichen.",
+      "effects": [],
+      "priority": 11,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "followup_objective_open_sealed_case_by_ref",
+      "objective_id": "open_sealed_case",
+      "predicates": [
+        {
+          "predicate_id": "open_case_ref",
+          "kind": "action_seen",
+          "action_types": [
+            "OPEN",
+            "SEARCH"
+          ],
+          "target_ids": [
+            "obj-marktplatz-siegelkoffer"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen.",
+      "effects": [],
+      "priority": 20,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    },
+    {
+      "trigger_id": "followup_objective_open_sealed_case_by_name",
+      "objective_id": "open_sealed_case",
+      "predicates": [
+        {
+          "predicate_id": "open_case_name",
+          "kind": "action_seen",
+          "action_types": [
+            "OPEN",
+            "SEARCH"
+          ],
+          "target_name_contains": [
+            "koffer"
+          ]
+        }
+      ],
+      "require_all_predicates": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "set_status": "completed",
+      "set_hint": "Der Koffer wurde geoeffnet/gesichtet; der Inhalt kann Kael mit der Ritualspur abgleichen.",
+      "effects": [],
+      "priority": 21,
+      "only_if_objective_status_in": [
+        "pending",
+        "active"
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "transition_id": "followup_complete",
+      "to_stage": "completed",
+      "to_status": "completed",
+      "requires_all_objectives_completed": true,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [],
+      "effects": [
+        {
+          "effect_id": "followup_complete_flag",
+          "kind": "set_story_flag",
+          "params": {
+            "flag_name": "quest_urban_occult_resonance_followup_completed",
+            "value": true
+          },
+          "priority": 5
+        },
+        {
+          "effect_id": "followup_complete_event",
+          "kind": "emit_system_event",
+          "params": {
+            "code": "quest_stage_shifted",
+            "message": "Der Resonanzspur-Abgleich ist abgeschlossen.",
+            "severity": "info"
+          },
+          "priority": 10
+        }
+      ],
+      "priority": 10
+    },
+    {
+      "transition_id": "followup_crosscheck_stage",
+      "to_stage": "crosscheck_with_kael",
+      "to_status": "active",
+      "requires_all_objectives_completed": false,
+      "requires_objectives_completed": [
+        "inspect_rune_traces",
+        "open_sealed_case"
+      ],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [
+        {
+          "objective_id": "crosscheck_with_kael",
+          "hint": "Sprich erneut mit Kael und gleiche Runenspuren sowie Kofferinhalt ab."
+        }
+      ],
+      "effects": [
+        {
+          "effect_id": "followup_crosscheck_objective_active",
+          "kind": "set_objective_status",
+          "params": {
+            "objective_id": "crosscheck_with_kael",
+            "status": "active"
+          },
+          "priority": 5
+        },
+        {
+          "effect_id": "followup_crosscheck_flag",
+          "kind": "set_story_flag",
+          "params": {
+            "flag_name": "quest_followup_crosscheck_ready",
+            "value": true
+          },
+          "priority": 8
+        },
+        {
+          "effect_id": "followup_crosscheck_stage_event",
+          "kind": "emit_system_event",
+          "params": {
+            "code": "quest_stage_shifted",
+            "message": "Kael kann jetzt den Spurabgleich mit den neuen Funden vornehmen.",
+            "severity": "info"
+          },
+          "priority": 10
+        }
+      ],
+      "priority": 20
+    },
+    {
+      "transition_id": "followup_default_trace_residue",
+      "to_stage": "trace_residue",
+      "to_status": "active",
+      "requires_all_objectives_completed": false,
+      "requires_objectives_completed": [],
+      "requires_story_flags_true": [],
+      "objective_hint_updates": [],
+      "effects": [],
+      "priority": 999
+    }
+  ]
+}
