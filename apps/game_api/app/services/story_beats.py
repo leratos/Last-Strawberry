@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ls_shared_schemas.turns import TurnResolution
+from ls_shared_schemas.turns import TurnResolution, TurnSystemEvent
 
 
 def build_story_beats_from_resolution(resolution: TurnResolution) -> list[str]:
@@ -15,8 +15,9 @@ def build_story_beats_from_resolution(resolution: TurnResolution) -> list[str]:
     ]
     if primary_events:
         beats.append(f"action: {primary_events[0].code} | {primary_events[0].message}")
-    if len(primary_events) > 1:
-        beats.append(f"consequence: {primary_events[1].code} | {primary_events[1].message}")
+    consequence_event = _pick_consequence_event(primary_events)
+    if consequence_event is not None:
+        beats.append(f"consequence: {consequence_event.code} | {consequence_event.message}")
 
     loot_event = next(
         (
@@ -51,3 +52,22 @@ def build_story_beats_from_resolution(resolution: TurnResolution) -> list[str]:
         f"focus={resources.focus}/{resources.max_focus}"
     )
     return beats[:8]
+
+
+def _pick_consequence_event(primary_events: list[TurnSystemEvent]) -> TurnSystemEvent | None:
+    if len(primary_events) <= 1:
+        return None
+    preferred_codes = (
+        "npc_dialogue_line",
+        "discovery_revealed_scene_points",
+        "discovery_revealed_scene_details",
+        "container_loot_found",
+        "quest_objective_updated",
+        "quest_completed",
+        "quest_unlocked",
+    )
+    for code in preferred_codes:
+        for event in primary_events[1:]:
+            if event.code == code:
+                return event
+    return primary_events[1]

@@ -250,7 +250,12 @@ class WorldRepository:
                     world_character_id=resolution.world_character_id,
                 )
 
-                newly_revealed_npcs, newly_revealed_scene_points = self._apply_npc_discovery_updates(
+                (
+                    newly_revealed_npcs,
+                    newly_revealed_scene_points,
+                    newly_revealed_npc_names,
+                    newly_revealed_scene_point_names,
+                ) = self._apply_npc_discovery_updates(
                     conn=conn,
                     world_id=world_id,
                     world_character_id=resolution.world_character_id,
@@ -259,18 +264,23 @@ class WorldRepository:
                     timestamp=created_at,
                 )
                 if newly_revealed_npcs > 0:
+                    npc_suffix = self._format_named_discovery_suffix(newly_revealed_npc_names)
                     resolution.system_events.append(
                         TurnSystemEvent(
                             code="discovery_revealed_npcs",
-                            message=f"Du erkennst {newly_revealed_npcs} neue Praesenz(en) in der Umgebung.",
+                            message=f"Du erkennst {newly_revealed_npcs} neue Praesenz(en) in der Umgebung{npc_suffix}.",
                             severity="info",
                         )
                     )
                 if newly_revealed_scene_points > 0:
+                    scene_suffix = self._format_named_discovery_suffix(newly_revealed_scene_point_names)
                     resolution.system_events.append(
                         TurnSystemEvent(
                             code="discovery_revealed_scene_points",
-                            message=f"Du entdeckst {newly_revealed_scene_points} neue Interaktionspunkt(e) in der Umgebung.",
+                            message=(
+                                f"Du entdeckst {newly_revealed_scene_points} neue Interaktionspunkt(e) in der Umgebung"
+                                f"{scene_suffix}."
+                            ),
                             severity="info",
                         )
                     )
@@ -1023,40 +1033,51 @@ class WorldRepository:
         intent: TurnIntent,
         resolution: TurnResolution,
         timestamp: str,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[str], list[str]]:
         revealed_npcs = 0
         revealed_scene_points = 0
+        revealed_npc_names: list[str] = []
+        revealed_scene_point_names: list[str] = []
         applied_types = {action.action_type for action in resolution.applied_actions}
         current_location = (resolution.resulting_character_state.location_name or "").strip()
         if ActionType.inspect in applied_types and current_location:
-            revealed_npcs += self._reveal_npcs_in_location_for_character(
+            npc_count, npc_names = self._reveal_npcs_in_location_for_character(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
                 location_name=current_location,
                 timestamp=timestamp,
             )
-            revealed_scene_points += self._reveal_scene_points_in_location_for_character(
+            revealed_npcs += npc_count
+            revealed_npc_names.extend(npc_names)
+            point_count, point_names = self._reveal_scene_points_in_location_for_character(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
                 location_name=current_location,
                 timestamp=timestamp,
             )
+            revealed_scene_points += point_count
+            revealed_scene_point_names.extend(point_names)
 
         for action in resolution.applied_actions:
             if action.action_type not in {ActionType.talk, ActionType.attack, ActionType.approach, ActionType.retreat}:
                 continue
             target_id = str(action.parameters.get("target_id") or action.target_ref or "").strip()
             if target_id.startswith("npc-"):
-                revealed_npcs += self._upsert_npc_discovery(
+                count = self._upsert_npc_discovery(
                     conn=conn,
                     world_id=world_id,
                     world_character_id=world_character_id,
                     npc_id=target_id,
                     timestamp=timestamp,
                 )
-        return revealed_npcs, revealed_scene_points
+                revealed_npcs += count
+                if count > 0:
+                    target_name = str(action.parameters.get("target_name") or "").strip()
+                    if target_name:
+                        revealed_npc_names.append(target_name)
+        return revealed_npcs, revealed_scene_points, revealed_npc_names, revealed_scene_point_names
 
     @staticmethod
     def _has_broad_inspect_action(*, resolution: TurnResolution) -> bool:
@@ -1136,10 +1157,10 @@ class WorldRepository:
         world_character_id: str,
         location_name: str,
         timestamp: str,
-    ) -> int:
+    ) -> tuple[int, list[str]]:
         rows = conn.execute(
             """
-            SELECT npc_id
+            SELECT npc_id, name
             FROM npc_profiles
             WHERE world_id = ?
               AND COALESCE(json_extract(stats_json, '$._location_name'), '') = ?
@@ -1147,15 +1168,21 @@ class WorldRepository:
             (world_id, location_name),
         ).fetchall()
         count = 0
+        names: list[str] = []
         for row in rows:
-            count += self._upsert_npc_discovery(
+            created = self._upsert_npc_discovery(
                 conn=conn,
                 world_id=world_id,
                 world_character_id=world_character_id,
                 npc_id=str(row["npc_id"]),
                 timestamp=timestamp,
             )
-        return count
+            count += created
+            if created > 0:
+                npc_name = str(row["name"] or "").strip()
+                if npc_name:
+                    names.append(npc_name)
+        return count, names
 
     def _reveal_scene_points_in_location_for_character(
         self,
@@ -1165,16 +1192,17 @@ class WorldRepository:
         world_character_id: str,
         location_name: str,
         timestamp: str,
-    ) -> int:
+    ) -> tuple[int, list[str]]:
         world_row = conn.execute("SELECT * FROM worlds WHERE world_id = ?", (world_id,)).fetchone()
         if world_row is None:
-            return 0
+            return 0, []
         character_row = self._get_primary_character_row(conn, world_id)
         if character_row is None:
-            return 0
+            return 0, []
         session = self._build_world_session_from_rows(world_row, character_row, [])
         points = build_scene_point_targets_for_location(world=session, location_name=location_name)
         count = 0
+        names: list[str] = []
         for point in points:
             created_count, _ = self._upsert_scene_point_discovery(
                 conn=conn,
@@ -1185,7 +1213,28 @@ class WorldRepository:
                 timestamp=timestamp,
             )
             count += created_count
-        return count
+            if created_count > 0:
+                names.append(point.name)
+        return count, names
+
+    @staticmethod
+    def _format_named_discovery_suffix(names: list[str]) -> str:
+        unique_names: list[str] = []
+        seen: set[str] = set()
+        for raw_name in names:
+            name = str(raw_name or "").strip()
+            if not name:
+                continue
+            lower = name.lower()
+            if lower in seen:
+                continue
+            seen.add(lower)
+            unique_names.append(name)
+            if len(unique_names) >= 6:
+                break
+        if not unique_names:
+            return ""
+        return ": " + ", ".join(unique_names)
 
     def _upsert_npc_discovery(
         self,

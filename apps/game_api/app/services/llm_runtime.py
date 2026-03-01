@@ -556,6 +556,8 @@ class LlmRuntime:
             "Avoid rigid recap patterns like 'Anschliessend ... Danach ...'. "
             "Blend action outcomes into one coherent scene paragraph with natural transitions. "
             "Avoid event-log phrasing like 'Du hast X getan, dann Y getan'. "
+            "Keep NPC references consistent across the paragraph. "
+            "If grammatical gender is unclear, repeat the NPC name instead of using 'er/sie'. "
             "Only mention status values when they matter for the immediate next decision. "
             "Do not invent state changes that are not present in the resolution."
         )
@@ -565,6 +567,7 @@ class LlmRuntime:
                 {
                     "location_before": context_before.world.character_state.location_name,
                     "recent_turn_inputs": [turn.raw_player_input for turn in context_before.recent_turns[-3:]],
+                    "known_npc_names_before": [npc.name for npc in context_before.target_catalog.npcs[:12]],
                 },
                 ensure_ascii=False,
             )
@@ -575,6 +578,7 @@ class LlmRuntime:
             "Style goals:\n"
             "- no list-like recaps\n"
             "- no developer/debug wording\n"
+            "- keep NPC naming consistent (prefer names over pronouns when uncertain)\n"
             "- concise but atmospheric scene continuity\n"
             "Return JSON only in German narrative."
         )

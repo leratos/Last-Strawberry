@@ -704,6 +704,34 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests/test_config.py -q` -> 2 passed
   - `python -m pytest apps/game_api/tests -q` -> 145 passed
 - G2400-G2499 Draft (gestartet): TALK-UX verbessern, damit NPCs im Turn konkrete Antworten liefern (statt nur `talk_success`). Ziel: zusaetzliches, deterministisches NPC-Dialog-Event fuer bessere Lesbarkeit im Turn-Verlauf, ohne LLM-Abhaengigkeit.
+- G2500-G2599 Draft (gestartet): Narrations-Konsistenz-Hotfix fuer Hybrid/OpenRouter. Fokus: NPC-Referenzen in LLM-Narration stabil halten (kein Pronomenraten `er/sie` bei unsicherem Geschlecht), damit Ausgaben wie "Kael ... er/sie ..." nicht inkonsistent wirken.
+- G2500-G2599 abgeschlossen: Narrations-Konsistenz-Hotfix fuer NPC-Referenzen (Hybrid/OpenRouter) umgesetzt.
+- `apps/game_api/app/services/llm_runtime.py`:
+  - Narration-Systemprompt verschaerft: konsistente NPC-Referenzen erzwingen; bei unklarem Geschlecht Namen statt `er/sie` verwenden.
+  - User-Style-Goals erweitert: `prefer names over pronouns when uncertain`.
+  - Kontext-Hinweis fuer Narration erweitert um `known_npc_names_before`, damit der Narrator vorhandene Namen als stabile Referenzen nutzen kann.
+- `apps/game_api/tests/test_llm_runtime.py`:
+  - Prompt-Assertions erweitert, damit die neuen Konsistenz-Guardrails (`er/sie` vermeiden, Namen priorisieren) regressionssicher bleiben.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 14 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g2400_talk_emits_npc_dialogue_line_event -q` -> 1 passed
+- G2600-G2699 Draft (gestartet): Discovery/Narration-Kohärenz verbessern, damit `Ich schau mich um` konkrete, benannte Szenenhinweise liefert (statt nur Count-Events) und der Narrator diese Hinweise zuverlässig aufgreift.
+- G2600-G2699 abgeschlossen: Discovery/Narration-Kohaerenz fuer `Ich schau mich um` verbessert.
+- `apps/game_api/app/persistence.py`:
+  - Discovery-Events fuer NPCs/Szenenpunkte tragen jetzt zusaetzlich benannte Hinweise statt nur Zaehler (z. B. erkannte Namen/Interaktionspunkte in der Event-Message).
+  - Interne Discovery-Pipeline liefert dafuer neben Counts auch Namen neuer Funde (`_apply_npc_discovery_updates`, `_reveal_npcs_in_location_for_character`, `_reveal_scene_points_in_location_for_character`).
+- `apps/game_api/app/services/scene_point_catalog.py`:
+  - Urban-Occult-Marktplatz um expliziten Szenenpunkt erweitert: `poi-marktplatz-shadow-dispute` / `Streitende Schattenfiguren` (inkl. Aliasen).
+- `apps/game_api/app/services/story_beats.py`:
+  - `consequence` priorisiert jetzt inhaltlich relevante Events (`npc_dialogue_line`, `discovery_revealed_scene_points`, `discovery_revealed_scene_details`, Loot-/Quest-Events), statt starr nur das zweite Event zu nehmen.
+  - Ziel: LLM-Narration greift sichtbarere Entdeckungen konsistenter auf.
+- Tests:
+  - neu: `apps/game_api/tests/test_story_beats.py` (Consequence-Priorisierung auf Discovery-Hinweise)
+  - erweitert: `apps/game_api/tests/test_preview_routes.py::test_g2600_broad_inspect_urban_occult_reveals_shadow_dispute_point`
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_story_beats.py -q` -> 1 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g2600_broad_inspect_urban_occult_reveals_shadow_dispute_point -q` -> 1 passed
+  - `python -m pytest apps/game_api/tests -q` -> 148 passed
 - G2400-G2499 abgeschlossen: TALK-UX fuer NPC-Dialogzeilen umgesetzt (deterministisch, ohne LLM-Zwang).
 - Rules Engine:
   - `packages/rules_engine/ls_rules_engine/engine.py`
