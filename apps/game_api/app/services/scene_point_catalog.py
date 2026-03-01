@@ -84,6 +84,15 @@ def _urban_occult_points_for_location(location_name: str) -> list[GameTargetRefe
     if slug == "marktplatz":
         return [
             _scene_point_ref(
+                point_id="poi-marktplatz-shadow-dispute",
+                name="Streitende Schattenfiguren",
+                kind="scene_point",
+                location_name=location_name,
+                scene_zone_id="zone-fountain-ring",
+                scene_zone_name="Brunnenplatz",
+                aliases=["schattenfiguren", "streit", "streitende gruppe", "schatten"],
+            ),
+            _scene_point_ref(
                 point_id="poi-marktplatz-runenspuren",
                 name="Verkohlte Runenspuren",
                 kind="scene_point",

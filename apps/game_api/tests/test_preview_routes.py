@@ -1496,6 +1496,34 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         ]
         self.assertEqual(fake_targets, [])
 
+    def test_g2600_broad_inspect_urban_occult_reveals_shadow_dispute_point(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g2600-shadow",
+                "world_description": "Eine Urban-Occult-Stadt mit Binder-Ritual und eskalierendem Streit am Markt.",
+                "character_description": "Ein Ermittler, der den Vorfall am Brunnenplatz aufklaeren will.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        inspect_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_response.status_code, 200)
+        payload = inspect_response.json()
+        events = payload["turn"]["resolution"]["system_events"]
+        scene_event = next((event for event in events if event["code"] == "discovery_revealed_scene_points"), None)
+        self.assertIsNotNone(scene_event)
+        self.assertIn("Streitende Schattenfiguren", str(scene_event["message"]))
+
+        context_after = payload["context_after_turn"]
+        self.assertIsNotNone(context_after)
+        scene_ids = [entry["ref_id"] for entry in context_after["target_catalog"]["scene_points"]]
+        self.assertIn("poi-marktplatz-shadow-dispute", scene_ids)
+
     def test_g26_talk_to_unknown_name_requires_clarify_until_revealed(self):
         create_response = self.client.post(
             "/v1/worlds/bootstrap",

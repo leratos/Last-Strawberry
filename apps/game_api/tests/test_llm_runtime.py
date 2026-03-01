@@ -359,8 +359,10 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertTrue(narrative.story_beats[0].startswith("scene:"))
         narration_call_kwargs = fake_client.chat_completion.call_args.kwargs
         self.assertIn("flowing scene prose", narration_call_kwargs["system_prompt"])
+        self.assertIn("repeat the NPC name instead of using 'er/sie'", narration_call_kwargs["system_prompt"])
         self.assertIn("Only mention status values when they matter", narration_call_kwargs["system_prompt"])
         self.assertIn("no list-like recaps", narration_call_kwargs["user_prompt"])
+        self.assertIn("prefer names over pronouns when uncertain", narration_call_kwargs["user_prompt"])
 
     def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
         runtime = LlmRuntime(
