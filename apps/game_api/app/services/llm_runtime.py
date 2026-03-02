@@ -13,7 +13,7 @@ from apps.game_api.app.services.narration_preview import build_narrative_from_re
 from apps.game_api.app.services.urban_occult_basis import resolve_unique_role_title_npc_reference
 from ls_shared_schemas.game_context import GameContextResponse
 from ls_shared_schemas.turns import LlmCapabilityTrace, NarrativeEnvelope, TurnIntent, TurnIntentAction, TurnResolution
-from ls_shared_schemas.world import WorldBootstrapRequest, WorldBootstrapResult
+from ls_shared_schemas.world import ScenePointSeed, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
 class LlmRuntimeError(RuntimeError):
@@ -71,6 +71,39 @@ _OPENROUTER_BOOTSTRAP_JSON_SCHEMA: dict[str, Any] = {
                 "design_notes": {"type": ["array", "null"], "items": {"type": "string"}},
             },
             "required": ["initial_narrative"],
+        },
+    },
+}
+
+_OPENROUTER_SCENE_POINT_PROPOSAL_JSON_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "scene_point_proposal_response",
+        "strict": False,
+        "schema": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "scene_points": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "properties": {
+                            "ref_id": {"type": ["string", "null"]},
+                            "name": {"type": "string"},
+                            "kind": {"type": ["string", "null"]},
+                            "location_name": {"type": ["string", "null"]},
+                            "scene_zone_id": {"type": ["string", "null"]},
+                            "scene_zone_name": {"type": ["string", "null"]},
+                            "aliases": {"type": ["array", "null"], "items": {"type": "string"}},
+                        },
+                        "required": ["name"],
+                    },
+                },
+                "analysis_notes": {"type": ["array", "null"], "items": {"type": "string"}},
+            },
+            "required": ["scene_points"],
         },
     },
 }
@@ -259,6 +292,58 @@ class LlmRuntime:
             context=context,
         )
         return intent
+
+    def propose_scene_points_with_trace(
+        self,
+        *,
+        world: WorldSessionResponse,
+        context: GameContextResponse | None = None,
+        location_name: str | None = None,
+        max_items: int = 3,
+    ) -> tuple[list[ScenePointSeed], LlmCapabilityTrace]:
+        provider_policy = "openrouter" if self._should_use_openrouter_for_capability("narration") else "preview"
+        safe_max_items = max(1, min(max_items, 5))
+        if provider_policy == "preview":
+            return (
+                [],
+                self._build_capability_trace(
+                    capability="scene_point_proposals",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                ),
+            )
+
+        try:
+            proposals = self._propose_scene_points_openrouter(
+                world=world,
+                context=context,
+                location_name=location_name,
+                max_items=safe_max_items,
+            )
+            return (
+                proposals,
+                self._build_capability_trace(
+                    capability="scene_point_proposals",
+                    provider_policy=provider_policy,
+                    provider_used="openrouter",
+                    model=self.settings.openrouter_narrator_model,
+                ),
+            )
+        except Exception as exc:
+            if not self.settings.llm_fallback_to_preview:
+                raise
+            return (
+                [],
+                self._build_capability_trace(
+                    capability="scene_point_proposals",
+                    provider_policy=provider_policy,
+                    provider_used="preview",
+                    model=None,
+                    fallback_used=True,
+                    fallback_reason=type(exc).__name__,
+                ),
+            )
 
     def analyze_intent_with_trace(
         self,
@@ -541,6 +626,79 @@ class LlmRuntime:
             analysis_notes=analysis_notes,
         )
 
+    def _propose_scene_points_openrouter(
+        self,
+        *,
+        world: WorldSessionResponse,
+        context: GameContextResponse | None,
+        location_name: str | None,
+        max_items: int,
+    ) -> list[ScenePointSeed]:
+        focus_location = (
+            (location_name or "").strip()
+            or (context.world.character_state.location_name if context is not None else "").strip()
+            or world.world_seed.start_location_name
+        )
+        existing_points = list(world.world_seed.scene_points)
+        existing_ref_ids = {point.ref_id for point in existing_points}
+        existing_names = {point.name.lower() for point in existing_points}
+        system_prompt = (
+            "You suggest optional NEW scene interaction points for a German RPG world. "
+            "Return strict JSON with key scene_points (array). "
+            "Each scene point must be IP-safe, compact, and gameplay-relevant. "
+            "Do not repeat existing scene points and do not modify existing world facts."
+        )
+        user_prompt = (
+            f"world_name={world.world_seed.name}\n"
+            f"world_summary={world.world_seed.summary}\n"
+            f"factions={json.dumps(world.world_seed.factions, ensure_ascii=False)}\n"
+            f"open_threads={json.dumps(world.world_seed.open_threads, ensure_ascii=False)}\n"
+            f"focus_location={focus_location}\n"
+            f"max_items={max_items}\n"
+            f"existing_scene_points={json.dumps([point.model_dump(mode='json') for point in existing_points], ensure_ascii=False)}\n"
+            "Constraints:\n"
+            "- return 1..max_items entries\n"
+            "- kind must be one of: scene_point, container, scene_object\n"
+            "- ref_id must be unique and stable slug-like (or null)\n"
+            "- aliases optional, up to 6\n"
+            "- German labels\n"
+            "- JSON only."
+        )
+        payload = self._request_openrouter_json(
+            model=self.settings.openrouter_narrator_model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            purpose="scene_point_proposals",
+            response_format_candidates=[_OPENROUTER_SCENE_POINT_PROPOSAL_JSON_SCHEMA, {"type": "json_object"}],
+        )
+        raw_points = payload.get("scene_points")
+        if isinstance(raw_points, dict):
+            raw_points = [raw_points]
+        if not isinstance(raw_points, list):
+            return []
+        out: list[ScenePointSeed] = []
+        seen_ref_ids = set(existing_ref_ids)
+        seen_names = set(existing_names)
+        for idx, raw_point in enumerate(raw_points):
+            if len(out) >= max_items:
+                break
+            if not isinstance(raw_point, dict):
+                continue
+            normalized = self._normalize_scene_point_proposal_entry(
+                raw_point=raw_point,
+                fallback_location=focus_location,
+                index=idx,
+                seen_ref_ids=seen_ref_ids,
+            )
+            if normalized is None:
+                continue
+            if normalized.name.lower() in seen_names:
+                continue
+            out.append(normalized)
+            seen_ref_ids.add(normalized.ref_id)
+            seen_names.add(normalized.name.lower())
+        return out
+
     def _narrate_openrouter(
         self,
         *,
@@ -786,6 +944,80 @@ class LlmRuntime:
             if len(out) >= max_items:
                 break
         return out
+
+    def _normalize_scene_point_proposal_entry(
+        self,
+        *,
+        raw_point: dict[str, Any],
+        fallback_location: str,
+        index: int,
+        seen_ref_ids: set[str],
+    ) -> ScenePointSeed | None:
+        name = self._safe_text(raw_point.get("name"), max_len=120)
+        if not name:
+            return None
+        kind = self._safe_text(raw_point.get("kind"), max_len=40).lower() or "scene_point"
+        if kind not in {"scene_point", "container", "scene_object"}:
+            kind = "scene_point"
+        location_name = self._safe_text(raw_point.get("location_name"), max_len=120) or fallback_location
+        if not location_name:
+            return None
+        aliases = self._safe_text_list(raw_point.get("aliases"), max_items=6, max_len=80)
+        ref_id_raw = self._safe_text(raw_point.get("ref_id"), max_len=120).lower()
+        ref_id = self._build_scene_point_ref_id(
+            ref_id_raw=ref_id_raw,
+            kind=kind,
+            name=name,
+            index=index,
+            seen_ref_ids=seen_ref_ids,
+        )
+        scene_zone_id = self._safe_text(raw_point.get("scene_zone_id"), max_len=120) or None
+        scene_zone_name = self._safe_text(raw_point.get("scene_zone_name"), max_len=120) or None
+        return ScenePointSeed(
+            ref_id=ref_id,
+            name=name,
+            kind=kind,
+            location_name=location_name,
+            scene_zone_id=scene_zone_id,
+            scene_zone_name=scene_zone_name,
+            aliases=aliases,
+        )
+
+    def _build_scene_point_ref_id(
+        self,
+        *,
+        ref_id_raw: str,
+        kind: str,
+        name: str,
+        index: int,
+        seen_ref_ids: set[str],
+    ) -> str:
+        prefix = "poi"
+        if kind == "container":
+            prefix = "ctr"
+        elif kind == "scene_object":
+            prefix = "obj"
+        base_slug = self._slugify_for_ref(ref_id_raw or name)
+        candidate = base_slug
+        if not candidate.startswith(f"{prefix}-"):
+            candidate = f"{prefix}-{candidate}"
+        candidate = candidate[:120].strip("-")
+        if not candidate:
+            candidate = f"{prefix}-proposal-{index + 1}"
+        unique_candidate = candidate
+        serial = 2
+        while unique_candidate in seen_ref_ids:
+            suffix = f"-{serial}"
+            unique_candidate = f"{candidate[: max(1, 120 - len(suffix))]}{suffix}"
+            serial += 1
+        return unique_candidate
+
+    def _slugify_for_ref(self, value: str) -> str:
+        lowered = (value or "").strip().lower()
+        if not lowered:
+            return ""
+        slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+        return slug[:110]
 
     def _should_use_openrouter_for_capability(self, capability: str) -> bool:
         mode = (self.settings.llm_mode or "preview").strip().lower()

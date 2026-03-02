@@ -748,3 +748,47 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest packages/rules_engine/tests/test_rules_engine.py -q` -> 21 passed
   - `python -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g2400_talk_emits_npc_dialogue_line_event -q` -> 1 passed
   - `npm --prefix apps/web_client run build` -> OK
+- G2700-G2799 abgeschlossen: Scene-Point-Quelle auf authored/persistierten World-Content umgestellt (weg von harter Catalog-Logik), Discovery-Marker bleiben DB-autoritiv.
+- Shared Schema:
+  - `packages/shared_schemas/ls_shared_schemas/world.py`: neues Modell `ScenePointSeed`; `WorldSeed.scene_points` hinzugefuegt.
+  - `packages/shared_schemas/ls_shared_schemas/__init__.py`: `ScenePointSeed` exportiert.
+- Authoring:
+  - `apps/game_api/app/services/world_pack_authoring.py`: `AuthoredWorldPack` um `scene_points` erweitert; Generic- und Urban-Occult-Packs definieren ihre Interaktionspunkte im Pack-Layer.
+  - neuer Helper `scene_points_for_world_seed(...)` fuer persistierte Seeds + Legacy-Fallback.
+- Bootstrap/Persistenz:
+  - `apps/game_api/app/services/bootstrap_preview.py`: `world_seed.scene_points` wird beim Bootstrap aus dem World-Pack gesetzt und damit in `world_seed_json` persistiert.
+- Catalog:
+  - `apps/game_api/app/services/scene_point_catalog.py`: liest nur noch aus `world.world_seed.scene_points` (plus Legacy-Fallback ueber Pack), kein orts-/genre-hardcoded Scene-Point-Building mehr.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py::TestGameApiPreviewRoutes::test_g2600_broad_inspect_urban_occult_reveals_shadow_dispute_point -q` -> 1 passed
+  - `python -m pytest apps/game_api/tests/test_story_beats.py -q` -> 1 passed
+  - `python -m pytest apps/game_api/tests -q` -> 148 passed
+  - `python -m pytest packages/shared_schemas/tests -q` -> 4 passed
+- G2800-G2899 Draft (gestartet): LLM-basierte Scene-Point-Vorschlaege mit Approval-Workflow einbauen (propose/list/approve/reject), damit neue Welt-Hinweise nicht direkt durch Freitext/LLM persistiert werden, sondern erst nach expliziter Freigabe.
+- G2800-G2899 abgeschlossen: LLM-gestuetzter Scene-Point-Proposal-Workflow mit Approval-Gate implementiert (propose/list/approve/reject), sodass neue Interaktionspunkte erst nach expliziter Freigabe in `world_seed.scene_points` persistiert werden.
+- Migration:
+  - `apps/game_api/app/migrations/010_g2800_scene_point_proposals.sql`
+  - neue Tabelle `scene_point_proposals` inkl. Status-Lifecycle (`proposed|approved|rejected`), Review-Metadaten und Applied-Flag.
+- Persistenz (`apps/game_api/app/persistence.py`):
+  - `create_scene_point_proposals(...)`
+  - `list_scene_point_proposals(...)`
+  - `approve_scene_point_proposal(...)`
+  - `reject_scene_point_proposal(...)`
+  - Approval aktualisiert `worlds.world_seed_json` nur bei Pending-Proposal; Duplicate-Ref-IDs werden nicht doppelt eingetragen.
+- LLM Runtime (`apps/game_api/app/services/llm_runtime.py`):
+  - neues Capability-Flow `scene_point_proposals` mit OpenRouter-JSON-Schema, Normalisierung und Ref-ID-Slugging.
+  - Preview/Fallback liefert bewusst keine autoritative Persistenz-Veraenderung (leere Vorschlagsliste + Trace).
+- API (`apps/game_api/app/main.py`):
+  - `POST /v1/devtest/worlds/{world_id}/scene-points/proposals/generate`
+  - `GET /v1/devtest/worlds/{world_id}/scene-points/proposals`
+  - `POST /v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/approve`
+  - `POST /v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/reject`
+- Tests:
+  - `apps/game_api/tests/test_llm_runtime.py` um Proposal-Capability-Tests erweitert.
+  - `apps/game_api/tests/test_preview_routes.py` um End-to-End-Route-Tests fuer Generate->Approve->Discover und Reject erweitert.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 16 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py -k "g2800_scene_point_proposal" -q` -> 2 passed
+  - `python -m pytest apps/game_api/tests -q` -> 152 passed
+  - `npm.cmd --prefix apps/web_client run build` -> OK
+  - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 372 passed

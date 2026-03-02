@@ -9,7 +9,11 @@ from apps.game_api.app.services.urban_occult_basis import (
     get_urban_occult_preset,
     should_use_urban_occult_preset,
 )
-from apps.game_api.app.services.world_pack_authoring import GENERIC_STARTER_WORLD_PACK, URBAN_OCCULT_WORLD_PACK
+from apps.game_api.app.services.world_pack_authoring import (
+    GENERIC_STARTER_WORLD_PACK,
+    URBAN_OCCULT_WORLD_PACK,
+    scene_points_for_world_seed,
+)
 
 
 def build_world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootstrapResult:
@@ -112,11 +116,13 @@ def build_world_bootstrap_preview(request: WorldBootstrapRequest) -> WorldBootst
         start_hook=start_hook,
         factions=factions,
         open_threads=open_threads,
+        scene_points=[],
         starter_npcs=starter_npcs,
         suggested_character_template=template,
         created_character_seed=character_seed,
         starter_inventory=starter_inventory,
     )
+    world_seed.scene_points = scene_points_for_world_seed(world_seed)
     return WorldBootstrapResult(
         world_seed=world_seed,
         initial_narrative=initial_narrative,

@@ -17,7 +17,10 @@ from apps.game_api.app.services.quest_authoring import (
 )
 from apps.game_api.app.services.scene_point_catalog import build_scene_point_targets_for_location
 from apps.game_api.app.services.urban_occult_basis import infer_canonical_role_from_text
-from apps.game_api.app.services.world_pack_authoring import initial_story_flags_for_world_seed
+from apps.game_api.app.services.world_pack_authoring import (
+    initial_story_flags_for_world_seed,
+    scene_points_for_world_seed,
+)
 from apps.game_api.app.services.quest_specs import QuestSpec, compile_quest_spec_to_world_state
 from ls_shared_schemas.character import CharacterResources, CharacterState
 from ls_shared_schemas.inventory import InventoryItemInstance
@@ -25,6 +28,7 @@ from ls_shared_schemas.npc_memory import NPCMemoryBundle, NPCMemoryEntry, NPCPro
 from ls_shared_schemas.quests import WorldQuestState
 from ls_shared_schemas.turns import (
     ActionType,
+    LlmCapabilityTrace,
     NarrativeEnvelope,
     PersistedTurnRecord,
     TurnIntent,
@@ -32,7 +36,13 @@ from ls_shared_schemas.turns import (
     TurnSystemEvent,
 )
 from ls_shared_schemas.game_context import GameTargetReference
-from ls_shared_schemas.world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
+from ls_shared_schemas.world import (
+    JournalEntryRecord,
+    ScenePointSeed,
+    WorldBootstrapRequest,
+    WorldBootstrapResult,
+    WorldSessionResponse,
+)
 
 
 def _utc_iso_now() -> str:
@@ -730,6 +740,228 @@ class WorldRepository:
                 )
             conn.commit()
         return normalized_profile
+
+    def create_scene_point_proposals(
+        self,
+        *,
+        world_id: str,
+        proposals: list[ScenePointSeed],
+        source: str | None = None,
+        requested_by: str | None = None,
+        provider_trace: LlmCapabilityTrace | None = None,
+    ) -> list[dict[str, object]]:
+        if not proposals:
+            return []
+        created_at = _utc_iso_now()
+        status = "proposed"
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            world_row = conn.execute(
+                "SELECT world_id FROM worlds WHERE world_id = ?",
+                (world_id,),
+            ).fetchone()
+            if world_row is None:
+                conn.rollback()
+                raise ValueError("World session not found.")
+            character_row = self._get_primary_character_row(conn, world_id)
+            if character_row is None:
+                conn.rollback()
+                raise ValueError("World character not found.")
+            world_character_id = str(character_row["world_character_id"])
+            inserted: list[dict[str, object]] = []
+            trace_json = provider_trace.model_dump_json() if provider_trace is not None else None
+            for proposal in proposals:
+                proposal_id = f"spp-{uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO scene_point_proposals (
+                        proposal_id, world_id, world_character_id, status, scene_point_json,
+                        source, requested_by, provider_trace_json, decision_note, reviewed_by,
+                        applied_to_world_seed, created_at, updated_at, reviewed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        proposal_id,
+                        world_id,
+                        world_character_id,
+                        status,
+                        proposal.model_dump_json(),
+                        source,
+                        requested_by,
+                        trace_json,
+                        None,
+                        None,
+                        0,
+                        created_at,
+                        created_at,
+                        None,
+                    ),
+                )
+                inserted.append(
+                    {
+                        "proposal_id": proposal_id,
+                        "world_id": world_id,
+                        "world_character_id": world_character_id,
+                        "status": status,
+                        "scene_point": proposal,
+                        "source": source,
+                        "requested_by": requested_by,
+                        "provider_trace": provider_trace,
+                        "decision_note": None,
+                        "reviewed_by": None,
+                        "applied_to_world_seed": False,
+                        "created_at": created_at,
+                        "updated_at": created_at,
+                        "reviewed_at": None,
+                    }
+                )
+            conn.commit()
+        return inserted
+
+    def list_scene_point_proposals(
+        self,
+        *,
+        world_id: str,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        safe_limit = max(1, min(limit, 200))
+        filters = ["world_id = ?"]
+        params: list[object] = [world_id]
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status:
+            if normalized_status not in {"proposed", "approved", "rejected"}:
+                raise ValueError("Unsupported proposal status filter.")
+            filters.append("status = ?")
+            params.append(normalized_status)
+        where_sql = " AND ".join(filters)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM scene_point_proposals
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                [*params, safe_limit],
+            ).fetchall()
+        return [self._scene_point_proposal_from_row(row) for row in rows]
+
+    def approve_scene_point_proposal(
+        self,
+        *,
+        world_id: str,
+        proposal_id: str,
+        reviewed_by: str | None = None,
+        decision_note: str | None = None,
+    ) -> dict[str, object]:
+        return self._review_scene_point_proposal(
+            world_id=world_id,
+            proposal_id=proposal_id,
+            decision="approved",
+            reviewed_by=reviewed_by,
+            decision_note=decision_note,
+        )
+
+    def reject_scene_point_proposal(
+        self,
+        *,
+        world_id: str,
+        proposal_id: str,
+        reviewed_by: str | None = None,
+        decision_note: str | None = None,
+    ) -> dict[str, object]:
+        return self._review_scene_point_proposal(
+            world_id=world_id,
+            proposal_id=proposal_id,
+            decision="rejected",
+            reviewed_by=reviewed_by,
+            decision_note=decision_note,
+        )
+
+    def _review_scene_point_proposal(
+        self,
+        *,
+        world_id: str,
+        proposal_id: str,
+        decision: str,
+        reviewed_by: str | None,
+        decision_note: str | None,
+    ) -> dict[str, object]:
+        reviewed_at = _utc_iso_now()
+        normalized_note = (decision_note or "").strip() or None
+        normalized_reviewer = (reviewed_by or "").strip() or None
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            row = conn.execute(
+                """
+                SELECT *
+                FROM scene_point_proposals
+                WHERE world_id = ? AND proposal_id = ?
+                LIMIT 1
+                """,
+                (world_id, proposal_id),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                raise ValueError("Scene-point proposal not found.")
+            current_status = str(row["status"] or "").strip().lower()
+            if current_status != "proposed":
+                conn.rollback()
+                raise ValueError("Scene-point proposal is not pending.")
+
+            applied_to_world_seed = 0
+            if decision == "approved":
+                world_row = conn.execute(
+                    """
+                    SELECT world_seed_json
+                    FROM worlds
+                    WHERE world_id = ?
+                    LIMIT 1
+                    """,
+                    (world_id,),
+                ).fetchone()
+                if world_row is None:
+                    conn.rollback()
+                    raise ValueError("World session not found.")
+                world_seed = self._load_world_seed_json(str(world_row["world_seed_json"]))
+                proposal = ScenePointSeed.model_validate_json(str(row["scene_point_json"]))
+                existing_ref_ids = {point.ref_id for point in scene_points_for_world_seed(world_seed)}
+                if proposal.ref_id not in existing_ref_ids:
+                    world_seed.scene_points.append(proposal)
+                    conn.execute(
+                        """
+                        UPDATE worlds
+                        SET world_seed_json = ?
+                        WHERE world_id = ?
+                        """,
+                        (world_seed.model_dump_json(), world_id),
+                    )
+                    applied_to_world_seed = 1
+            conn.execute(
+                """
+                UPDATE scene_point_proposals
+                SET status = ?, decision_note = ?, reviewed_by = ?, applied_to_world_seed = ?,
+                    reviewed_at = ?, updated_at = ?
+                WHERE proposal_id = ?
+                """,
+                (
+                    decision,
+                    normalized_note,
+                    normalized_reviewer,
+                    applied_to_world_seed,
+                    reviewed_at,
+                    reviewed_at,
+                    proposal_id,
+                ),
+            )
+            conn.commit()
+        refreshed = self.list_scene_point_proposals(world_id=world_id, limit=200)
+        for entry in refreshed:
+            if entry["proposal_id"] == proposal_id:
+                return entry
+        raise ValueError("Scene-point proposal update failed.")
 
     def count_hidden_npcs_in_location(
         self,
@@ -1948,6 +2180,28 @@ class WorldRepository:
             narrative=NarrativeEnvelope.model_validate_json(str(row["narrative_json"])),
             created_at=datetime.fromisoformat(str(row["created_at"])),
         )
+
+    @staticmethod
+    def _scene_point_proposal_from_row(row: sqlite3.Row) -> dict[str, object]:
+        proposal = ScenePointSeed.model_validate_json(str(row["scene_point_json"]))
+        trace_raw = str(row["provider_trace_json"] or "").strip()
+        provider_trace = LlmCapabilityTrace.model_validate_json(trace_raw) if trace_raw else None
+        return {
+            "proposal_id": str(row["proposal_id"]),
+            "world_id": str(row["world_id"]),
+            "world_character_id": str(row["world_character_id"]),
+            "status": str(row["status"]),
+            "scene_point": proposal,
+            "source": str(row["source"]) if row["source"] is not None else None,
+            "requested_by": str(row["requested_by"]) if row["requested_by"] is not None else None,
+            "provider_trace": provider_trace,
+            "decision_note": str(row["decision_note"]) if row["decision_note"] is not None else None,
+            "reviewed_by": str(row["reviewed_by"]) if row["reviewed_by"] is not None else None,
+            "applied_to_world_seed": bool(int(row["applied_to_world_seed"] or 0)),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+            "reviewed_at": str(row["reviewed_at"]) if row["reviewed_at"] is not None else None,
+        }
 
     @staticmethod
     def _npc_profile_from_row(row: sqlite3.Row) -> NPCProfile:

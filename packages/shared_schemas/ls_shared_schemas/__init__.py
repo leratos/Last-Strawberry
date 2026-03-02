@@ -17,7 +17,7 @@ from .turns import (
     TurnProviderTrace,
     TurnSystemEvent,
 )
-from .world import JournalEntryRecord, WorldBootstrapRequest, WorldBootstrapResult, WorldSeed, WorldSessionResponse
+from .world import JournalEntryRecord, ScenePointSeed, WorldBootstrapRequest, WorldBootstrapResult, WorldSeed, WorldSessionResponse
 
 __all__ = [
     "ActionType",
@@ -38,6 +38,7 @@ __all__ = [
     "NPCRelationship",
     "QuestObjectiveState",
     "RetrievedNpcMemoryBundle",
+    "ScenePointSeed",
     "PersistedTurnRecord",
     "StateDelta",
     "TurnIntent",

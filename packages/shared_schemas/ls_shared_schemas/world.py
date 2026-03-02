@@ -31,6 +31,7 @@ class WorldSeed(LSBaseModel):
     start_hook: str = Field(min_length=1, max_length=2000)
     factions: list[str] = Field(default_factory=list)
     open_threads: list[str] = Field(default_factory=list)
+    scene_points: list["ScenePointSeed"] = Field(default_factory=list)
     starter_npcs: list[NPCProfile] = Field(default_factory=list)
     suggested_character_template: CharacterTemplateSeed
     created_character_seed: WorldCharacterSeed
@@ -42,6 +43,16 @@ class WorldBootstrapResult(LSBaseModel):
     initial_narrative: str = Field(min_length=1, max_length=8000)
     player_orientation: list[str] = Field(default_factory=list)
     bootstrap_trace: LlmCapabilityTrace | None = None
+
+
+class ScenePointSeed(LSBaseModel):
+    ref_id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    kind: str = Field(default="scene_point", min_length=1, max_length=40)
+    location_name: str = Field(min_length=1, max_length=120)
+    scene_zone_id: str | None = Field(default=None, max_length=120)
+    scene_zone_name: str | None = Field(default=None, max_length=120)
+    aliases: list[str] = Field(default_factory=list)
 
 
 class JournalEntryRecord(LSBaseModel):
