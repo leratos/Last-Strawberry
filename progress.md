@@ -808,3 +808,11 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests -q` -> 153 passed
   - `npm.cmd --prefix apps/web_client run build` -> OK
   - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 373 passed
+- G3000-G3099 Hotfix abgeschlossen: `scene_point_catalog.py` bereinigt (Merge-Artefakt entfernt), das in CI zu `NameError: _scene_point_seed_to_ref` fuehrte.
+- Root Cause: inkonsistenter Merge-Zustand in `apps/game_api/app/services/scene_point_catalog.py` mit gemischtem Legacy-/Seed-Code; Hilfsfunktion fehlte zur Laufzeit.
+- Fix: Datei auf sauberen authored-seed Pfad reduziert (`scene_points_for_world_seed` + `_scene_point_seed_to_ref`), tote Legacy-Helfer entfernt.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py -q` -> 54 passed
+  - `python -m pytest apps/game_api/tests/test_world_pack_files.py -q` -> 2 passed
+  - `python -m pytest apps/game_api/tests -q` -> 153 passed
+  - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 373 passed
