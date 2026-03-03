@@ -14,6 +14,7 @@ from apps.game_api.app.config import Settings  # noqa: E402
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview  # noqa: E402
 from apps.game_api.app.services.llm_runtime import LlmRuntime, build_llm_runtime  # noqa: E402
 from ls_shared_schemas.character import CharacterAttributes, CharacterResources, CharacterState  # noqa: E402
+from ls_shared_schemas.game_context import GameContextResponse, GameTargetCatalog, GameTargetReference  # noqa: E402
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode  # noqa: E402
 from ls_shared_schemas.turns import ActionType, TurnResolution, TurnSystemEvent  # noqa: E402
 from ls_shared_schemas.world import WorldBootstrapRequest, WorldSessionResponse  # noqa: E402
@@ -67,6 +68,32 @@ class TestLlmRuntime(unittest.TestCase):
             ),
             inventory=[],
             journal=[],
+        )
+
+    def _sample_context_with_visible_npcs(self) -> GameContextResponse:
+        world = self._sample_world_session()
+        return GameContextResponse(
+            world=world,
+            target_catalog=GameTargetCatalog(
+                npcs=[
+                    GameTargetReference(
+                        ref_id="npc-kael",
+                        kind="npc",
+                        name="Kael",
+                        location_name="Marktplatz",
+                        scene_zone_name="Brunnenplatz",
+                        distance_band_to_player="near",
+                    ),
+                    GameTargetReference(
+                        ref_id="npc-mira",
+                        kind="npc",
+                        name="Mira",
+                        location_name="Marktplatz",
+                        scene_zone_name="Marktstaende",
+                        distance_band_to_player="near",
+                    ),
+                ]
+            ),
         )
 
     def test_status_preview_default(self):
@@ -432,6 +459,42 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertIn("Only mention status values when they matter", narration_call_kwargs["system_prompt"])
         self.assertIn("no list-like recaps", narration_call_kwargs["user_prompt"])
         self.assertIn("prefer names over pronouns when uncertain", narration_call_kwargs["user_prompt"])
+
+    def test_openrouter_narration_visibility_conflict_falls_back_to_preview(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key="x")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "narrative": (
+                    "Kael und Mira waren nirgendwo zu sehen, "
+                    "waehrend du den Brunnenplatz beobachtet hast."
+                ),
+                "actionable_options": ["Weiter"],
+                "story_beats": ["scene: Ort=Marktplatz"],
+            }
+        )
+        runtime._openrouter_client = fake_client
+        resolution = TurnResolution(
+            world_id="w1",
+            world_character_id="wc1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc1",
+                name="Ari",
+                location_name="Marktplatz",
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=9, max_stamina=10, focus=3, max_focus=3),
+            ),
+            resulting_inventory=[],
+            system_events=[TurnSystemEvent(code="inspect_broad_success", message="Umgebung aufmerksam untersucht.")],
+        )
+        context = self._sample_context_with_visible_npcs()
+        narrative, trace = runtime.narrate_with_trace(resolution=resolution, context_before=context)
+        self.assertEqual(trace.provider_used, "preview")
+        self.assertTrue(trace.fallback_used)
+        self.assertEqual(trace.fallback_reason, "NarrationVisibilityConflict")
+        self.assertNotIn("nirgendwo zu sehen", narrative.narrative.lower())
 
     def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
         runtime = LlmRuntime(

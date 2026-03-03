@@ -454,7 +454,22 @@ class LlmRuntime:
             )
 
         try:
-            narrative = self._narrate_openrouter(resolution=resolution, context_before=context_before)
+            narrative, used_preview_consistency_fallback = self._narrate_openrouter(
+                resolution=resolution,
+                context_before=context_before,
+            )
+            if used_preview_consistency_fallback:
+                return (
+                    narrative,
+                    self._build_capability_trace(
+                        capability="narration",
+                        provider_policy=provider_policy,
+                        provider_used="preview",
+                        model=None,
+                        fallback_used=True,
+                        fallback_reason="NarrationVisibilityConflict",
+                    ),
+                )
             return (
                 narrative,
                 self._build_capability_trace(
@@ -704,7 +719,7 @@ class LlmRuntime:
         *,
         resolution: TurnResolution,
         context_before: GameContextResponse | None,
-    ) -> NarrativeEnvelope:
+    ) -> tuple[NarrativeEnvelope, bool]:
         fallback_narrative = build_narrative_from_resolution(resolution)
         system_prompt = (
             "You are a German RPG narrator for an interactive turn-based game. "
@@ -716,11 +731,18 @@ class LlmRuntime:
             "Avoid event-log phrasing like 'Du hast X getan, dann Y getan'. "
             "Keep NPC references consistent across the paragraph. "
             "If grammatical gender is unclear, repeat the NPC name instead of using 'er/sie'. "
+            "If an NPC appears in known_npc_names_before, never claim that this NPC is absent, not visible, or nowhere to be seen. "
             "Only mention status values when they matter for the immediate next decision. "
             "Do not invent state changes that are not present in the resolution."
         )
         context_hint = ""
+        visible_npc_names: list[str] = []
         if context_before is not None:
+            visible_npc_names = [
+                str(npc.name).strip()
+                for npc in context_before.target_catalog.npcs
+                if str(npc.name).strip()
+            ]
             context_hint = json.dumps(
                 {
                     "location_before": context_before.world.character_state.location_name,
@@ -750,13 +772,60 @@ class LlmRuntime:
         narrative_text = str(payload.get("narrative") or "").strip()
         if not narrative_text:
             narrative_text = fallback_narrative.narrative
-        return NarrativeEnvelope(
-            world_id=resolution.world_id,
-            world_character_id=resolution.world_character_id,
-            narrative=narrative_text,
-            story_beats=self._normalize_story_beats(payload.get("story_beats"), fallback_narrative.story_beats),
-            actionable_options=self._normalize_actionable_options(payload.get("actionable_options")),
+        if self._narrative_has_visibility_contradiction(
+            narrative_text=narrative_text,
+            visible_npc_names=visible_npc_names,
+        ):
+            return fallback_narrative, True
+        return (
+            NarrativeEnvelope(
+                world_id=resolution.world_id,
+                world_character_id=resolution.world_character_id,
+                narrative=narrative_text,
+                story_beats=self._normalize_story_beats(payload.get("story_beats"), fallback_narrative.story_beats),
+                actionable_options=self._normalize_actionable_options(payload.get("actionable_options")),
+            ),
+            False,
         )
+
+    def _narrative_has_visibility_contradiction(
+        self,
+        *,
+        narrative_text: str,
+        visible_npc_names: list[str],
+    ) -> bool:
+        text = (narrative_text or "").strip().lower()
+        if not text or not visible_npc_names:
+            return False
+        absence_markers = (
+            "nirgendwo",
+            "nicht zu sehen",
+            "nicht sichtbar",
+            "nicht in sicht",
+            "ausser sicht",
+            "außer sicht",
+            "nicht auffindbar",
+            "nicht zu entdecken",
+        )
+        visibility_markers = (
+            "sehen",
+            "sicht",
+            "sichtbar",
+            "in sicht",
+            "entdeck",
+            "auffind",
+        )
+        sentences = [segment.strip() for segment in re.split(r"[.!?]+", text) if segment.strip()]
+        for sentence in sentences:
+            if not any(marker in sentence for marker in absence_markers):
+                continue
+            if not any(marker in sentence for marker in visibility_markers):
+                continue
+            for raw_name in visible_npc_names:
+                npc_name = str(raw_name).strip().lower()
+                if npc_name and npc_name in sentence:
+                    return True
+        return False
 
     def _request_openrouter_json(
         self,

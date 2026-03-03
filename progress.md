@@ -792,3 +792,19 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests -q` -> 152 passed
   - `npm.cmd --prefix apps/web_client run build` -> OK
   - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 372 passed
+- G2900-G2999 Draft (gestartet): Narrations-Konsistenz-Guard gegen Sichtbarkeitswidersprueche einbauen (z. B. NPC als "nicht sichtbar" obwohl im Context als sichtbar/nah gelistet), inkl. Runtime-Tests.
+- G2900-G2999 abgeschlossen: Narrations-Konsistenz-Guard gegen Sichtbarkeitswidersprueche eingebaut.
+- Problemfall: LLM konnte behaupten, ein sichtbarer NPC sei "nirgendwo zu sehen", obwohl `target_catalog.npcs` denselben NPC als sichtbar/nah liefert.
+- Umsetzung (`apps/game_api/app/services/llm_runtime.py`):
+  - Prompt-Guardrail verschaerft (bekannte NPCs duerfen nicht als abwesend beschrieben werden).
+  - Neue lokale Konsistenzpruefung `_narrative_has_visibility_contradiction(...)` erkennt Abwesenheitsaussagen pro Satz gegen sichtbare NPC-Namen.
+  - Bei Konflikt: automatische Preview-Narration als sichere Fallback-Ausgabe fuer diesen Turn.
+  - Provider-Trace markiert den Fall explizit als Fallback (`provider_used=preview`, `fallback_reason=NarrationVisibilityConflict`).
+- Tests:
+  - `apps/game_api/tests/test_llm_runtime.py`: neuer Test `test_openrouter_narration_visibility_conflict_falls_back_to_preview`.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 17 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py -q` -> 54 passed
+  - `python -m pytest apps/game_api/tests -q` -> 153 passed
+  - `npm.cmd --prefix apps/web_client run build` -> OK
+  - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 373 passed
