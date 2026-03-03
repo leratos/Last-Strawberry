@@ -454,7 +454,7 @@ class LlmRuntime:
             )
 
         try:
-            narrative, used_preview_consistency_fallback = self._narrate_openrouter(
+            narrative, used_preview_consistency_fallback, consistency_fallback_reason = self._narrate_openrouter(
                 resolution=resolution,
                 context_before=context_before,
             )
@@ -467,7 +467,7 @@ class LlmRuntime:
                         provider_used="preview",
                         model=None,
                         fallback_used=True,
-                        fallback_reason="NarrationVisibilityConflict",
+                        fallback_reason=consistency_fallback_reason or "NarrationConsistencyConflict",
                     ),
                 )
             return (
@@ -719,7 +719,7 @@ class LlmRuntime:
         *,
         resolution: TurnResolution,
         context_before: GameContextResponse | None,
-    ) -> tuple[NarrativeEnvelope, bool]:
+    ) -> tuple[NarrativeEnvelope, bool, str | None]:
         fallback_narrative = build_narrative_from_resolution(resolution)
         system_prompt = (
             "You are a German RPG narrator for an interactive turn-based game. "
@@ -732,22 +732,31 @@ class LlmRuntime:
             "Keep NPC references consistent across the paragraph. "
             "If grammatical gender is unclear, repeat the NPC name instead of using 'er/sie'. "
             "If an NPC appears in known_npc_names_before, never claim that this NPC is absent, not visible, or nowhere to be seen. "
+            "Keep NPC distance wording consistent with known_npc_distance_before. "
+            "Do not describe a near/adjacent NPC as far away or not nearby. "
             "Only mention status values when they matter for the immediate next decision. "
             "Do not invent state changes that are not present in the resolution."
         )
         context_hint = ""
         visible_npc_names: list[str] = []
+        visible_npc_distance_bands: dict[str, str] = {}
         if context_before is not None:
             visible_npc_names = [
                 str(npc.name).strip()
                 for npc in context_before.target_catalog.npcs
                 if str(npc.name).strip()
             ]
+            visible_npc_distance_bands = {
+                str(npc.name).strip().lower(): str(npc.distance_band_to_player or "").strip().lower()
+                for npc in context_before.target_catalog.npcs
+                if str(npc.name).strip() and str(npc.distance_band_to_player or "").strip()
+            }
             context_hint = json.dumps(
                 {
                     "location_before": context_before.world.character_state.location_name,
                     "recent_turn_inputs": [turn.raw_player_input for turn in context_before.recent_turns[-3:]],
                     "known_npc_names_before": [npc.name for npc in context_before.target_catalog.npcs[:12]],
+                    "known_npc_distance_before": visible_npc_distance_bands,
                 },
                 ensure_ascii=False,
             )
@@ -776,7 +785,12 @@ class LlmRuntime:
             narrative_text=narrative_text,
             visible_npc_names=visible_npc_names,
         ):
-            return fallback_narrative, True
+            return fallback_narrative, True, "NarrationVisibilityConflict"
+        if self._narrative_has_distance_contradiction(
+            narrative_text=narrative_text,
+            visible_npc_distance_bands=visible_npc_distance_bands,
+        ):
+            return fallback_narrative, True, "NarrationDistanceConflict"
         return (
             NarrativeEnvelope(
                 world_id=resolution.world_id,
@@ -786,6 +800,7 @@ class LlmRuntime:
                 actionable_options=self._normalize_actionable_options(payload.get("actionable_options")),
             ),
             False,
+            None,
         )
 
     def _narrative_has_visibility_contradiction(
@@ -824,6 +839,50 @@ class LlmRuntime:
             for raw_name in visible_npc_names:
                 npc_name = str(raw_name).strip().lower()
                 if npc_name and npc_name in sentence:
+                    return True
+        return False
+
+    def _narrative_has_distance_contradiction(
+        self,
+        *,
+        narrative_text: str,
+        visible_npc_distance_bands: dict[str, str],
+    ) -> bool:
+        text = (narrative_text or "").strip().lower()
+        if not text or not visible_npc_distance_bands:
+            return False
+        far_distance_markers = (
+            "nicht in unmittelbarer naehe",
+            "nicht in unmittelbarer nähe",
+            "nicht in der naehe",
+            "nicht in der nähe",
+            "weit weg",
+            "weit entfernt",
+            "aus der ferne",
+            "in der ferne",
+            "fern von",
+        )
+        close_distance_markers = (
+            "in unmittelbarer naehe",
+            "in unmittelbarer nähe",
+            "direkt neben",
+            "direkt bei",
+            "direkt vor dir",
+            "in greifweite",
+            "in schlagdistanz",
+            "nah bei",
+            "nah an",
+        )
+        sentences = [segment.strip() for segment in re.split(r"[.!?]+", text) if segment.strip()]
+        for sentence in sentences:
+            for raw_name, raw_band in visible_npc_distance_bands.items():
+                npc_name = str(raw_name or "").strip().lower()
+                band = str(raw_band or "").strip().lower()
+                if not npc_name or npc_name not in sentence:
+                    continue
+                if band in {"near", "adjacent"} and any(marker in sentence for marker in far_distance_markers):
+                    return True
+                if band == "far" and any(marker in sentence for marker in close_distance_markers):
                     return True
         return False
 

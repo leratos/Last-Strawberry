@@ -816,3 +816,19 @@ itual_sabotage_suspected, scene_control_protocol_active, Hint-Updates in Starter
   - `python -m pytest apps/game_api/tests/test_world_pack_files.py -q` -> 2 passed
   - `python -m pytest apps/game_api/tests -q` -> 153 passed
   - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 373 passed
+- G3100-G3199 Draft (gestartet): Distanz-Konsistenz-Guard fuer Narration erweitern, damit LLM bei sichtbaren NPCs keine distanzwidrigen Formulierungen (z. B. `nicht in unmittelbarer Naehe` trotz `near/adjacent`) ausgibt; bei Konflikt Preview-Fallback + Tests.
+- G3100-G3199 abgeschlossen: Distanz-Konsistenz-Guard fuer Narration umgesetzt.
+- `apps/game_api/app/services/llm_runtime.py`:
+  - Narrations-Prompt um Distanzregel erweitert (`known_npc_distance_before`: near/adjacent/far muss sprachlich konsistent bleiben).
+  - Kontext-Hinweis enthaelt jetzt `known_npc_distance_before` (pro sichtbarem NPC).
+  - Neue Pruefung `_narrative_has_distance_contradiction(...)` erkennt distanzwidrige Aussagen pro NPC-Satz (z. B. `nicht in unmittelbarer Naehe` trotz `near/adjacent`).
+  - Bei Konflikt: sicherer Preview-Fallback mit eigenem Trace-Grund `NarrationDistanceConflict`.
+- Bestehender Sichtbarkeits-Guard bleibt aktiv; `narrate_with_trace` differenziert jetzt konsistent zwischen Sichtbarkeits- und Distanzkonflikt.
+- Tests:
+  - `apps/game_api/tests/test_llm_runtime.py` erweitert um `test_openrouter_narration_distance_conflict_falls_back_to_preview`.
+- Validierung:
+  - `python -m pytest apps/game_api/tests/test_llm_runtime.py -q` -> 18 passed
+  - `python -m pytest apps/game_api/tests/test_preview_routes.py -q` -> 54 passed
+  - `python -m pytest apps/game_api/tests -q` -> 154 passed
+  - `npm.cmd --prefix apps/web_client run build` -> OK
+  - `python -m pytest backend_v2/tests backend_server/tests packages/shared_schemas/tests packages/rules_engine/tests apps/game_api/tests -q` -> 374 passed
