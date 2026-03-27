@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -14,7 +15,9 @@ sys.path.insert(0, str(REPO_ROOT / "packages" / "rules_engine"))
 
 from apps.game_api.app.main import app  # noqa: E402
 from apps.game_api.app.persistence import WorldRepository  # noqa: E402
+from ls_shared_schemas.turns import LlmCapabilityTrace  # noqa: E402
 from ls_shared_schemas.npc_memory import NPCProfile  # noqa: E402
+from ls_shared_schemas.world import ScenePointSeed  # noqa: E402
 
 
 class TestGameApiPreviewRoutes(unittest.TestCase):
@@ -1326,6 +1329,141 @@ class TestGameApiPreviewRoutes(unittest.TestCase):
         self.assertEqual(lyra_bundle["profile"]["name"], "Lyra")
         self.assertEqual(lyra_bundle["profile"]["role"], "beschwoerer")
         self.assertEqual(lyra_bundle["relationship"]["standing"], 2)
+
+    def test_g2800_scene_point_proposal_generate_approve_and_discover(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g2800-proposals",
+                "world_description": "Eine Stadt mit okkulten Spannungen, in der neue Hinweise auftauchen.",
+                "character_description": "Ein Ermittler, der neue Spuren strukturiert prueft.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        mock_proposals = [
+            ScenePointSeed(
+                ref_id="poi-marktplatz-schattenriss",
+                name="Schattenriss am Brunnen",
+                kind="scene_point",
+                location_name="Marktplatz",
+                scene_zone_id="zone-fountain-ring",
+                scene_zone_name="Brunnenplatz",
+                aliases=["riss", "schattenriss"],
+            )
+        ]
+        mock_trace = LlmCapabilityTrace(
+            capability="scene_point_proposals",
+            mode="openrouter",
+            provider_policy="openrouter",
+            provider_used="openrouter",
+            model="mock-model",
+            fallback_used=False,
+        )
+        with mock.patch(
+            "apps.game_api.app.main.llm_runtime.propose_scene_points_with_trace",
+            return_value=(mock_proposals, mock_trace),
+        ):
+            generate_response = self.client.post(
+                f"/v1/devtest/worlds/{world_id}/scene-points/proposals/generate",
+                json={
+                    "location_name": "Marktplatz",
+                    "max_items": 2,
+                    "requested_by": "tests",
+                    "source": "unit_test",
+                },
+            )
+        self.assertEqual(generate_response.status_code, 200)
+        generated_payload = generate_response.json()
+        self.assertEqual(generated_payload["generated_count"], 1)
+        self.assertEqual(generated_payload["stored_count"], 1)
+        self.assertEqual(generated_payload["proposals"][0]["status"], "proposed")
+        proposal_id = generated_payload["proposals"][0]["proposal_id"]
+
+        list_response = self.client.get(
+            f"/v1/devtest/worlds/{world_id}/scene-points/proposals",
+            params={"status": "proposed"},
+        )
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(len(list_response.json()), 1)
+
+        approve_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/approve",
+            json={"reviewed_by": "tester", "decision_note": "looks good"},
+        )
+        self.assertEqual(approve_response.status_code, 200)
+        approve_payload = approve_response.json()
+        self.assertEqual(approve_payload["status"], "approved")
+        self.assertTrue(approve_payload["applied_to_world_seed"])
+
+        world_response = self.client.get(f"/v1/worlds/{world_id}")
+        self.assertEqual(world_response.status_code, 200)
+        world_seed_ids = [entry["ref_id"] for entry in world_response.json()["world_seed"]["scene_points"]]
+        self.assertIn("poi-marktplatz-schattenriss", world_seed_ids)
+
+        inspect_response = self.client.post(
+            f"/v1/worlds/{world_id}/turns/run",
+            json={"player_input": "Ich schau mich um."},
+        )
+        self.assertEqual(inspect_response.status_code, 200)
+        context_after = inspect_response.json()["context_after_turn"]
+        self.assertIsNotNone(context_after)
+        visible_ids = [entry["ref_id"] for entry in context_after["target_catalog"]["scene_points"]]
+        self.assertIn("poi-marktplatz-schattenriss", visible_ids)
+
+    def test_g2800_scene_point_proposal_reject_does_not_change_world_seed(self):
+        create_response = self.client.post(
+            "/v1/worlds/bootstrap",
+            json={
+                "user_id": "u-g2800-reject",
+                "world_description": "Eine Stadt mit okkulten Spannungen und unsicheren Hinweisen.",
+                "character_description": "Ein Ermittler, der Vorschlaege erst prueft.",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        world_id = create_response.json()["world_id"]
+
+        mock_proposals = [
+            ScenePointSeed(
+                ref_id="poi-marktplatz-verlassener-bogen",
+                name="Verlassener Torbogen",
+                kind="scene_point",
+                location_name="Marktplatz",
+                aliases=["torbogen"],
+            )
+        ]
+        mock_trace = LlmCapabilityTrace(
+            capability="scene_point_proposals",
+            mode="openrouter",
+            provider_policy="openrouter",
+            provider_used="openrouter",
+            model="mock-model",
+            fallback_used=False,
+        )
+        with mock.patch(
+            "apps.game_api.app.main.llm_runtime.propose_scene_points_with_trace",
+            return_value=(mock_proposals, mock_trace),
+        ):
+            generate_response = self.client.post(
+                f"/v1/devtest/worlds/{world_id}/scene-points/proposals/generate",
+                json={"requested_by": "tests"},
+            )
+        self.assertEqual(generate_response.status_code, 200)
+        proposal_id = generate_response.json()["proposals"][0]["proposal_id"]
+
+        reject_response = self.client.post(
+            f"/v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/reject",
+            json={"reviewed_by": "tester", "decision_note": "not fitting"},
+        )
+        self.assertEqual(reject_response.status_code, 200)
+        reject_payload = reject_response.json()
+        self.assertEqual(reject_payload["status"], "rejected")
+        self.assertFalse(reject_payload["applied_to_world_seed"])
+
+        world_response = self.client.get(f"/v1/worlds/{world_id}")
+        world_seed_ids = [entry["ref_id"] for entry in world_response.json()["world_seed"]["scene_points"]]
+        self.assertNotIn("poi-marktplatz-verlassener-bogen", world_seed_ids)
 
     def test_g35_discovered_npc_role_hidden_until_talk_memory_exists(self):
         create_response = self.client.post(

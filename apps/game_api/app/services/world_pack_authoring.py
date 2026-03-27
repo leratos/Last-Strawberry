@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
-from ls_shared_schemas.world import WorldSeed
+from ls_shared_schemas.world import ScenePointSeed, WorldSeed
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,98 @@ class AuthoredWorldPack:
     quest_exit_rule: str = ""
     quest_reentry_rule: str = ""
     discovery_entry_rule: str = ""
+    scene_points: tuple[ScenePointSeed, ...] = ()
+
+
+def _generic_marktplatz_scene_points() -> tuple[ScenePointSeed, ...]:
+    return (
+        ScenePointSeed(
+            ref_id="poi-marktplatz-crowd-flow",
+            name="Menschenstrom",
+            kind="scene_point",
+            location_name="Marktplatz",
+            scene_zone_id="zone-poi-marktplatz-crowd",
+            scene_zone_name="Passantenstrom",
+            aliases=["menge", "passanten", "menschen"],
+        ),
+        ScenePointSeed(
+            ref_id="poi-marktplatz-notice-board",
+            name="Anschlagtafel",
+            kind="scene_point",
+            location_name="Marktplatz",
+            scene_zone_id="zone-poi-marktplatz-board",
+            scene_zone_name="Anschlagbereich",
+            aliases=["tafel", "hinweise", "zettel"],
+        ),
+        ScenePointSeed(
+            ref_id="obj-marktplatz-supply-crate",
+            name="Vorratskiste",
+            kind="container",
+            location_name="Marktplatz",
+            scene_zone_id="zone-poi-marktplatz-crate",
+            scene_zone_name="Kistenbereich",
+            aliases=["kiste", "kiste am rand", "truhe"],
+        ),
+        ScenePointSeed(
+            ref_id="obj-marktplatz-discarded-bag",
+            name="Liegende Tasche",
+            kind="scene_object",
+            location_name="Marktplatz",
+            scene_zone_id="zone-poi-marktplatz-bag",
+            scene_zone_name="Randbereich",
+            aliases=["tasche", "beutel", "sack"],
+        ),
+        ScenePointSeed(
+            ref_id="poi-marktplatz-brunnen",
+            name="Brunnenanlage",
+            kind="scene_point",
+            location_name="Marktplatz",
+            scene_zone_id="zone-fountain-ring",
+            scene_zone_name="Brunnenplatz",
+            aliases=["brunnen", "wasserbecken"],
+        ),
+    )
+
+
+def _urban_occult_marktplatz_scene_points() -> tuple[ScenePointSeed, ...]:
+    return (
+        ScenePointSeed(
+            ref_id="poi-marktplatz-shadow-dispute",
+            name="Streitende Schattenfiguren",
+            kind="scene_point",
+            location_name="Marktplatz",
+            scene_zone_id="zone-fountain-ring",
+            scene_zone_name="Brunnenplatz",
+            aliases=["schattenfiguren", "streit", "streitende gruppe", "schatten"],
+        ),
+        ScenePointSeed(
+            ref_id="poi-marktplatz-runenspuren",
+            name="Verkohlte Runenspuren",
+            kind="scene_point",
+            location_name="Marktplatz",
+            scene_zone_id="zone-fountain-ring",
+            scene_zone_name="Brunnenplatz",
+            aliases=["runen", "ritualspuren", "sigillen"],
+        ),
+        ScenePointSeed(
+            ref_id="poi-marktplatz-laternenkasten",
+            name="Flackernder Laternenkasten",
+            kind="scene_object",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-edge",
+            scene_zone_name="Randgasse",
+            aliases=["laterne", "stromkasten", "kabel"],
+        ),
+        ScenePointSeed(
+            ref_id="obj-marktplatz-siegelkoffer",
+            name="Versiegelter Instrumentenkoffer",
+            kind="container",
+            location_name="Marktplatz",
+            scene_zone_id="zone-market-edge",
+            scene_zone_name="Randgasse",
+            aliases=["koffer", "instrumentenkoffer", "versiegelter koffer"],
+        ),
+    )
 
 
 URBAN_OCCULT_WORLD_PACK = AuthoredWorldPack(
@@ -53,6 +145,10 @@ URBAN_OCCULT_WORLD_PACK = AuthoredWorldPack(
     discovery_entry_rule=(
         "Neue NPCs/Interaktionspunkte sind initial verborgen und werden erst durch Discovery (INSPECT/Umsehen) sichtbar."
     ),
+    scene_points=(
+        *_generic_marktplatz_scene_points(),
+        *_urban_occult_marktplatz_scene_points(),
+    ),
 )
 
 GENERIC_STARTER_WORLD_PACK = AuthoredWorldPack(
@@ -68,6 +164,7 @@ GENERIC_STARTER_WORLD_PACK = AuthoredWorldPack(
     quest_exit_rule="N/A",
     quest_reentry_rule="N/A",
     discovery_entry_rule="Discovery optional, ohne feste Kettenregeln.",
+    scene_points=_generic_marktplatz_scene_points(),
 )
 
 
@@ -81,6 +178,13 @@ def resolve_world_pack_for_seed(world_seed: WorldSeed) -> AuthoredWorldPack:
 def initial_story_flags_for_world_seed(world_seed: WorldSeed) -> dict[str, str | int | bool]:
     pack = resolve_world_pack_for_seed(world_seed)
     return dict(pack.starter_story_flags)
+
+
+def scene_points_for_world_seed(world_seed: WorldSeed) -> list[ScenePointSeed]:
+    if world_seed.scene_points:
+        return [point.model_copy(deep=True) for point in world_seed.scene_points]
+    pack = resolve_world_pack_for_seed(world_seed)
+    return [point.model_copy(deep=True) for point in pack.scene_points]
 
 
 def build_world_pack_context(world_seed: WorldSeed) -> dict[str, str]:

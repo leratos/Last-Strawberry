@@ -14,9 +14,10 @@ from apps.game_api.app.config import Settings  # noqa: E402
 from apps.game_api.app.services.bootstrap_preview import build_world_bootstrap_preview  # noqa: E402
 from apps.game_api.app.services.llm_runtime import LlmRuntime, build_llm_runtime  # noqa: E402
 from ls_shared_schemas.character import CharacterAttributes, CharacterResources, CharacterState  # noqa: E402
+from ls_shared_schemas.game_context import GameContextResponse, GameTargetCatalog, GameTargetReference  # noqa: E402
 from ls_shared_schemas.inventory import InventoryItemInstance, ItemUseMode  # noqa: E402
 from ls_shared_schemas.turns import ActionType, TurnResolution, TurnSystemEvent  # noqa: E402
-from ls_shared_schemas.world import WorldBootstrapRequest  # noqa: E402
+from ls_shared_schemas.world import WorldBootstrapRequest, WorldSessionResponse  # noqa: E402
 
 
 class TestLlmRuntime(unittest.TestCase):
@@ -41,6 +42,59 @@ class TestLlmRuntime(unittest.TestCase):
         )
         defaults.update(overrides)
         return Settings(**defaults)
+
+    def _sample_world_session(self) -> WorldSessionResponse:
+        request = WorldBootstrapRequest(
+            user_id="u-runtime",
+            world_description="Eine Hafenstadt mit Magie, Marktlaerm und ritualen Spannungen.",
+            character_description="Eine Beobachterin, die Hinweise sammelt.",
+        )
+        preview = build_world_bootstrap_preview(request)
+        world_seed = preview.world_seed.model_copy(update={"world_id": "world-runtime"})
+        return WorldSessionResponse(
+            world_id="world-runtime",
+            user_id=request.user_id,
+            tone=request.tone,
+            difficulty=request.difficulty,
+            world_seed=world_seed,
+            initial_narrative=preview.initial_narrative,
+            player_orientation=preview.player_orientation,
+            character_state=CharacterState(
+                world_character_id="wc-runtime",
+                name="Ari",
+                location_name=world_seed.start_location_name,
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=10, max_stamina=10, focus=3, max_focus=3),
+            ),
+            inventory=[],
+            journal=[],
+        )
+
+    def _sample_context_with_visible_npcs(self) -> GameContextResponse:
+        world = self._sample_world_session()
+        return GameContextResponse(
+            world=world,
+            target_catalog=GameTargetCatalog(
+                npcs=[
+                    GameTargetReference(
+                        ref_id="npc-kael",
+                        kind="npc",
+                        name="Kael",
+                        location_name="Marktplatz",
+                        scene_zone_name="Brunnenplatz",
+                        distance_band_to_player="near",
+                    ),
+                    GameTargetReference(
+                        ref_id="npc-mira",
+                        kind="npc",
+                        name="Mira",
+                        location_name="Marktplatz",
+                        scene_zone_name="Marktstaende",
+                        distance_band_to_player="near",
+                    ),
+                ]
+            ),
+        )
 
     def test_status_preview_default(self):
         runtime = build_llm_runtime(self._base_settings())
@@ -326,6 +380,48 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertIn("Taverne", narrative.narrative)
         self.assertGreaterEqual(len(narrative.story_beats), 1)
 
+    def test_scene_point_proposals_preview_mode_returns_empty(self):
+        runtime = LlmRuntime(self._base_settings(llm_mode="preview", llm_fallback_to_preview=True))
+        world = self._sample_world_session()
+        proposals, trace = runtime.propose_scene_points_with_trace(world=world, context=None, max_items=2)
+        self.assertEqual(proposals, [])
+        self.assertEqual(trace.capability, "scene_point_proposals")
+        self.assertEqual(trace.provider_policy, "preview")
+        self.assertEqual(trace.provider_used, "preview")
+
+    def test_scene_point_proposals_openrouter_normalizes_entries(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=False, openrouter_api_key="test-key")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "scene_points": [
+                    {
+                        "name": "Verlassener Lastenaufzug",
+                        "kind": "scene_object",
+                        "location_name": "Marktplatz",
+                        "aliases": ["aufzug", "lastenlift"],
+                    },
+                    {
+                        "name": "Verschlossene Materialkiste",
+                        "kind": "container",
+                        "location_name": "Marktplatz",
+                        "ref_id": "obj-kiste",
+                    },
+                ]
+            }
+        )
+        runtime._openrouter_client = fake_client
+        world = self._sample_world_session()
+        proposals, trace = runtime.propose_scene_points_with_trace(world=world, context=None, max_items=3)
+        self.assertEqual(len(proposals), 2)
+        self.assertTrue(proposals[0].ref_id.startswith("obj-"))
+        self.assertEqual(proposals[0].kind, "scene_object")
+        self.assertTrue(proposals[1].ref_id.startswith("ctr-"))
+        self.assertEqual(proposals[1].kind, "container")
+        self.assertEqual(trace.provider_used, "openrouter")
+
     def test_openrouter_narration_accepts_story_beats_payload(self):
         runtime = LlmRuntime(self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=False, openrouter_api_key="x"))
         fake_client = mock.Mock()
@@ -363,6 +459,78 @@ class TestLlmRuntime(unittest.TestCase):
         self.assertIn("Only mention status values when they matter", narration_call_kwargs["system_prompt"])
         self.assertIn("no list-like recaps", narration_call_kwargs["user_prompt"])
         self.assertIn("prefer names over pronouns when uncertain", narration_call_kwargs["user_prompt"])
+
+    def test_openrouter_narration_visibility_conflict_falls_back_to_preview(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key="x")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "narrative": (
+                    "Kael und Mira waren nirgendwo zu sehen, "
+                    "waehrend du den Brunnenplatz beobachtet hast."
+                ),
+                "actionable_options": ["Weiter"],
+                "story_beats": ["scene: Ort=Marktplatz"],
+            }
+        )
+        runtime._openrouter_client = fake_client
+        resolution = TurnResolution(
+            world_id="w1",
+            world_character_id="wc1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc1",
+                name="Ari",
+                location_name="Marktplatz",
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=9, max_stamina=10, focus=3, max_focus=3),
+            ),
+            resulting_inventory=[],
+            system_events=[TurnSystemEvent(code="inspect_broad_success", message="Umgebung aufmerksam untersucht.")],
+        )
+        context = self._sample_context_with_visible_npcs()
+        narrative, trace = runtime.narrate_with_trace(resolution=resolution, context_before=context)
+        self.assertEqual(trace.provider_used, "preview")
+        self.assertTrue(trace.fallback_used)
+        self.assertEqual(trace.fallback_reason, "NarrationVisibilityConflict")
+        self.assertNotIn("nirgendwo zu sehen", narrative.narrative.lower())
+
+    def test_openrouter_narration_distance_conflict_falls_back_to_preview(self):
+        runtime = LlmRuntime(
+            self._base_settings(llm_mode="openrouter", llm_fallback_to_preview=True, openrouter_api_key="x")
+        )
+        fake_client = mock.Mock()
+        fake_client.chat_completion.return_value = json.dumps(
+            {
+                "narrative": (
+                    "Kael und Mira sind zwar nicht in unmittelbarer Naehe, "
+                    "aber ihre Anwesenheit ist dir nicht entgangen."
+                ),
+                "actionable_options": ["Weiter"],
+                "story_beats": ["scene: Ort=Marktplatz"],
+            }
+        )
+        runtime._openrouter_client = fake_client
+        resolution = TurnResolution(
+            world_id="w1",
+            world_character_id="wc1",
+            resulting_character_state=CharacterState(
+                world_character_id="wc1",
+                name="Ari",
+                location_name="Marktplatz",
+                attributes=CharacterAttributes(strength=10, dexterity=10, intelligence=10, charisma=10),
+                resources=CharacterResources(hp=10, max_hp=10, stamina=9, max_stamina=10, focus=3, max_focus=3),
+            ),
+            resulting_inventory=[],
+            system_events=[TurnSystemEvent(code="inspect_broad_success", message="Umgebung aufmerksam untersucht.")],
+        )
+        context = self._sample_context_with_visible_npcs()
+        narrative, trace = runtime.narrate_with_trace(resolution=resolution, context_before=context)
+        self.assertEqual(trace.provider_used, "preview")
+        self.assertTrue(trace.fallback_used)
+        self.assertEqual(trace.fallback_reason, "NarrationDistanceConflict")
+        self.assertNotIn("nicht in unmittelbarer naehe", narrative.narrative.lower())
 
     def test_openrouter_intent_normalizes_name_targets_to_known_ids(self):
         runtime = LlmRuntime(

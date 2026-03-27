@@ -49,7 +49,7 @@ from ls_shared_schemas.turns import (
     TurnRunRequest,
     TurnRunResponse,
 )
-from ls_shared_schemas.world import WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
+from ls_shared_schemas.world import ScenePointSeed, WorldBootstrapRequest, WorldBootstrapResult, WorldSessionResponse
 
 
 class TurnResolvePreviewRequest(BaseModel):
@@ -74,6 +74,42 @@ class DevSpawnNpcRequest(BaseModel):
     npc_id: str | None = Field(default=None, max_length=120)
     standing_for_player: int | None = Field(default=None, ge=-100, le=100)
     revealed_to_player: bool = True
+
+
+class DevGenerateScenePointProposalsRequest(BaseModel):
+    location_name: str | None = Field(default=None, max_length=120)
+    max_items: int = Field(default=2, ge=1, le=5)
+    requested_by: str | None = Field(default=None, max_length=120)
+    source: str | None = Field(default="devtest_scene_point_proposals", max_length=120)
+
+
+class DevReviewScenePointProposalRequest(BaseModel):
+    reviewed_by: str | None = Field(default=None, max_length=120)
+    decision_note: str | None = Field(default=None, max_length=500)
+
+
+class DevScenePointProposalRecord(BaseModel):
+    proposal_id: str
+    world_id: str
+    world_character_id: str
+    status: str
+    scene_point: ScenePointSeed
+    source: str | None = None
+    requested_by: str | None = None
+    provider_trace: LlmCapabilityTrace | None = None
+    decision_note: str | None = None
+    reviewed_by: str | None = None
+    applied_to_world_seed: bool = False
+    created_at: str
+    updated_at: str
+    reviewed_at: str | None = None
+
+
+class DevGenerateScenePointProposalsResponse(BaseModel):
+    generated_count: int
+    stored_count: int
+    trace: LlmCapabilityTrace
+    proposals: list[DevScenePointProposalRecord] = Field(default_factory=list)
 
 
 engine = RulesEngine()
@@ -602,6 +638,146 @@ def devtest_spawn_npc(world_id: str, request: DevSpawnNpcRequest, fastapi_reques
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/devtest/worlds/{world_id}/scene-points/proposals/generate",
+    response_model=DevGenerateScenePointProposalsResponse,
+)
+def devtest_generate_scene_point_proposals(
+    world_id: str,
+    request: DevGenerateScenePointProposalsRequest,
+    fastapi_request: Request,
+) -> DevGenerateScenePointProposalsResponse:
+    if settings.environment.lower() == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Dev/Test scene-point proposal endpoint is disabled in production.",
+        )
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+    context = _assemble_context_for_world(
+        repository=repository,
+        world_id=world_id,
+        player_input=None,
+        journal_limit=10,
+        turn_limit=8,
+        memory_per_npc=4,
+    )
+    generated, trace = llm_runtime.propose_scene_points_with_trace(
+        world=session,
+        context=context,
+        location_name=request.location_name,
+        max_items=request.max_items,
+    )
+    try:
+        stored = repository.create_scene_point_proposals(
+            world_id=world_id,
+            proposals=generated,
+            source=request.source,
+            requested_by=request.requested_by,
+            provider_trace=trace,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DevGenerateScenePointProposalsResponse(
+        generated_count=len(generated),
+        stored_count=len(stored),
+        trace=trace,
+        proposals=[DevScenePointProposalRecord.model_validate(entry) for entry in stored],
+    )
+
+
+@app.get(
+    "/v1/devtest/worlds/{world_id}/scene-points/proposals",
+    response_model=list[DevScenePointProposalRecord],
+)
+def devtest_list_scene_point_proposals(
+    world_id: str,
+    fastapi_request: Request,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[DevScenePointProposalRecord]:
+    if settings.environment.lower() == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Dev/Test scene-point proposal endpoint is disabled in production.",
+        )
+    repository = _get_world_repository(fastapi_request)
+    session = repository.get_world_session(world_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="World session not found.")
+    try:
+        rows = repository.list_scene_point_proposals(
+            world_id=world_id,
+            status=status,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return [DevScenePointProposalRecord.model_validate(row) for row in rows]
+
+
+@app.post(
+    "/v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/approve",
+    response_model=DevScenePointProposalRecord,
+)
+def devtest_approve_scene_point_proposal(
+    world_id: str,
+    proposal_id: str,
+    request: DevReviewScenePointProposalRequest,
+    fastapi_request: Request,
+) -> DevScenePointProposalRecord:
+    if settings.environment.lower() == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Dev/Test scene-point proposal endpoint is disabled in production.",
+        )
+    repository = _get_world_repository(fastapi_request)
+    try:
+        row = repository.approve_scene_point_proposal(
+            world_id=world_id,
+            proposal_id=proposal_id,
+            reviewed_by=request.reviewed_by,
+            decision_note=request.decision_note,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if "not pending" in detail.lower() else 404 if "not found" in detail.lower() else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return DevScenePointProposalRecord.model_validate(row)
+
+
+@app.post(
+    "/v1/devtest/worlds/{world_id}/scene-points/proposals/{proposal_id}/reject",
+    response_model=DevScenePointProposalRecord,
+)
+def devtest_reject_scene_point_proposal(
+    world_id: str,
+    proposal_id: str,
+    request: DevReviewScenePointProposalRequest,
+    fastapi_request: Request,
+) -> DevScenePointProposalRecord:
+    if settings.environment.lower() == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Dev/Test scene-point proposal endpoint is disabled in production.",
+        )
+    repository = _get_world_repository(fastapi_request)
+    try:
+        row = repository.reject_scene_point_proposal(
+            world_id=world_id,
+            proposal_id=proposal_id,
+            reviewed_by=request.reviewed_by,
+            decision_note=request.decision_note,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if "not pending" in detail.lower() else 404 if "not found" in detail.lower() else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return DevScenePointProposalRecord.model_validate(row)
 
 
 @app.post("/v1/worlds/{world_id}/turns/analyze/preview", response_model=TurnIntent)
